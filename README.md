@@ -201,14 +201,14 @@ AutoSec_Guard/
 ├── server/                      ← 后端引擎
 │   ├── server.py                #   Flask API 服务器
 │   ├── requirements.txt         #   Python 依赖清单
-│   └── pocs/                    #   60 个 PoC Python 验证脚本
+│   └── pocs/                    #   61 个 PoC Python 验证脚本 (按类别存储)
 │       ├── iv_plugin_base.py    #     插件基类
-│       ├── 01_ICMP_Host_Discovery.py
-│       ├── 19_CAN_Bus_Sniff.py
-│       ├── 29_WiFi_Deauth.py
-│       ├── 42_BlueBorne_BNEP_Overflow.py
-│       ├── 56_GPS_Spoofing.py
-│       └── ...
+│       ├── reconnaissance/      #     信息收集 (01-08)
+│       ├── network/             #     网络服务 (09-18)
+│       ├── canbus/              #     总线协议 (19-27)
+│       ├── wireless/            #     无线通信 (28-43)
+│       ├── application/         #     应用系统 (44-53)
+│       └── advanced/            #     高级/OTA (54-61)
 ├── assets/                      ← 截图和媒体资源
 ├── README.md
 ├── .gitignore

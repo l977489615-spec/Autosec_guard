@@ -61,24 +61,32 @@ const Dashboard: React.FC = () => {
       <div className="bg-cyber-800 border border-cyber-700 p-4 rounded-lg">
         <div className="flex flex-wrap gap-6 text-sm">
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 bg-red-500 rounded-full"></span>
-            <span className="text-gray-400">IVI System: <span className="text-white font-bold">{POC_DATABASE.filter(p => p.category === Category.IVI).length}</span></span>
+            <span className="w-2 h-2 bg-indigo-500 rounded-full"></span>
+            <span className="text-gray-400">Recon: <span className="text-white font-bold">{POC_DATABASE.filter(p => p.category === Category.RECON).length}</span></span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-            <span className="text-gray-400">Wireless/RF: <span className="text-white font-bold">{wirelessCount}</span></span>
+            <span className="text-gray-400">Network: <span className="text-white font-bold">{POC_DATABASE.filter(p => p.category === Category.NETWORK).length}</span></span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-            <span className="text-gray-400">Protocol: <span className="text-white font-bold">{POC_DATABASE.filter(p => p.category === Category.PROTOCOL).length}</span></span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
-            <span className="text-gray-400">ADAS: <span className="text-white font-bold">{POC_DATABASE.filter(p => p.category === Category.ADAS).length}</span></span>
+            <span className="text-gray-400">CANBus: <span className="text-white font-bold">{POC_DATABASE.filter(p => p.category === Category.CANBUS).length}</span></span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 bg-cyan-500 rounded-full"></span>
-            <span className="text-gray-400">With PoC Plugin: <span className="text-white font-bold">{integratedPocs}</span></span>
+            <span className="text-gray-400">Wireless: <span className="text-white font-bold">{POC_DATABASE.filter(p => p.category === Category.WIRELESS).length}</span></span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
+            <span className="text-gray-400">App: <span className="text-white font-bold">{POC_DATABASE.filter(p => p.category === Category.APPLICATION).length}</span></span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+            <span className="text-gray-400">Advanced: <span className="text-white font-bold">{POC_DATABASE.filter(p => p.category === Category.ADVANCED).length}</span></span>
+          </div>
+          <div className="flex items-center gap-2 ml-auto">
+            <span className="w-2 h-2 bg-cyber-accent rounded-full animate-pulse"></span>
+            <span className="text-gray-400">Integrated: <span className="text-white font-bold">{integratedPocs}/{totalPocs}</span></span>
           </div>
         </div>
       </div>

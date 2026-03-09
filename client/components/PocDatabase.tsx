@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { POC_DATABASE } from '../constants';
 import { Category, Severity, POC } from '../types';
-import { Search, ShieldAlert, Cpu, Radio, Activity, Cloud, Eye } from 'lucide-react';
+import { Search, ShieldAlert, Cpu, Radio, Activity, Globe, Terminal, Zap, Eye } from 'lucide-react';
 import PocDetailModal from './PocDetailModal';
 import { listPocs } from '../services/api';
 
@@ -98,10 +98,12 @@ const PocDatabase: React.FC = () => {
             </div>
             <h3 className="font-semibold text-gray-100 mb-2 group-hover:text-cyber-accent transition-colors pr-6">{poc.name}</h3>
             <div className="flex items-center gap-2 text-xs text-cyber-400 mb-3">
-              {poc.category === Category.IVI && <Cpu size={14} />}
+              {poc.category === Category.RECON && <Search size={14} />}
+              {poc.category === Category.NETWORK && <Globe size={14} />}
+              {poc.category === Category.CANBUS && <Activity size={14} />}
               {poc.category === Category.WIRELESS && <Radio size={14} />}
-              {poc.category === Category.CLOUD && <Cloud size={14} />}
-              {poc.category === Category.PROTOCOL && <Activity size={14} />}
+              {poc.category === Category.APPLICATION && <Terminal size={14} />}
+              {poc.category === Category.ADVANCED && <Zap size={14} />}
               {poc.category}
             </div>
             <p className="text-sm text-gray-400 line-clamp-2">{poc.description}</p>

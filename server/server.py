@@ -25,39 +25,42 @@ def health_check():
 
 @app.route('/api/list_pocs', methods=['GET'])
 def list_pocs():
-    """List all available PoC plugin files in Pocs/ directory with metadata."""
+    """List all available PoC plugin files in pocs/ directory tree with metadata."""
     pocs = []
     if not os.path.isdir(POCS_DIR):
         return jsonify({"error": "Pocs directory not found", "path": POCS_DIR}), 404
 
-    for filename in sorted(os.listdir(POCS_DIR)):
-        if filename.endswith('.py') and not filename.startswith('__') and filename != 'iv_plugin_base.py':
-            filepath = os.path.join(POCS_DIR, filename)
-            poc_info = {
-                "filename": filename,
-                "filepath": filepath,
-                "size": os.path.getsize(filepath)
-            }
-            # Try to extract metadata from the file
-            try:
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                    poc_info['content'] = content
-                    # Extract CVE from results["cve_id"]
-                    if 'cve_id' in content:
+    for dirpath, dirnames, filenames in os.walk(POCS_DIR):
+        # Ignore hidden directories and .venv
+        dirnames[:] = [d for d in dirnames if not d.startswith('.') and d != '.venv' and d != '__pycache__']
+        
+        for filename in sorted(filenames):
+            if filename.endswith('.py') and not filename.startswith('__') and filename != 'iv_plugin_base.py':
+                filepath = os.path.join(dirpath, filename)
+                rel_path = os.path.relpath(filepath, POCS_DIR)
+                poc_info = {
+                    "filename": rel_path,
+                    "filepath": filepath,
+                    "size": os.path.getsize(filepath),
+                    "category_dir": os.path.basename(dirpath) if dirpath != POCS_DIR else "root"
+                }
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        poc_info['content'] = content
+                        if 'cve_id' in content:
+                            for line in content.splitlines():
+                                if 'cve_id' in line and '=' in line:
+                                    cve = line.split('=')[-1].strip().strip('"\'')
+                                    poc_info['cve_id'] = cve
+                                    break
                         for line in content.splitlines():
-                            if 'cve_id' in line and '=' in line:
-                                cve = line.split('=')[-1].strip().strip('"\'')
-                                poc_info['cve_id'] = cve
+                            if line.strip().startswith('class ') and '(' in line:
+                                poc_info['class_name'] = line.strip().split('(')[0].replace('class ', '').strip()
                                 break
-                    # Extract class name
-                    for line in content.splitlines():
-                        if line.strip().startswith('class ') and '(' in line:
-                            poc_info['class_name'] = line.strip().split('(')[0].replace('class ', '').strip()
-                            break
-            except Exception:
-                pass
-            pocs.append(poc_info)
+                except Exception:
+                    pass
+                pocs.append(poc_info)
 
     return jsonify({"pocs": pocs, "total": len(pocs)})
 
@@ -111,9 +114,19 @@ def run_poc():
     if not poc_filename:
         return jsonify({"error": "No PoC filename provided"}), 400
 
+    # Support both "category/filename.py" and bare "filename.py" lookups
     poc_path = os.path.join(POCS_DIR, poc_filename)
     if not os.path.exists(poc_path):
-        return jsonify({"error": f"PoC file not found: {poc_filename}"}), 404
+        # Fallback: search subdirectories for the basename
+        basename = os.path.basename(poc_filename)
+        found = False
+        for dirpath, _, filenames in os.walk(POCS_DIR):
+            if basename in filenames:
+                poc_path = os.path.join(dirpath, basename)
+                found = True
+                break
+        if not found:
+            return jsonify({"error": f"PoC file not found: {poc_filename}"}), 404
 
     print(f"[*] Running PoC: {poc_filename} with params: {params}")
     start_time = time.time()
@@ -257,6 +270,18 @@ def execute_script():
 if __name__ == '__main__':
     print(f"[*] AutoSec Execution Engine starting on port 5002...")
     print(f"[*] PoCs directory: {POCS_DIR}")
-    print(f"[*] Available PoC files: {len([f for f in os.listdir(POCS_DIR) if f.endswith('.py') and f != 'iv_plugin_base.py' and not f.startswith('__')])}")
+    
+    poc_count = 0
+    categories = []
+    for dp, dn, fn in os.walk(POCS_DIR):
+        # Ignore hidden directories and .venv
+        dn[:] = [d for d in dn if not d.startswith('.') and d != '.venv' and d != '__pycache__']
+        if dp != POCS_DIR:
+            categories.append(os.path.basename(dp))
+        for f in fn:
+            if f.endswith('.py') and f != 'iv_plugin_base.py' and not f.startswith('__'):
+                poc_count += 1
+                
+    print(f"[*] Available PoC files: {poc_count} across {len(categories)} categories: {', '.join(sorted(categories))}")
     # Bind to 0.0.0.0 to allow access if frontend is on a different device
     app.run(host='0.0.0.0', port=5002, debug=True)

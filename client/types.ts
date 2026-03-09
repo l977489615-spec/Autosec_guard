@@ -7,12 +7,12 @@ export enum Severity {
 }
 
 export enum Category {
-  IVI = 'IVI System',
-  PROTOCOL = 'Vehicle Protocol', // CAN, UDS, LIN
-  ADAS = 'ADAS/Autonomous',
-  HARDWARE = 'Hardware/Interface',
-  WIRELESS = 'Wireless/RF', // Bluetooth, Wi-Fi, Keyfob
-  CLOUD = 'T-Box/Cloud'
+  RECON = 'Reconnaissance',
+  NETWORK = 'Network/Service',
+  CANBUS = 'CAN Bus/UDS',
+  WIRELESS = 'Wireless/RF',
+  APPLICATION = 'App/System',
+  ADVANCED = 'Advanced/OTA'
 }
 
 export type ParamType = 'ip' | 'port' | 'can_interface' | 'bluetooth_mac' | 'url' | 'frequency' | 'baud_rate' | 'target_mac' | 'interface' | 'usb_mount_point' | 'attacker_ip';
