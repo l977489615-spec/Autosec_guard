@@ -1,0 +1,55 @@
+"""
+PoC Name: T-Box/TCU Network Port Scan
+CVE: N/A
+Component: Telematics Control Unit (T-Box/TCU)
+Category: Recon
+Severity: Medium
+CVSS: 5.0
+Description: 扫描T-Box/TCU特有端口,发现远程管理、OTA、诊断等服务。
+Prerequisites: T-Box/TCU网络可达(通过4G/LTE APN或同网络)。
+Usage: python3 58_TBOX_Port_Scan.py <target_ip>
+"""
+import socket
+import sys
+from iv_plugin_base import IVIVulnerabilityPlugin
+class TBOXPortScanPlugin(IVIVulnerabilityPlugin):
+    TBOX_PORTS = {
+        22: "SSH", 23: "Telnet", 80: "HTTP", 443: "HTTPS",
+        554: "RTSP", 1883: "MQTT", 8883: "MQTT-TLS",
+        5555: "ADB", 6666: "Debug", 8080: "HTTP-Alt",
+        9090: "Diagnostic", 6667: "D-Bus", 7000: "AirPlay/Ctrl",
+        3804: "HiQnet", 5353: "mDNS", 61616: "ActiveMQ",
+        1900: "SSDP", 8443: "HTTPS-Alt", 4840: "OPC-UA",
+        502: "Modbus", 102: "S7comm"
+    }
+    def check_prerequisites(self):
+        if not self.target_ip:
+            raise RuntimeError("需要指定目标IP地址")
+        return True
+    def exploit(self):
+        self.logger.info(f"T-Box端口扫描 {self.target_ip}...")
+        open_ports = []
+        for port, name in sorted(self.TBOX_PORTS.items()):
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(1.5)
+                if s.connect_ex((self.target_ip, port)) == 0:
+                    self.logger.warning(f"[+] {port}/tcp ({name}) OPEN")
+                    open_ports.append((port, name))
+                s.close()
+            except:
+                pass
+        if open_ports:
+            self.results["vulnerable"] = True
+            self.results["evidence"] = f"Open: {[(p,n) for p,n in open_ports]}"
+            self.logger.info(f"共发现 {len(open_ports)} 个开放端口")
+        else:
+            self.results["vulnerable"] = False
+            self.logger.info("未发现开放端口")
+        return self.results
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python3 58_TBOX_Port_Scan.py <target_ip>")
+        sys.exit(1)
+    plugin = TBOXPortScanPlugin({"target_ip": sys.argv[1]})
+    plugin.run_verify()

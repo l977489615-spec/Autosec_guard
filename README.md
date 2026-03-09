@@ -131,18 +131,21 @@ git clone https://github.com/Hecker986/AutoSec_Guard.git
 cd AutoSec_Guard
 
 # 2. 安装前端依赖
+cd client
 npm install
 
 # 3. 配置 Gemini API Key（用于 AI 报告生成）
 echo "GEMINI_API_KEY=your_key_here" > .env.local
 
 # 4. 安装后端 Python 依赖
-pip install flask flask-cors scapy python-can requests
+cd ../server
+pip install -r requirements.txt
 
 # 5. 启动后端引擎（新终端）
 python3 server.py
 
 # 6. 启动前端（新终端）
+cd ../client
 npm run dev
 ```
 
@@ -178,30 +181,38 @@ npm run dev
 
 ```
 AutoSec_Guard/
-├── assets/                  # 截图和媒体资源
-├── components/              # React 前端组件
-│   ├── Scanner.tsx          #   扫描引擎主界面
-│   ├── Dashboard.tsx        #   数据仪表盘
-│   ├── PocDatabase.tsx      #   漏洞知识库
-│   ├── ManualTestModal.tsx  #   手动诊断弹窗
-│   └── ...
-├── Pocs/                    # 60 个 PoC Python 验证脚本
-│   ├── 01_ICMP_Host_Discovery.py
-│   ├── 19_CAN_Bus_Sniff.py
-│   ├── 29_WiFi_Deauth.py
-│   ├── 42_BlueBorne_BNEP_Overflow.py
-│   ├── 56_GPS_Spoofing.py
-│   └── ...
-├── services/                # 前端 API 服务层
-│   ├── api.ts               #   后端通信接口
-│   └── geminiService.ts     #   Gemini AI 报告生成
-├── server.py                # Flask 后端引擎
-├── constants.ts             # 60 个 PoC 元数据定义
-├── types.ts                 # TypeScript 类型定义
-├── App.tsx                  # 主应用入口
-├── index.html               # HTML 入口
-├── package.json             # 前端依赖
-└── vite.config.ts           # Vite 构建配置
+├── client/                      ← 前端应用
+│   ├── components/              #   React 组件
+│   │   ├── Scanner.tsx          #     扫描引擎主界面
+│   │   ├── Dashboard.tsx        #     数据仪表盘
+│   │   ├── PocDatabase.tsx      #     漏洞知识库
+│   │   ├── ManualTestModal.tsx  #     手动诊断弹窗
+│   │   └── ...
+│   ├── services/                #   API 服务层
+│   │   ├── api.ts               #     后端通信接口
+│   │   └── geminiService.ts     #     Gemini AI 报告生成
+│   ├── App.tsx                  #   主应用入口
+│   ├── index.tsx                #   渲染入口
+│   ├── index.html               #   HTML 模板
+│   ├── constants.ts             #   60 个 PoC 元数据定义
+│   ├── types.ts                 #   TypeScript 类型定义
+│   ├── package.json             #   前端依赖
+│   └── vite.config.ts           #   Vite 构建配置
+├── server/                      ← 后端引擎
+│   ├── server.py                #   Flask API 服务器
+│   ├── requirements.txt         #   Python 依赖清单
+│   └── pocs/                    #   60 个 PoC Python 验证脚本
+│       ├── iv_plugin_base.py    #     插件基类
+│       ├── 01_ICMP_Host_Discovery.py
+│       ├── 19_CAN_Bus_Sniff.py
+│       ├── 29_WiFi_Deauth.py
+│       ├── 42_BlueBorne_BNEP_Overflow.py
+│       ├── 56_GPS_Spoofing.py
+│       └── ...
+├── assets/                      ← 截图和媒体资源
+├── README.md
+├── .gitignore
+└── LICENSE
 ```
 
 ---
