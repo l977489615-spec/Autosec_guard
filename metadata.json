@@ -1,0 +1,5 @@
+{
+  "name": "AutoSec Guard - ICV Vulnerability Scanner",
+  "description": "A comprehensive vulnerability scanning system prototype for Intelligent Connected Vehicles (ICV), featuring over 50 POC plugins covering IVI, CAN bus protocols, ADAS, and hardware interfaces.",
+  "requestFramePermissions": []
+}
