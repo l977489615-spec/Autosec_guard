@@ -5,7 +5,7 @@ import ScanLogs from './ScanLogs';
 import { generateSecurityReport } from '../services/geminiService';
 import PocDetailModal from './PocDetailModal';
 import ManualTestModal from './ManualTestModal';
-import { checkBackendHealth, executePocScript, setBackendUrl, getBackendUrl, listPocs, fingerprintOS } from '../services/api';
+import { checkBackendHealth, executePocScript, setBackendUrl, getBackendUrl, listPocs, fingerprintOS, runPocPlugin } from '../services/api';
 import { Play, RotateCw, FileText, AlertTriangle, ShieldCheck, Wifi, Cable, Bluetooth, Power, Crosshair, List, Server, ArrowRight, Settings, Save, WifiOff, Link, CheckCircle, Radio, Activity } from 'lucide-react';
 
 type ScannerMode = 'SELECTION' | 'GLOBAL' | 'MANUAL';
@@ -190,21 +190,12 @@ const Scanner: React.FC<ScannerProps> = ({ onAddToHistory }) => {
           continue;
         }
       }
-
       addLog(`${progress} ${poc.id}: ${poc.name} — Executing...`, 'info');
 
       const startTime = Date.now();
 
-      // Generate real script with global session params
-      let scriptContent = "";
-      if (poc.scriptGenerator) {
-        scriptContent = poc.scriptGenerator(session.connection);
-      } else {
-        scriptContent = pocContents[poc.id] || poc.codeSnippet;
-      }
-
-      // Execute Real
-      const result = await executePocScript(scriptContent);
+      // Execute Real via the Plugin Loader (Handles parameters and subdirectories natively)
+      const result = await runPocPlugin(poc.pocFile, session.connection as any);
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
       // Show stdout lines from the execution

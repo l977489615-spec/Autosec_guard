@@ -109,7 +109,15 @@ def run_poc():
     """Run a specific PoC plugin by filename with given parameters."""
     data = request.json
     poc_filename = data.get('filename')
-    params = data.get('params', {})
+    params = data.get('params', {}).copy() # Use a copy to avoid mutating source if needed
+
+    # Parameter mapping for plugin compatibility (ip -> target_ip, port -> target_port)
+    if 'ip' in params and 'target_ip' not in params:
+        params['target_ip'] = params['ip']
+    if 'port' in params and 'target_port' not in params:
+        params['target_port'] = params['port']
+    if 'bluetooth_mac' in params and 'target_mac' not in params:
+        params['target_mac'] = params['bluetooth_mac']
 
     if not poc_filename:
         return jsonify({"error": "No PoC filename provided"}), 400
@@ -133,10 +141,14 @@ def run_poc():
 
     try:
         # Load the plugin module dynamically
+        # Ensure iv_plugin_base can be imported by adding POCS_DIR to sys.path
+        if POCS_DIR not in sys.path:
+            sys.path.insert(0, POCS_DIR)
+            
         spec = importlib.util.spec_from_file_location(poc_filename.replace('.py', ''), poc_path)
         module = importlib.util.module_from_spec(spec)
         
-        # Ensure iv_plugin_base can be imported
+        # Explicitly load iv_plugin_base as well
         base_path = os.path.join(POCS_DIR, 'iv_plugin_base.py')
         if os.path.exists(base_path):
             base_spec = importlib.util.spec_from_file_location('iv_plugin_base', base_path)
@@ -212,6 +224,11 @@ def execute_script():
         temp_script_path = temp_script.name
 
     try:
+        # Add POCS_DIR to PYTHONPATH so the script can import iv_plugin_base
+        env = os.environ.copy()
+        current_pythonpath = env.get('PYTHONPATH', '')
+        env['PYTHONPATH'] = f"{POCS_DIR}{os.pathsep}{current_pythonpath}" if current_pythonpath else POCS_DIR
+
         # EXECUTE THE SCRIPT REAL-TIME
         # We capture stdout/stderr to stream back to the UI
         # Timeout set to 120s to prevent hanging
@@ -219,7 +236,8 @@ def execute_script():
             [sys.executable, temp_script_path],
             capture_output=True,
             text=True,
-            timeout=120 
+            timeout=120,
+            env=env
         )
 
         output = process.stdout
