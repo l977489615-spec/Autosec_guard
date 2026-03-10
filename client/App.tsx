@@ -18,6 +18,8 @@ enum View {
   USER_MANAGEMENT = 'user_management'
 }
 
+type ScannerMode = 'SELECTION' | 'GLOBAL' | 'MANUAL';
+
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>(View.DASHBOARD);
 
@@ -27,6 +29,32 @@ const App: React.FC = () => {
 
   // Lifted state for history so it persists
   const [scanHistory, setScanHistory] = useState<ScanSession[]>([]);
+
+  // Persistent Scanner State
+  const [scannerMode, setScannerMode] = useState<ScannerMode>('SELECTION');
+  const [engineUrl, setEngineUrl] = useState('http://localhost:5002');
+  const [engineStatus, setEngineStatus] = useState<'unknown' | 'online' | 'offline'>('unknown');
+  const [scannerSession, setScannerSession] = useState<ScanSession>({
+    id: 'SESSION-INIT',
+    targetName: '',
+    connection: {
+      ip: '',
+      port: '5555',
+      bluetoothMac: '',
+      canInterface: '',
+      url: 'https://',
+      frequency: '',
+      interface: ''
+    },
+    isConnected: false,
+    startTime: '',
+    status: 'idle',
+    mode: 'batch',
+    logs: [],
+    results: [],
+    riskScore: 0,
+    aiReport: null
+  });
 
   const handleLogin = (newToken: string, userData: any) => {
     localStorage.setItem('autosec_token', newToken);
@@ -93,6 +121,14 @@ const App: React.FC = () => {
             <span className="hidden lg:block ml-3 font-medium">Scan History</span>
           </button>
 
+          <button
+            onClick={() => setCurrentView(View.PROFILE)}
+            className={`w-full flex items-center p-3 rounded-lg transition-colors mt-auto ${currentView === View.PROFILE ? 'bg-cyber-700 text-cyber-accent border-l-4 border-cyber-accent' : 'text-gray-400 hover:bg-cyber-700 hover:text-white'}`}
+          >
+            <User size={20} />
+            <span className="hidden lg:block ml-3 font-medium">Profile Settings</span>
+          </button>
+
           {user.role === 'admin' && (
             <button
               onClick={() => setCurrentView(View.USER_MANAGEMENT)}
@@ -103,13 +139,6 @@ const App: React.FC = () => {
             </button>
           )}
 
-          <button
-            onClick={() => setCurrentView(View.PROFILE)}
-            className={`w-full flex items-center p-3 rounded-lg transition-colors mt-auto ${currentView === View.PROFILE ? 'bg-cyber-700 text-cyber-accent border-l-4 border-cyber-accent' : 'text-gray-400 hover:bg-cyber-700 hover:text-white'}`}
-          >
-            <User size={20} />
-            <span className="hidden lg:block ml-3 font-medium">Profile Settings</span>
-          </button>
         </nav>
 
         <div className="p-4 border-t border-cyber-700 space-y-4">
@@ -172,7 +201,20 @@ const App: React.FC = () => {
 
           <div className="relative z-10 h-full">
             {currentView === View.DASHBOARD && <Dashboard />}
-            {currentView === View.SCANNER && <Scanner onAddToHistory={addToHistory} />}
+            {currentView === View.SCANNER && (
+              <Scanner
+                onAddToHistory={addToHistory}
+                mode={scannerMode}
+                setMode={setScannerMode}
+                session={scannerSession}
+                setSession={setScannerSession}
+                engineUrl={engineUrl}
+                setEngineUrl={setEngineUrl}
+                engineStatus={engineStatus}
+                setEngineStatus={setEngineStatus}
+                token={token}
+              />
+            )}
             {currentView === View.DATABASE && <PocDatabase />}
             {currentView === View.HISTORY && <ScanHistory history={scanHistory} currentUser={user} token={token} />}
             {currentView === View.PROFILE && (

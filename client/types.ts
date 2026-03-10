@@ -72,4 +72,5 @@ export interface ScanSession {
   results: ScanResult[];
   riskScore: number;
   aiReport?: string | null;
+  username?: string;
 }

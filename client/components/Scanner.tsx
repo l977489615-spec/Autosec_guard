@@ -5,47 +5,67 @@ import ScanLogs from './ScanLogs';
 import { generateSecurityReport } from '../services/geminiService';
 import PocDetailModal from './PocDetailModal';
 import ManualTestModal from './ManualTestModal';
-import { checkBackendHealth, executePocScript, setBackendUrl, getBackendUrl, listPocs, fingerprintOS, runPocPlugin } from '../services/api';
-import { Play, RotateCw, FileText, AlertTriangle, ShieldCheck, Wifi, Cable, Bluetooth, Power, Crosshair, List, Server, ArrowRight, Settings, Save, WifiOff, Link, CheckCircle, Radio, Activity, Download } from 'lucide-react';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+import { checkBackendHealth, executePocScript, setBackendUrl, getBackendUrl, listPocs, fingerprintOS, runPocPlugin, saveScanSession } from '../services/api';
+import { Play, RotateCw, FileText, AlertTriangle, ShieldCheck, Wifi, Cable, Bluetooth, Power, Crosshair, List, Server, ArrowRight, Settings, Save, WifiOff, Link, CheckCircle, Radio, Activity, Download, ChevronRight } from 'lucide-react';
 
 type ScannerMode = 'SELECTION' | 'GLOBAL' | 'MANUAL';
 
 interface ScannerProps {
   onAddToHistory: (session: ScanSession) => void;
+  mode: ScannerMode;
+  setMode: (mode: ScannerMode) => void;
+  session: ScanSession;
+  setSession: React.Dispatch<React.SetStateAction<ScanSession>>;
+  engineUrl: string;
+  setEngineUrl: (url: string) => void;
+  engineStatus: 'unknown' | 'online' | 'offline';
+  setEngineStatus: (status: 'unknown' | 'online' | 'offline') => void;
+  token: string | null;
 }
 
-const Scanner: React.FC<ScannerProps> = ({ onAddToHistory }) => {
-  const [mode, setMode] = useState<ScannerMode>('SELECTION');
+// Helper to render markdown-ish text to HTML
+const MarkdownRenderer: React.FC<{ content: string }> = ({ content }) => {
+  if (!content) return null;
 
-  // Backend Configuration State
-  const [engineUrl, setEngineUrl] = useState(getBackendUrl());
-  const [engineStatus, setEngineStatus] = useState<'unknown' | 'online' | 'offline'>('unknown');
+  // Very basic conversion for common patterns
+  const lines = content.split('\n');
+  return (
+    <div className="space-y-2">
+      {lines.map((line, i) => {
+        if (line.startsWith('### ')) {
+          return <h3 key={i} className="text-lg font-bold text-cyber-accent mt-4 mb-2 border-b border-cyber-700/50 pb-1 uppercase tracking-wider">{line.replace('### ', '')}</h3>;
+        }
+        if (line.startsWith('## ')) {
+          return <h2 key={i} className="text-xl font-bold text-white mt-6 mb-3 border-l-4 border-cyber-accent pl-3">{line.replace('## ', '')}</h2>;
+        }
+        if (line.startsWith('- ')) {
+          return <li key={i} className="ml-4 list-disc text-gray-300">{line.replace('- ', '')}</li>;
+        }
 
-  // Session state for Global Mode
-  const [session, setSession] = useState<ScanSession>({
-    id: 'SESSION-INIT',
-    targetName: '',
-    connection: {
-      ip: '',
-      port: '5555',
-      bluetoothMac: '',
-      canInterface: 'can0',
-      url: 'https://',
-      frequency: '315.00MHz',
-      interface: 'wlan0'
-    },
-    isConnected: false,
-    startTime: '',
-    status: 'idle',
-    mode: 'batch',
-    logs: [],
-    results: [],
-    riskScore: 0,
-    aiReport: null
-  });
-
+        // Handle bold **text**
+        const parts = line.split(/(\*\*.*?\*\*)/g);
+        return (
+          <p key={i} className="leading-relaxed">
+            {parts.map((part, j) => {
+              if (part.startsWith('**') && part.endsWith('**')) {
+                return <strong key={j} className="text-white font-bold">{part.slice(2, -2)}</strong>;
+              }
+              return part;
+            })}
+          </p>
+        );
+      })}
+    </div>
+  );
+};
+const Scanner: React.FC<ScannerProps> = ({
+  onAddToHistory,
+  mode, setMode,
+  session, setSession,
+  engineUrl, setEngineUrl,
+  engineStatus, setEngineStatus,
+  token
+}) => {
   const [isAnalysing, setIsAnalysing] = useState(false);
   const [selectedResultPoc, setSelectedResultPoc] = useState<POC | null>(null);
 
@@ -265,8 +285,11 @@ const Scanner: React.FC<ScannerProps> = ({ onAddToHistory }) => {
 
     setSession(finalSession);
 
-    // Auto save to history
+    // Auto save to history (Frontend State)
     onAddToHistory(finalSession);
+
+    // Auto save to history (Backend DB)
+    saveScanSession(finalSession, token);
   };
 
   const handleAiAnalysis = async () => {
@@ -274,61 +297,85 @@ const Scanner: React.FC<ScannerProps> = ({ onAddToHistory }) => {
     const report = await generateSecurityReport(session);
     setSession(prev => {
       const updated = { ...prev, aiReport: report };
+      // Sync to DB when report is generated
+      saveScanSession(updated, token);
       return updated;
     });
     setIsAnalysing(false);
   };
 
-  const handleDownloadPdf = async () => {
+  const handleDownloadPdf = () => {
+    if (!session.aiReport) return;
+
     const reportElement = document.getElementById('ai-report-content');
     if (!reportElement) return;
 
-    try {
-      // Temporarily expand the element to capture full height if it's scrollable
-      const originalHeight = reportElement.style.height;
-      const originalMaxHeight = reportElement.style.maxHeight;
-      const originalOverflow = reportElement.style.overflow;
-
-      reportElement.style.height = 'auto';
-      reportElement.style.maxHeight = 'none';
-      reportElement.style.overflow = 'visible';
-
-      const canvas = await html2canvas(reportElement, {
-        scale: 2, // Higher resolution
-        useCORS: true,
-        backgroundColor: '#0f172a' // match cyber-900 background roughly
-      });
-
-      // Restore original styles
-      reportElement.style.height = originalHeight;
-      reportElement.style.maxHeight = originalMaxHeight;
-      reportElement.style.overflow = originalOverflow;
-
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
-
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-
-      let heightLeft = pdfHeight;
-      let position = 0;
-      const pageHeight = pdf.internal.pageSize.getHeight();
-
-      pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
-      heightLeft -= pageHeight;
-
-      // Handle multi-page
-      while (heightLeft >= 0) {
-        position = heightLeft - pdfHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
-        heightLeft -= pageHeight;
-      }
-
-      pdf.save(`AutoSec_Report_${session.id}.pdf`);
-    } catch (error) {
-      console.error("Failed to generate PDF", error);
+    // Use native browser printing to generate a perfectly formatted PDF
+    // capturing the EXACT original visual styles and DOM elements.
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Please allow popups to generate the PDF report.");
+      return;
     }
+
+    const reportHtml = reportElement.innerHTML;
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>AutoSec_Report_${session.id}</title>
+          <script src="https://cdn.tailwindcss.com/3.4.5?plugins=typography"></script>
+          <style>
+            body { 
+              background-color: #ffffff;
+              color: #111111;
+              padding: 40px; 
+              font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            }
+            /* Force light mode styles on all Tailwind elements */
+            .prose, .prose * {
+              color: #111111 !important;
+            }
+            .prose h1, .prose h2, .prose h3, .prose h4, .prose strong {
+              color: #000000 !important;
+            }
+            @media print {
+              body { 
+                padding: 0;
+              }
+              .bg-black\\/40, .bg-cyber-900 {
+                background-color: transparent !important;
+              }
+            }
+          </style>
+        </head>
+        <body class="bg-white text-gray-900">
+          <div class="mb-8 border-b border-gray-300 pb-4">
+            <h1 class="text-2xl font-bold tracking-[0.2em] text-black uppercase mb-2">Tactical Security Assessment</h1>
+            <div class="text-sm text-gray-700">
+              <p><strong>Session ID:</strong> ${session.id}</p>
+              <p><strong>Target Name:</strong> ${session.targetName || 'Unknown Target'}</p>
+              <p><strong>Date:</strong> ${new Date(session.startTime || Date.now()).toLocaleString()}</p>
+              <p><strong>Global Risk Score:</strong> ${session.riskScore}%</p>
+            </div>
+          </div>
+          <!-- Exact clone of the React rendered output but with light mode override -->
+          <div class="prose max-w-none text-sm text-gray-900 font-sans p-2">
+            ${reportHtml}
+          </div>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+
+    // Give Tailwind a second to parse and apply styles before printing
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 1000);
   };
 
   const handleLaunchManualTest = (poc: POC) => {
@@ -458,10 +505,10 @@ const Scanner: React.FC<ScannerProps> = ({ onAddToHistory }) => {
         {mode === 'SELECTION' && renderSelectionScreen()}
 
         {mode === 'GLOBAL' && (
-          // Modified grid container to handle scrolling on small screens and restrict on large
-          <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 h-full overflow-y-auto lg:overflow-hidden">
+          // Modified grid container to handle scrolling columns correctly
+          <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 h-full overflow-hidden">
             {/* Global Config Panel - Made scrollable independent of main layout */}
-            <div className="lg:col-span-1 space-y-6 flex flex-col h-fit lg:h-full lg:overflow-y-auto pb-24 pr-2 custom-scrollbar">
+            <div className="lg:col-span-1 space-y-6 flex flex-col h-full overflow-y-auto pb-24 pr-2 custom-scrollbar">
               <div className="bg-cyber-800 border border-cyber-700 p-6 rounded-lg shadow-lg shrink-0">
                 <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
                   <Settings className="text-cyber-400" />
@@ -610,70 +657,94 @@ const Scanner: React.FC<ScannerProps> = ({ onAddToHistory }) => {
                   )}
                 </div>
               </div>
-
-              {/* Status Report for Global Mode - Now reachable due to overflow-y-auto on parent */}
-              {session.status === 'completed' && (
-                <div className="bg-cyber-800 border border-cyber-700 p-6 rounded-lg shadow-lg animate-slide-up shrink-0">
-                  <h3 className="text-lg font-bold text-white mb-4">Scan Results</h3>
-                  <div className="flex justify-between items-center mb-4">
-                    <span className="text-gray-400">Vulnerabilities</span>
-                    <span className="font-mono text-xl font-bold text-cyber-danger">
-                      {session.results.filter(r => r.vulnerable).length}
-                    </span>
-                  </div>
-                  <button
-                    onClick={handleAiAnalysis}
-                    disabled={isAnalysing}
-                    className="w-full py-2 border border-cyber-accent text-cyber-accent hover:bg-cyber-accent hover:text-black rounded transition-colors flex justify-center items-center gap-2"
-                  >
-                    {isAnalysing ? <RotateCw className="animate-spin" size={16} /> : <FileText size={16} />}
-                    AI Report
-                  </button>
-                  <div className="mt-3 text-center text-xs text-gray-500 flex items-center justify-center gap-1">
-                    <Save size={12} /> Results Auto-saved to History
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Global Mode: Logs & Results */}
-            <div className="lg:col-span-2 flex flex-col gap-6 h-fit lg:h-full lg:overflow-hidden">
+            <div className="lg:col-span-2 flex flex-col gap-6 h-full overflow-y-auto pb-24 custom-scrollbar pr-2">
               <ScanLogs logs={session.logs} />
 
-              {session.status === 'completed' && !session.aiReport && (
-                <div className="flex-1 bg-cyber-800 border border-cyber-700 rounded-lg p-6 overflow-y-auto">
-                  <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                    <AlertTriangle className="text-yellow-500" /> Detected Threats
-                  </h3>
-                  <div className="space-y-2">
-                    {session.results.filter(r => r.vulnerable).map((res) => {
-                      const poc = POC_DATABASE.find(p => p.id === res.pocId);
-                      return (
-                        <div key={res.pocId} onClick={() => poc && setSelectedResultPoc(poc)} className="bg-cyber-900 border-l-4 border-cyber-danger p-3 rounded cursor-pointer hover:bg-black/40">
-                          <div className="flex justify-between"><span className="text-white font-bold">{poc?.name}</span><span className="text-red-500 text-xs">{poc?.severity}</span></div>
-                          <p className="text-gray-500 text-xs mt-1">{res.details}</p>
-                        </div>
-                      );
-                    })}
-                    {session.results.filter(r => r.vulnerable).length === 0 && (
-                      <div className="text-center text-gray-500 py-8">System Clean. No vulnerabilities found.</div>
-                    )}
+              <div className="flex flex-col lg:flex-row gap-6 shrink-0 h-fit">
+                {/* Results Column moved to center/right */}
+                {session.status === 'completed' && (
+                  <div className="flex-1 bg-cyber-800 border border-cyber-700 p-6 rounded-lg shadow-lg animate-slide-up">
+                    <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                      <ShieldCheck className="text-cyber-accent" /> Scan Summary
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                      <div className="bg-cyber-900/50 p-3 rounded border border-cyber-700">
+                        <span className="text-[10px] text-gray-500 block uppercase">Threats Detected</span>
+                        <span className="font-mono text-2xl font-bold text-cyber-danger">
+                          {session.results.filter(r => r.vulnerable).length}
+                        </span>
+                      </div>
+                      <div className="bg-cyber-900/50 p-3 rounded border border-cyber-700">
+                        <span className="text-[10px] text-gray-500 block uppercase">Risk Factor</span>
+                        <span className="font-mono text-2xl font-bold text-orange-500">
+                          {session.riskScore}%
+                        </span>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={handleAiAnalysis}
+                      disabled={isAnalysing}
+                      className="w-full py-3 bg-cyber-accent/10 border border-cyber-accent text-cyber-accent hover:bg-cyber-accent hover:text-black rounded font-bold transition-all flex justify-center items-center gap-2 uppercase tracking-widest text-sm shadow-[0_0_15px_rgba(0,240,255,0.1)]"
+                    >
+                      {isAnalysing ? <RotateCw className="animate-spin" size={16} /> : <FileText size={16} />}
+                      {session.aiReport ? 'Re-Generate AI Intelligence' : 'Generate AI Security Report'}
+                    </button>
+
+                    <div className="mt-4 flex items-center justify-center gap-2 py-2 border-t border-cyber-700/50">
+                      <Save size={12} className="text-cyber-500" />
+                      <span className="text-[10px] font-mono text-gray-500 uppercase tracking-tighter">Session Archive Synchronized</span>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+
+                {/* Detected Threats (Brief List) */}
+                {session.status === 'completed' && !session.aiReport && (
+                  <div className="flex-1 bg-cyber-800 border border-cyber-700 rounded-lg p-6 max-h-[300px] overflow-y-auto custom-scrollbar">
+                    <h3 className="text-md font-bold text-white mb-4 flex items-center gap-2">
+                      <AlertTriangle className="text-yellow-500" size={18} /> Found Vectors
+                    </h3>
+                    <div className="space-y-2">
+                      {session.results.filter(r => r.vulnerable).map((res) => {
+                        const poc = POC_DATABASE.find(p => p.id === res.pocId);
+                        return (
+                          <div key={res.pocId} onClick={() => poc && setSelectedResultPoc(poc)} className="bg-cyber-900/80 border-l-2 border-cyber-danger p-2 rounded cursor-pointer hover:bg-cyber-700 transition-colors group">
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-200 font-bold text-xs truncate">{poc?.name}</span>
+                              <ChevronRight size={12} className="text-gray-600 group-hover:text-cyber-accent transition-colors" />
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {session.results.filter(r => r.vulnerable).length === 0 && (
+                        <div className="text-center text-gray-500 py-4 text-xs font-mono italic">NO THREATS IDENTIFIED</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {session.aiReport && (
-                <div className="flex-1 bg-cyber-800 border border-cyber-accent/50 rounded-lg p-6 flex flex-col relative h-[600px]">
-                  <div className="flex justify-between items-center mb-4 border-b border-cyber-700 pb-2">
-                    <span className="text-xs uppercase bg-cyber-accent/20 text-cyber-accent px-2 py-1 rounded font-bold">Security Execute Summary</span>
+                <div className="bg-cyber-800 border border-cyber-accent/30 rounded-lg p-6 flex flex-col relative shadow-2xl shrink-0 h-auto min-h-max">
+                  <div className="flex justify-between items-center mb-6 border-b border-cyber-700/50 pb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded bg-cyber-accent/10 flex items-center justify-center border border-cyber-accent/30">
+                        <Activity size={18} className="text-cyber-accent" />
+                      </div>
+                      <h4 className="text-sm font-bold text-white tracking-[0.2em] uppercase">Tactical Security Assessment</h4>
+                    </div>
                     <button
                       onClick={handleDownloadPdf}
-                      className="text-xs flex items-center gap-1 bg-cyber-700 hover:bg-cyber-600 text-white px-3 py-1.5 rounded transition-colors"
+                      className="text-xs flex items-center gap-2 bg-cyber-900 border border-cyber-700 hover:border-cyber-accent text-white px-4 py-2 rounded-lg transition-all shadow-inner"
                     >
-                      <Download size={14} /> Export PDF
+                      <Download size={14} className="text-cyber-accent" /> EXPORT DECISION PDF
                     </button>
                   </div>
-                  <div id="ai-report-content" className="prose prose-invert max-w-none text-sm text-gray-300 font-sans whitespace-pre-line overflow-y-auto flex-1 p-2 bg-cyber-900/50 rounded">
-                    {session.aiReport}
+                  <div id="ai-report-content" className="prose prose-invert max-w-none text-sm text-gray-400 font-sans p-6 bg-black/40 rounded-xl border border-cyber-800 break-words h-auto min-h-max pb-12">
+                    <MarkdownRenderer content={session.aiReport} />
                   </div>
                 </div>
               )}

@@ -131,3 +131,21 @@ export const fingerprintOS = async (ip: string): Promise<{ os: string; details: 
     return { os: 'unknown', details: 'Offline', error: error.message };
   }
 };
+
+export const saveScanSession = async (session: any, token: string | null) => {
+  try {
+    const res = await fetch(`${backendUrl}/api/save_session`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(session),
+      mode: 'cors'
+    });
+    return await res.json();
+  } catch (error) {
+    console.error('Failed to save session:', error);
+    return { error: 'Connection failed' };
+  }
+};

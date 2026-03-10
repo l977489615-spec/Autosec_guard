@@ -28,23 +28,29 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                 if (res.ok) {
                     const data = await res.json();
                     // Map backend format to frontend ScanSession format
-                    const mappedHistory: ScanSession[] = data.history.map((h: any) => ({
-                        id: h.session_id || `hist-${h.id}`,
-                        timestamp: new Date(h.started_at).getTime(),
-                        targetName: h.target_ip || 'Unknown Target',
-                        targetIp: h.target_ip,
-                        targetMac: h.target_mac,
-                        totalScans: h.results_json ? h.results_json.length || 0 : 0,
-                        vulnerabilitiesFound: h.results_json?.filter((r: any) => r.vulnerable).length || 0,
-                        status: h.risk_score > 0 ? 'vulnerable' : 'secure',
-                        duration: 'N/A',
-                        startTime: h.started_at,
-                        endTime: h.completed_at,
-                        results: h.results_json || [],
-                        logs: ['Logs not saved to database.'],
-                        riskScore: h.risk_score,
-                        username: h.username // The key addition for RBAC display
-                    }));
+                    const mappedHistory: ScanSession[] = data.history.map((h: any) => {
+                        const parsedJson = h.results_json || [];
+                        const isWrapper = !!parsedJson.results && Array.isArray(parsedJson.results);
+                        const finalResults = isWrapper ? parsedJson.results : (Array.isArray(parsedJson) ? parsedJson : []);
+
+                        return {
+                            id: h.session_id || `hist-${h.id}`,
+                            timestamp: new Date(h.started_at).getTime(),
+                            targetName: isWrapper && parsedJson.targetName ? parsedJson.targetName : (h.target_ip || 'Unknown Target'),
+                            connection: isWrapper && parsedJson.connection ? parsedJson.connection : { ip: h.target_ip, bluetoothMac: h.target_mac, port: '', canInterface: '', url: '', frequency: '', interface: '' },
+                            totalScans: finalResults.length,
+                            vulnerabilitiesFound: finalResults.filter((r: any) => r.vulnerable).length,
+                            status: h.risk_score > 0 ? 'vulnerable' : 'secure',
+                            duration: 'N/A',
+                            startTime: h.started_at,
+                            endTime: h.completed_at,
+                            results: finalResults,
+                            logs: isWrapper && parsedJson.logs ? parsedJson.logs : ['Logs not saved to previous database schema.'],
+                            aiReport: isWrapper ? parsedJson.aiReport : null,
+                            riskScore: h.risk_score,
+                            username: h.username
+                        };
+                    });
                     setDbHistory(mappedHistory);
                 }
             } catch (err) {
@@ -173,7 +179,14 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                 </div>
             ) : (
                 <div className="grid grid-cols-1 gap-4 overflow-y-auto">
-                    {(dbHistory.length > 0 ? dbHistory : localHistory).slice().reverse().map((session) => (
+                    {Array.from(
+                        new Map<string, ScanSession>(
+                            (dbHistory.length > 0 ? dbHistory : localHistory)
+                                .slice()
+                                .reverse()
+                                .map(session => [session.id, session])
+                        ).values()
+                    ).map((session) => (
                         <div
                             key={session.id}
                             onClick={() => setSelectedSession(session)}

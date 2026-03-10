@@ -8,10 +8,10 @@ export const generateSecurityReport = async (session: ScanSession): Promise<stri
   }
 
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  
+
   // Filter for vulnerable items
   const vulnerabilities = session.results.filter(r => r.vulnerable);
-  
+
   if (vulnerabilities.length === 0) {
     return "No vulnerabilities detected. System appears secure based on current test suite.";
   }
@@ -41,7 +41,7 @@ export const generateSecurityReport = async (session: ScanSession): Promise<stri
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-2.5-flash-lite',
       contents: prompt,
     });
     return response.text || "Failed to generate report text.";
