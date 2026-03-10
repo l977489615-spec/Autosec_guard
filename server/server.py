@@ -117,6 +117,9 @@ class ScanHistory(db.Model):
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
+        if request.method == 'OPTIONS':
+            return f(None, *args, **kwargs)
+            
         token = request.headers.get('Authorization')
         if not token or not token.startswith("Bearer "):
             return jsonify({'message': 'Token is missing or invalid format!'}), 401
@@ -527,38 +530,83 @@ def run_poc():
         
         status_msg = "VULNERABLE" if response["vulnerable"] else "SECURE"
         logger.info(f"PoC Result [{poc_filename}]: {status_msg} (Elapsed: {elapsed}s)")
-        
-        # Save to database if authenticated
-        if current_user:
-            try:
-                history = ScanHistory(
-                    user_id=current_user.id,
-                    session_id=session_id,
-                    target_ip=params.get('target_ip'),
-                    target_mac=params.get('target_mac'),
-                    status='completed',
-                    completed_at=datetime.datetime.utcnow(),
-                    results_json=json.dumps(response),
-                    risk_score=10 if response["vulnerable"] else 0
-                )
-                db.session.add(history)
-                db.session.commit()
-            except Exception as dbe:
-                logger.error(f"Failed to save scan history: {str(dbe)}")
+
+        return jsonify(response)
 
         return jsonify(response)
 
     except Exception as e:
         elapsed = round(time.time() - start_time, 2)
-        tb = traceback.format_exc()
-        logger.error(f"Exception in PoC [{poc_filename}]: {str(e)}\n{tb}")
         return jsonify({
-            "success": False,
-            "logs": [],
+            "success": False, 
+            "logs": [], 
             "errors": [str(e), traceback.format_exc()],
             "vulnerable": False,
             "elapsed_seconds": elapsed
         })
+
+@app.route('/api/save_session', methods=['POST', 'OPTIONS'])
+@cross_origin()
+@token_required
+def save_session(current_user):
+    """Save a full scan session (multiple results + final report) to history."""
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+        
+    data = request.json
+    if not data:
+        return jsonify({"message": "No data provided"}), 400
+        
+    session_id = data.get('id')
+    target_name = data.get('targetName', 'Unknown Target')
+    results = data.get('results', [])
+    logs = data.get('logs', [])
+    risk_score = data.get('riskScore', 0)
+    ai_report = data.get('aiReport')
+    connection = data.get('connection', {})
+    
+    # Check if a history record already exists
+    history = ScanHistory.query.filter_by(session_id=session_id, user_id=current_user.id).first()
+    
+    try:
+        if history:
+            # Update existing record
+            history.results_json = json.dumps({
+                "targetName": target_name,
+                "results": results,
+                "logs": logs,
+                "aiReport": ai_report,
+                "connection": connection
+            })
+            history.completed_at = datetime.datetime.utcnow()
+            history.risk_score = risk_score
+        else:
+            # Create a new history record
+            history = ScanHistory(
+                user_id=current_user.id,
+                session_id=session_id,
+                target_ip=connection.get('ip'),
+                target_mac=connection.get('bluetoothMac') or connection.get('canInterface'),
+                status='completed',
+                completed_at=datetime.datetime.utcnow(),
+                results_json=json.dumps({
+                    "targetName": target_name,
+                    "results": results,
+                    "logs": logs,
+                    "aiReport": ai_report,
+                    "connection": connection
+                }),
+                risk_score=risk_score
+            )
+            db.session.add(history)
+            
+        db.session.commit()
+        logger.info(f"Session {session_id} saved/updated to history for user {current_user.username}")
+        return jsonify({"message": "Session saved successfully", "id": history.id}), 201
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Failed to save session: {str(e)}")
+        return jsonify({"message": f"Error saving session: {str(e)}"}), 500
 
 @app.route('/api/history', methods=['GET'])
 @token_required
