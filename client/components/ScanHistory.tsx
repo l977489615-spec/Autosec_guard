@@ -4,165 +4,219 @@ import { Clock, AlertTriangle, CheckCircle, FileText, ChevronRight, X, List, Shi
 import ScanLogs from './ScanLogs';
 import { POC_DATABASE } from '../constants';
 import PocDetailModal from './PocDetailModal';
+import { getBackendUrl } from '../services/api';
 
 interface ScanHistoryProps {
-  history: ScanSession[];
+    localHistory?: ScanSession[]; // Changed from 'history' to avoid DOM conflict
+    currentUser: any;
+    token: string | null;
 }
 
-const ScanHistory: React.FC<ScanHistoryProps> = ({ history }) => {
-  const [selectedSession, setSelectedSession] = useState<ScanSession | null>(null);
-  const [selectedResultPoc, setSelectedResultPoc] = useState<POC | null>(null);
+const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHistory = [] }) => {
+    const [selectedSession, setSelectedSession] = useState<ScanSession | null>(null);
+    const [selectedResultPoc, setSelectedResultPoc] = useState<POC | null>(null);
+    const [dbHistory, setDbHistory] = useState<ScanSession[]>([]);
+    const [loading, setLoading] = useState(true);
 
-  if (selectedSession) {
-    const vulnCount = selectedSession.results.filter(r => r.vulnerable).length;
-    
-    return (
-        <div className="p-6 h-full flex flex-col relative">
-            <PocDetailModal 
-                poc={selectedResultPoc} 
-                isOpen={!!selectedResultPoc} 
-                onClose={() => setSelectedResultPoc(null)} 
-            />
+    React.useEffect(() => {
+        const fetchHistory = async () => {
+            if (!token) return;
+            try {
+                const res = await fetch(`${getBackendUrl()}/api/history`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    // Map backend format to frontend ScanSession format
+                    const mappedHistory: ScanSession[] = data.history.map((h: any) => ({
+                        id: h.session_id || `hist-${h.id}`,
+                        timestamp: new Date(h.started_at).getTime(),
+                        targetName: h.target_ip || 'Unknown Target',
+                        targetIp: h.target_ip,
+                        targetMac: h.target_mac,
+                        totalScans: h.results_json ? h.results_json.length || 0 : 0,
+                        vulnerabilitiesFound: h.results_json?.filter((r: any) => r.vulnerable).length || 0,
+                        status: h.risk_score > 0 ? 'vulnerable' : 'secure',
+                        duration: 'N/A',
+                        startTime: h.started_at,
+                        endTime: h.completed_at,
+                        results: h.results_json || [],
+                        logs: ['Logs not saved to database.'],
+                        riskScore: h.risk_score,
+                        username: h.username // The key addition for RBAC display
+                    }));
+                    setDbHistory(mappedHistory);
+                }
+            } catch (err) {
+                console.error("Failed to fetch history:", err);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchHistory();
+    }, [token]);
 
-            <button 
-                onClick={() => setSelectedSession(null)}
-                className="absolute top-6 left-6 z-10 text-xs font-bold text-gray-400 hover:text-white flex items-center gap-2 bg-cyber-900 px-3 py-1 rounded border border-cyber-700"
-            >
-                ← BACK TO LIST
-            </button>
+    if (selectedSession) {
+        const vulnCount = selectedSession.results.filter(r => r.vulnerable).length;
 
-            <div className="mt-10 grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
-                {/* Meta Info */}
-                <div className="space-y-6 flex flex-col">
-                    <div className="bg-cyber-800 border border-cyber-700 p-6 rounded-lg">
-                        <h2 className="text-xl font-bold text-white mb-2">{selectedSession.targetName}</h2>
-                        <div className="text-sm text-gray-400 font-mono mb-4">{selectedSession.id}</div>
-                        
-                        <div className="space-y-3">
-                            <div className="flex justify-between border-b border-cyber-700 pb-2">
-                                <span className="text-gray-500 text-xs uppercase">Scan Date</span>
-                                <span className="text-gray-300 text-sm">{new Date(selectedSession.startTime).toLocaleString()}</span>
-                            </div>
-                            <div className="flex justify-between border-b border-cyber-700 pb-2">
-                                <span className="text-gray-500 text-xs uppercase">IP Address</span>
-                                <span className="text-gray-300 text-sm">{selectedSession.connection.ip}</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span className="text-gray-500 text-xs uppercase">Risk Score</span>
-                                <div className="flex items-center gap-2">
-                                    <div className={`text-lg font-bold ${selectedSession.riskScore > 50 ? 'text-cyber-danger' : 'text-cyber-success'}`}>
-                                        {selectedSession.riskScore}
+        return (
+            <div className="p-6 h-full flex flex-col relative">
+                <PocDetailModal
+                    poc={selectedResultPoc}
+                    isOpen={!!selectedResultPoc}
+                    onClose={() => setSelectedResultPoc(null)}
+                />
+
+                <button
+                    onClick={() => setSelectedSession(null)}
+                    className="absolute top-6 left-6 z-10 text-xs font-bold text-gray-400 hover:text-white flex items-center gap-2 bg-cyber-900 px-3 py-1 rounded border border-cyber-700"
+                >
+                    ← BACK TO LIST
+                </button>
+
+                <div className="mt-10 grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
+                    {/* Meta Info */}
+                    <div className="space-y-6 flex flex-col">
+                        <div className="bg-cyber-800 border border-cyber-700 p-6 rounded-lg">
+                            <h2 className="text-xl font-bold text-white mb-2">{selectedSession.targetName}</h2>
+                            <div className="text-sm text-gray-400 font-mono mb-4">{selectedSession.id}</div>
+
+                            <div className="space-y-3">
+                                <div className="flex justify-between border-b border-cyber-700 pb-2">
+                                    <span className="text-gray-500 text-xs uppercase">Scan Date</span>
+                                    <span className="text-gray-300 text-sm">{new Date(selectedSession.startTime).toLocaleString()}</span>
+                                </div>
+                                <div className="flex justify-between border-b border-cyber-700 pb-2">
+                                    <span className="text-gray-500 text-xs uppercase">IP Address</span>
+                                    <span className="text-gray-300 text-sm">{selectedSession.connection.ip}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-gray-500 text-xs uppercase">Risk Score</span>
+                                    <div className="flex items-center gap-2">
+                                        <div className={`text-lg font-bold ${selectedSession.riskScore > 50 ? 'text-cyber-danger' : 'text-cyber-success'}`}>
+                                            {selectedSession.riskScore}
+                                        </div>
+                                        <span className="text-gray-600 text-xs">/100</span>
                                     </div>
-                                    <span className="text-gray-600 text-xs">/100</span>
                                 </div>
                             </div>
                         </div>
                     </div>
-                </div>
 
-                {/* Main Content */}
-                <div className="lg:col-span-2 flex flex-col gap-6 h-full overflow-hidden">
-                    {/* Tabs or Split view? Let's stack Logs + Report/Results */}
-                    <div className="h-64 shrink-0">
-                         <ScanLogs logs={selectedSession.logs} />
-                    </div>
+                    {/* Main Content */}
+                    <div className="lg:col-span-2 flex flex-col gap-6 h-full overflow-hidden">
+                        {/* Tabs or Split view? Let's stack Logs + Report/Results */}
+                        <div className="h-64 shrink-0">
+                            <ScanLogs logs={selectedSession.logs} />
+                        </div>
 
-                    <div className="flex-1 flex gap-6 overflow-hidden">
-                         {/* Results List */}
-                         <div className="flex-1 bg-cyber-800 border border-cyber-700 rounded-lg p-4 overflow-y-auto">
-                            <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2 sticky top-0 bg-cyber-800 pb-2">
-                                <AlertTriangle size={14} className="text-yellow-500"/>
-                                Vulnerabilities ({vulnCount})
-                            </h3>
-                            <div className="space-y-2">
-                                {selectedSession.results.filter(r => r.vulnerable).map((res) => {
-                                    const poc = POC_DATABASE.find(p => p.id === res.pocId);
-                                    return (
-                                        <div key={res.pocId} onClick={() => poc && setSelectedResultPoc(poc)} className="bg-cyber-900 border-l-2 border-cyber-danger p-2 rounded cursor-pointer hover:bg-black/40">
-                                            <div className="flex justify-between"><span className="text-white text-sm font-bold">{poc?.name}</span><span className="text-red-500 text-[10px]">{poc?.severity}</span></div>
-                                        </div>
-                                    );
-                                })}
-                                {vulnCount === 0 && <div className="text-center text-gray-500 text-sm py-4">No threats detected.</div>}
+                        <div className="flex-1 flex gap-6 overflow-hidden">
+                            {/* Results List */}
+                            <div className="flex-1 bg-cyber-800 border border-cyber-700 rounded-lg p-4 overflow-y-auto">
+                                <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2 sticky top-0 bg-cyber-800 pb-2">
+                                    <AlertTriangle size={14} className="text-yellow-500" />
+                                    Vulnerabilities ({vulnCount})
+                                </h3>
+                                <div className="space-y-2">
+                                    {selectedSession.results.filter(r => r.vulnerable).map((res) => {
+                                        const poc = POC_DATABASE.find(p => p.id === res.pocId);
+                                        return (
+                                            <div key={res.pocId} onClick={() => poc && setSelectedResultPoc(poc)} className="bg-cyber-900 border-l-2 border-cyber-danger p-2 rounded cursor-pointer hover:bg-black/40">
+                                                <div className="flex justify-between"><span className="text-white text-sm font-bold">{poc?.name}</span><span className="text-red-500 text-[10px]">{poc?.severity}</span></div>
+                                            </div>
+                                        );
+                                    })}
+                                    {vulnCount === 0 && <div className="text-center text-gray-500 text-sm py-4">No threats detected.</div>}
+                                </div>
                             </div>
-                         </div>
 
-                         {/* AI Report */}
-                         <div className="flex-1 bg-cyber-800 border border-cyber-accent/30 rounded-lg p-4 overflow-y-auto">
-                            <h3 className="text-sm font-bold text-cyber-accent mb-3 flex items-center gap-2 sticky top-0 bg-cyber-800 pb-2">
-                                <FileText size={14} /> AI Analysis Report
-                            </h3>
-                            {selectedSession.aiReport ? (
-                                <div className="prose prose-invert max-w-none text-xs text-gray-300 font-sans whitespace-pre-line leading-relaxed">
-                                    {selectedSession.aiReport}
-                                </div>
-                            ) : (
-                                <div className="text-center text-gray-600 text-sm italic py-10">
-                                    No AI Report was generated for this session.
-                                </div>
-                            )}
-                         </div>
+                            {/* AI Report */}
+                            <div className="flex-1 bg-cyber-800 border border-cyber-accent/30 rounded-lg p-4 overflow-y-auto">
+                                <h3 className="text-sm font-bold text-cyber-accent mb-3 flex items-center gap-2 sticky top-0 bg-cyber-800 pb-2">
+                                    <FileText size={14} /> AI Analysis Report
+                                </h3>
+                                {selectedSession.aiReport ? (
+                                    <div className="prose prose-invert max-w-none text-xs text-gray-300 font-sans whitespace-pre-line leading-relaxed">
+                                        {selectedSession.aiReport}
+                                    </div>
+                                ) : (
+                                    <div className="text-center text-gray-600 text-sm italic py-10">
+                                        No AI Report was generated for this session.
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
-    );
-  }
+        );
+    }
 
-  return (
-    <div className="p-6 h-full flex flex-col">
-      <div className="flex justify-between items-center mb-6">
-         <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Clock className="text-cyber-accent" /> Scan History
-         </h2>
-         <span className="text-sm text-gray-500">Total Records: {history.length}</span>
-      </div>
+    return (
+        <div className="p-6 h-full flex flex-col">
+            <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                    <Clock className="text-cyber-accent" /> Scan History
+                </h2>
+                <span className="text-sm text-gray-500">Total Records: {dbHistory.length}</span>
+            </div>
 
-      {history.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-gray-500 border border-dashed border-cyber-700 rounded-lg">
-             <List size={48} className="mb-4 opacity-50" />
-             <p className="text-lg">No scan history available.</p>
-             <p className="text-sm">Run a Global Auto Scan to save records here.</p>
-          </div>
-      ) : (
-          <div className="grid grid-cols-1 gap-4 overflow-y-auto">
-             {history.slice().reverse().map((session) => (
-                 <div 
-                    key={session.id} 
-                    onClick={() => setSelectedSession(session)}
-                    className="bg-cyber-800 border border-cyber-700 p-4 rounded-lg hover:border-cyber-500 cursor-pointer transition-all flex justify-between items-center group"
-                 >
-                    <div className="flex items-center gap-4">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${session.results.filter(r=>r.vulnerable).length > 0 ? 'bg-red-900/20 text-red-500' : 'bg-green-900/20 text-green-500'}`}>
-                            {session.results.filter(r=>r.vulnerable).length > 0 ? <AlertTriangle size={20}/> : <Shield size={20}/>}
-                        </div>
-                        <div>
-                            <h3 className="font-bold text-white">{session.targetName}</h3>
-                            <div className="flex gap-3 text-xs text-gray-400 mt-1">
-                                <span className="font-mono">{session.id}</span>
-                                <span>|</span>
-                                <span>{new Date(session.startTime).toLocaleString()}</span>
+            {loading ? (
+                <div className="flex-1 flex items-center justify-center text-cyber-accent">
+                    <div className="w-8 h-8 border-4 border-cyber-accent border-t-transparent rounded-full animate-spin"></div>
+                </div>
+            ) : dbHistory.length === 0 && localHistory.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-gray-500 border border-dashed border-cyber-700 rounded-lg">
+                    <List size={48} className="mb-4 opacity-50" />
+                    <p className="text-lg">No scan history available.</p>
+                    <p className="text-sm">Run a Global Auto Scan to save records here.</p>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 gap-4 overflow-y-auto">
+                    {(dbHistory.length > 0 ? dbHistory : localHistory).slice().reverse().map((session) => (
+                        <div
+                            key={session.id}
+                            onClick={() => setSelectedSession(session)}
+                            className="bg-cyber-800 border border-cyber-700 p-4 rounded-lg hover:border-cyber-500 cursor-pointer transition-all flex justify-between items-center group relative overflow-hidden"
+                        >
+                            {/* Admin View: Show the User who ran it */}
+                            {currentUser.role === 'admin' && (
+                                <div className="absolute top-0 right-0 bg-cyber-900 border-b border-l border-cyber-700 px-3 py-1 rounded-bl-lg text-[10px] text-gray-400 font-mono">
+                                    OPERATOR: <span className="text-cyber-accent">{session.username || 'System'}</span>
+                                </div>
+                            )}
+
+                            <div className="flex items-center gap-4">
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${session.results.filter(r => r.vulnerable).length > 0 ? 'bg-red-900/20 text-red-500' : 'bg-green-900/20 text-green-500'}`}>
+                                    {session.results.filter(r => r.vulnerable).length > 0 ? <AlertTriangle size={20} /> : <Shield size={20} />}
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-white">{session.targetName}</h3>
+                                    <div className="flex flex-col sm:flex-row gap-1 sm:gap-3 text-xs text-gray-400 mt-1">
+                                        <span className="font-mono">{session.id}</span>
+                                        <span className="hidden sm:inline">|</span>
+                                        <span>{new Date(session.startTime).toLocaleString()}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-8">
+                                <div className="text-right">
+                                    <div className="text-xs text-gray-500 uppercase">Risk Score</div>
+                                    <div className={`font-bold font-mono ${session.riskScore > 50 ? 'text-cyber-danger' : 'text-cyber-success'}`}>{session.riskScore}</div>
+                                </div>
+                                <div className="text-right">
+                                    <div className="text-xs text-gray-500 uppercase">Vulns</div>
+                                    <div className="font-bold font-mono text-white">{session.results.filter(r => r.vulnerable).length}</div>
+                                </div>
+                                <ChevronRight className="text-gray-600 group-hover:text-white transition-colors" />
                             </div>
                         </div>
-                    </div>
-
-                    <div className="flex items-center gap-8">
-                        <div className="text-right">
-                             <div className="text-xs text-gray-500 uppercase">Risk Score</div>
-                             <div className={`font-bold font-mono ${session.riskScore > 50 ? 'text-cyber-danger' : 'text-cyber-success'}`}>{session.riskScore}</div>
-                        </div>
-                        <div className="text-right">
-                             <div className="text-xs text-gray-500 uppercase">Vulns</div>
-                             <div className="font-bold font-mono text-white">{session.results.filter(r=>r.vulnerable).length}</div>
-                        </div>
-                        <ChevronRight className="text-gray-600 group-hover:text-white transition-colors" />
-                    </div>
-                 </div>
-             ))}
-          </div>
-      )}
-    </div>
-  );
+                    ))}
+                </div>
+            )}
+        </div>
+    );
 };
 
 export default ScanHistory;

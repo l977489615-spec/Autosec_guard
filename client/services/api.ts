@@ -39,13 +39,18 @@ export const checkBackendHealth = async (): Promise<boolean> => {
   }
 };
 
-export const executePocScript = async (scriptContent: string): Promise<ExecutionResult> => {
+export const executePocScript = async (scriptContent: string, token?: string | null): Promise<ExecutionResult> => {
   try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     const res = await fetch(`${backendUrl}/api/execute`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers,
       body: JSON.stringify({ script: scriptContent }),
       mode: 'cors'
     });
@@ -65,13 +70,18 @@ export const executePocScript = async (scriptContent: string): Promise<Execution
   }
 };
 
-export const runPocPlugin = async (filename: string, params: Record<string, any>): Promise<ExecutionResult> => {
+export const runPocPlugin = async (filename: string, params: Record<string, any>, token?: string | null): Promise<ExecutionResult> => {
   try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     const res = await fetch(`${backendUrl}/api/run_poc`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers,
       body: JSON.stringify({ filename, params }),
       mode: 'cors'
     });

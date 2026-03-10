@@ -6,7 +6,9 @@ import { generateSecurityReport } from '../services/geminiService';
 import PocDetailModal from './PocDetailModal';
 import ManualTestModal from './ManualTestModal';
 import { checkBackendHealth, executePocScript, setBackendUrl, getBackendUrl, listPocs, fingerprintOS, runPocPlugin } from '../services/api';
-import { Play, RotateCw, FileText, AlertTriangle, ShieldCheck, Wifi, Cable, Bluetooth, Power, Crosshair, List, Server, ArrowRight, Settings, Save, WifiOff, Link, CheckCircle, Radio, Activity } from 'lucide-react';
+import { Play, RotateCw, FileText, AlertTriangle, ShieldCheck, Wifi, Cable, Bluetooth, Power, Crosshair, List, Server, ArrowRight, Settings, Save, WifiOff, Link, CheckCircle, Radio, Activity, Download } from 'lucide-react';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 type ScannerMode = 'SELECTION' | 'GLOBAL' | 'MANUAL';
 
@@ -254,7 +256,7 @@ const Scanner: React.FC<ScannerProps> = ({ onAddToHistory }) => {
 
     const finalSession: ScanSession = {
       ...session,
-      id: newSessionId,
+      id: newSessionId, // Ensure the generated ID is used
       status: 'completed',
       endTime: new Date().toISOString(),
       results,
@@ -275,6 +277,58 @@ const Scanner: React.FC<ScannerProps> = ({ onAddToHistory }) => {
       return updated;
     });
     setIsAnalysing(false);
+  };
+
+  const handleDownloadPdf = async () => {
+    const reportElement = document.getElementById('ai-report-content');
+    if (!reportElement) return;
+
+    try {
+      // Temporarily expand the element to capture full height if it's scrollable
+      const originalHeight = reportElement.style.height;
+      const originalMaxHeight = reportElement.style.maxHeight;
+      const originalOverflow = reportElement.style.overflow;
+
+      reportElement.style.height = 'auto';
+      reportElement.style.maxHeight = 'none';
+      reportElement.style.overflow = 'visible';
+
+      const canvas = await html2canvas(reportElement, {
+        scale: 2, // Higher resolution
+        useCORS: true,
+        backgroundColor: '#0f172a' // match cyber-900 background roughly
+      });
+
+      // Restore original styles
+      reportElement.style.height = originalHeight;
+      reportElement.style.maxHeight = originalMaxHeight;
+      reportElement.style.overflow = originalOverflow;
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+      let heightLeft = pdfHeight;
+      let position = 0;
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
+      heightLeft -= pageHeight;
+
+      // Handle multi-page
+      while (heightLeft >= 0) {
+        position = heightLeft - pdfHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
+        heightLeft -= pageHeight;
+      }
+
+      pdf.save(`AutoSec_Report_${session.id}.pdf`);
+    } catch (error) {
+      console.error("Failed to generate PDF", error);
+    }
   };
 
   const handleLaunchManualTest = (poc: POC) => {
@@ -608,11 +662,19 @@ const Scanner: React.FC<ScannerProps> = ({ onAddToHistory }) => {
                 </div>
               )}
               {session.aiReport && (
-                <div className="flex-1 bg-cyber-800 border border-cyber-accent/50 rounded-lg p-6 overflow-y-auto relative">
-                  <div className="absolute top-4 right-4 text-gray-500 hover:text-white flex gap-2">
-                    <span className="text-xs uppercase bg-cyber-accent/20 text-cyber-accent px-2 py-1 rounded">Report Generated</span>
+                <div className="flex-1 bg-cyber-800 border border-cyber-accent/50 rounded-lg p-6 flex flex-col relative h-[600px]">
+                  <div className="flex justify-between items-center mb-4 border-b border-cyber-700 pb-2">
+                    <span className="text-xs uppercase bg-cyber-accent/20 text-cyber-accent px-2 py-1 rounded font-bold">Security Execute Summary</span>
+                    <button
+                      onClick={handleDownloadPdf}
+                      className="text-xs flex items-center gap-1 bg-cyber-700 hover:bg-cyber-600 text-white px-3 py-1.5 rounded transition-colors"
+                    >
+                      <Download size={14} /> Export PDF
+                    </button>
                   </div>
-                  <div className="prose prose-invert max-w-none text-sm text-gray-300 font-sans whitespace-pre-line">{session.aiReport}</div>
+                  <div id="ai-report-content" className="prose prose-invert max-w-none text-sm text-gray-300 font-sans whitespace-pre-line overflow-y-auto flex-1 p-2 bg-cyber-900/50 rounded">
+                    {session.aiReport}
+                  </div>
                 </div>
               )}
             </div>
