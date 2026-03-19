@@ -1,5 +1,5 @@
 {
-  "name": "AutoSec Guard - ICV Vulnerability Scanner",
-  "description": "A comprehensive vulnerability scanning system prototype for Intelligent Connected Vehicles (ICV), featuring over 50 POC plugins covering IVI, CAN bus protocols, ADAS, and hardware interfaces.",
+  "name": "智驭安盾 - 智能网联汽车安全扫描器",
+  "description": "面向智能网联汽车（ICV）的综合漏洞扫描系统，涵盖61个POC插件，覆盖车机系统、CAN总线协议、ADAS及硬件接口等多个攻击面，支持AI驱动的安全报告生成。",
   "requestFramePermissions": []
 }

@@ -23,9 +23,33 @@ type ScannerMode = 'SELECTION' | 'GLOBAL' | 'MANUAL';
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>(View.DASHBOARD);
 
+  // 检查 JWT token 是否过期
+  const isTokenValid = (t: string | null): boolean => {
+    if (!t) return false;
+    try {
+      const payload = JSON.parse(atob(t.split('.')[1]));
+      return payload.exp * 1000 > Date.now();
+    } catch {
+      return false;
+    }
+  };
+
+  const storedToken = localStorage.getItem('autosec_token');
+  const storedUser = localStorage.getItem('autosec_user');
+
   // Auth State
-  const [token, setToken] = useState<string | null>(localStorage.getItem('autosec_token'));
-  const [user, setUser] = useState<any>(localStorage.getItem('autosec_user') ? JSON.parse(localStorage.getItem('autosec_user') as string) : null);
+  const [token, setToken] = useState<string | null>(
+    isTokenValid(storedToken) ? storedToken : null
+  );
+  const [user, setUser] = useState<any>(
+    isTokenValid(storedToken) && storedUser ? JSON.parse(storedUser) : null
+  );
+
+  // token 无效时清除 localStorage
+  if (!isTokenValid(storedToken) && storedToken) {
+    localStorage.removeItem('autosec_token');
+    localStorage.removeItem('autosec_user');
+  }
 
   // Lifted state for history so it persists
   const [scanHistory, setScanHistory] = useState<ScanSession[]>([]);
@@ -71,6 +95,11 @@ const App: React.FC = () => {
     setCurrentView(View.DASHBOARD);
   };
 
+  // 全局 401 处理： token 过期或失效自动登出
+  const handleUnauthorized = () => {
+    handleLogout();
+  };
+
   const addToHistory = (session: ScanSession) => {
     setScanHistory(prev => [...prev, session]);
   };
@@ -85,7 +114,7 @@ const App: React.FC = () => {
       <aside className="w-20 lg:w-64 flex-shrink-0 bg-cyber-800 border-r border-cyber-700 flex flex-col transition-all duration-300">
         <div className="h-16 flex items-center justify-center lg:justify-start lg:px-6 border-b border-cyber-700">
           <Shield className="w-8 h-8 text-cyber-accent" />
-          <span className="hidden lg:block ml-3 font-bold text-lg tracking-wider text-white">AutoSec<span className="text-cyber-accent">Guard</span></span>
+          <span className="hidden lg:block ml-3 font-bold text-lg tracking-wider text-white">智驭<span className="text-cyber-accent">安盾</span></span>
         </div>
 
         <nav className="flex-1 py-6 space-y-2 px-2">
@@ -216,7 +245,8 @@ const App: React.FC = () => {
               />
             )}
             {currentView === View.DATABASE && <PocDatabase />}
-            {currentView === View.HISTORY && <ScanHistory history={scanHistory} currentUser={user} token={token} />}
+            {currentView === View.HISTORY && <ScanHistory localHistory={scanHistory} currentUser={user} token={token} onUnauthorized={handleUnauthorized} />}
+
             {currentView === View.PROFILE && (
               <Profile
                 currentUser={user}
@@ -228,7 +258,7 @@ const App: React.FC = () => {
               />
             )}
             {currentView === View.USER_MANAGEMENT && user.role === 'admin' && (
-              <UserManagement token={token} />
+              <UserManagement token={token} onUnauthorized={handleUnauthorized} />
             )}
           </div>
         </div>

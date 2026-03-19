@@ -324,7 +324,7 @@ const Scanner: React.FC<ScannerProps> = ({
       <!DOCTYPE html>
       <html>
         <head>
-          <title>AutoSec_Report_${session.id}</title>
+          <title>智驭安盾_Report_${session.id}</title>
           <script src="https://cdn.tailwindcss.com/3.4.5?plugins=typography"></script>
           <style>
             body { 

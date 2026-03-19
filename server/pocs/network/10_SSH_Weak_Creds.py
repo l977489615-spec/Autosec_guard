@@ -14,13 +14,6 @@ import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class SSHWeakCredsPlugin(IVIVulnerabilityPlugin):
-    CRED_LIST = [
-        ("root", "root"), ("root", "123456"), ("root", "admin"),
-        ("root", "password"), ("root", "toor"), ("root", ""),
-        ("admin", "admin"), ("admin", "123456"), ("admin", "password"),
-        ("root", "12345678"), ("root", "default"), ("user", "user"),
-    ]
-
     def check_prerequisites(self):
         if not self.target_ip:
             raise RuntimeError("需要指定目标IP地址。")
@@ -45,24 +38,44 @@ class SSHWeakCredsPlugin(IVIVulnerabilityPlugin):
         self.logger.info("SSH端口开放,开始弱口令测试...")
         try:
             import paramiko
-            for user, passwd in self.CRED_LIST:
-                try:
-                    client = paramiko.SSHClient()
-                    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                    client.connect(self.target_ip, port=port, username=user,
-                                   password=passwd, timeout=3, banner_timeout=3)
-                    self.logger.warning(f"[+] 发现弱口令: {user}/{passwd}")
-                    self.results["vulnerable"] = True
-                    self.results["evidence"] = f"SSH login: {user}/{passwd}"
-                    stdin, stdout, stderr = client.exec_command("id")
-                    self.logger.info(f"    命令输出: {stdout.read().decode().strip()}")
-                    client.close()
-                    return self.results
-                except paramiko.AuthenticationException:
-                    continue
-                except Exception:
-                    break
-            self.logger.info("所有弱口令测试失败,未发现弱口令")
+            import os
+            
+            wordlist_path = os.path.join(os.path.dirname(__file__), '..', 'wordlists', 'credentials.txt')
+            if not os.path.exists(wordlist_path):
+                self.logger.error("未找到字典文件 credentials.txt")
+                self.results["vulnerable"] = False
+                return self.results
+                
+            with open(wordlist_path, 'r', encoding='utf-8', errors='ignore') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or ':' not in line:
+                        continue
+                        
+                    parts = line.split(':', 1)
+                    user = parts[0]
+                    passwd = parts[1]
+                    
+                    try:
+                        client = paramiko.SSHClient()
+                        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                        # Reduce timeout to 2 seconds per attempt to speed up dictionary attack
+                        client.connect(self.target_ip, port=port, username=user,
+                                       password=passwd, timeout=2, banner_timeout=2)
+                        self.logger.warning(f"[+] 发现弱口令: {user}/{passwd}")
+                        self.results["vulnerable"] = True
+                        self.results["evidence"] = f"SSH login: {user}/{passwd}"
+                        stdin, stdout, stderr = client.exec_command("id")
+                        self.logger.info(f"    命令输出: {stdout.read().decode().strip()}")
+                        client.close()
+                        return self.results
+                    except paramiko.AuthenticationException:
+                        continue
+                    except Exception:
+                        # Other connection errors like timeout, reset, etc. break out of inner loop
+                        break
+                        
+            self.logger.info("字典耗尽,未发现弱口令")
             self.results["vulnerable"] = False
         except ImportError:
             self.logger.error("paramiko未安装,跳过SSH弱口令测试")

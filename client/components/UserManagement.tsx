@@ -11,9 +11,11 @@ interface UserData {
 
 interface UserManagementProps {
 	token: string | null;
+	onUnauthorized?: () => void;
 }
 
-const UserManagement: React.FC<UserManagementProps> = ({ token }) => {
+const UserManagement: React.FC<UserManagementProps> = ({ token, onUnauthorized }) => {
+
 	const [users, setUsers] = useState<UserData[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState('');
@@ -39,6 +41,10 @@ const UserManagement: React.FC<UserManagementProps> = ({ token }) => {
 			const res = await fetch(`${getBackendUrl()}/api/admin/users`, {
 				headers: { 'Authorization': `Bearer ${token}` }
 			});
+			if (res.status === 401 || res.status === 403) {
+				onUnauthorized?.();
+				return;
+			}
 			if (!res.ok) throw new Error('Failed to fetch users');
 			const data = await res.json();
 			setUsers(data.users);

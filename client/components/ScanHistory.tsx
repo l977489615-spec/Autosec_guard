@@ -7,12 +7,14 @@ import PocDetailModal from './PocDetailModal';
 import { getBackendUrl } from '../services/api';
 
 interface ScanHistoryProps {
-    localHistory?: ScanSession[]; // Changed from 'history' to avoid DOM conflict
+    localHistory?: ScanSession[];
     currentUser: any;
     token: string | null;
+    onUnauthorized?: () => void;
 }
 
-const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHistory = [] }) => {
+const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHistory = [], onUnauthorized }) => {
+
     const [selectedSession, setSelectedSession] = useState<ScanSession | null>(null);
     const [selectedResultPoc, setSelectedResultPoc] = useState<POC | null>(null);
     const [dbHistory, setDbHistory] = useState<ScanSession[]>([]);
@@ -25,6 +27,10 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                 const res = await fetch(`${getBackendUrl()}/api/history`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
+                if (res.status === 401 || res.status === 403) {
+                    onUnauthorized?.();
+                    return;
+                }
                 if (res.ok) {
                     const data = await res.json();
                     // Map backend format to frontend ScanSession format
