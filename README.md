@@ -93,13 +93,13 @@
 | 类别 | 目录 | 数量 | 模块编号 | 涵盖方向 |
 |------|------|:----:|----------|----------|
 | **侦察 / 信息收集** | `reconnaissance/` | 8 | 01–08 | ICMP 存活探测、TCP 端口扫描、mDNS/UPnP 服务发现、SNMP 信息泄露、蓝牙 SDP 枚举、T-Box 端口探测、HTTP 服务指纹 |
-| **网络服务漏洞** | `network/` | 11 | 09–18, 66 | ADB 调试端口、SSH 弱口令/硬编码凭证、Telnet 未授权、FTP 匿名访问、MQTT 未授权、D-Bus 匿名鉴权、RTSP 日志泄露、DLNA 未授权控制、HTTPS 证书无验证、**SOME/IP 服务发现信息泄露** |
-| **CAN 总线 / 诊断协议** | `canbus/` | 10 | 19–27, 67 | CAN 总线嗅探、消息注入、DoS 洪泛、重放攻击、UDS 诊断会话绕过、UDS 安全访问暴力破解、UDS 内存读取、UDS 例程控制、OBD VIN 欺骗、**UDS ECUReset 未授权（0x11）** |
-| **无线通信攻击** | `wireless/` | 18 | 28–43, 63, 65 | QNX Qnet 文件读取、Wi-Fi Deauth/Evil Twin/KRACK/TI 芯片溢出/未授权控制、ConnMan DHCP 溢出、Broadcom WME 溢出、蓝牙 HFP AT 溢出/BLUFFS 密钥降级/PerfektBlue/HFP UAF/按键注入/BlueBorne/BleedingTooth、**BlueFrag L2CAP DoS（CVE-2020-0022）**、**WiFi SSID 克隆自动连接** |
-| **应用系统漏洞** | `application/` | 12 | 44–53, 62, 64 | AirPlay AirBorne UAF、IVI USB SQLi、CarPlay 栈溢出、HiQnet TCP/UDP 溢出、WebView 文件外泄、文件名命令注入、USB 路径注入、IVI 开发者模式绕过、无线认证绕过、**RTSP CarPlay DoS（CVE-2023-28898）**、**UPnP AVTransport 媒体注入 DoS** |
-| **高级攻击 / 固件安全** | `advanced/` | 8 | 54–61 | OTA MITM 拦截、RF 钥匙扰频重放（CVE-2022-27254）、GPS 信号欺骗、TPMS 信号欺骗、V2X BSM 幽灵车注入、固件更新 TOCTOU 竞态、QNX 无签名固件加载、USB 未签名更新包 |
+| **网络服务漏洞** | `network/` | 11 | 09–19 | ADB 调试端口、SSH 弱口令/硬编码凭证、Telnet 未授权、FTP 匿名访问、MQTT 未授权、D-Bus 匿名鉴权、RTSP 日志泄露、DLNA 未授权控制、HTTPS 证书无验证、**SOME/IP 服务发现信息泄露** |
+| **CAN 总线 / 诊断协议** | `canbus/` | 10 | 20–29 | CAN 总线嗅探、消息注入、DoS 洪泛、重放攻击、UDS 诊断会话绕过、UDS 安全访问暴力破解、UDS 内存读取、UDS 例程控制、OBD VIN 欺骗、**UDS ECUReset 未授权（0x11）** |
+| **无线通信攻击** | `wireless/` | 18 | 30–47 | QNX Qnet 文件读取、Wi-Fi Deauth/Evil Twin/KRACK/TI 芯片溢出/未授权控制、ConnMan DHCP 溢出、Broadcom WME 溢出、蓝牙 HFP AT 溢出/BLUFFS 密钥降级/PerfektBlue/HFP UAF/按键注入/BlueBorne/BleedingTooth、**BlueFrag L2CAP DoS（CVE-2020-0022）**、**WiFi SSID 克隆自动连接** |
+| **应用系统漏洞** | `application/` | 12 | 48–59 | AirPlay AirBorne UAF、IVI USB SQLi、CarPlay 栈溢出、HiQnet TCP/UDP 溢出、WebView 文件外泄、文件名命令注入、USB 路径注入、IVI 开发者模式绕过、无线认证绕过、**RTSP CarPlay DoS（CVE-2023-28898）**、**UPnP AVTransport 媒体注入 DoS** |
+| **高级攻击 / 固件安全** | `advanced/` | 8 | 60–67 | OTA MITM 拦截、RF 钥匙扰频重放（CVE-2022-27254）、GPS 信号欺骗、TPMS 信号欺骗、V2X BSM 幽灵车注入、固件更新 TOCTOU 竞态、QNX 无签名固件加载、USB 未签名更新包 |
 
-**合计：67 个 PoC 模块**（含 6 个基于 2025.8 CCF 杭州大赛 WP 新增）
+**合计：67 个 PoC 模块**
 
 ---
 
@@ -112,7 +112,7 @@
 │              Profile · UserManagement · AuthPage                  │
 ├────────────────────────┬─────────────────────────────────────────┤
 │    Qwen AI Service     │           Flask 后端 API                 │
-│   geminiService.ts     │           server.py (:5002)              │
+│   LLMService.ts     │           server.py (:5002)              │
 │   (中文报告生成)         │                                         │
 │                        │  /api/health        /api/list_pocs       │
 │                        │  /api/run_poc       /api/execute         │
@@ -220,7 +220,7 @@ AutoSec_Guard/
 │   │   └── ScanLogs.tsx         #     实时扫描日志组件
 │   ├── services/                #   服务层
 │   │   ├── api.ts               #     后端 REST API 通信接口
-│   │   └── geminiService.ts     #     Qwen AI 中文报告与大模型接口（保留原文件名）
+│   │   └── LLMService.ts     #     Qwen AI 中文报告与大模型接口
 │   ├── App.tsx                  #   主应用与路由（侧边栏导航）
 │   ├── index.tsx                #   React 渲染入口
 │   ├── index.html               #   HTML 模板（浏览器标题：智驭安盾）
