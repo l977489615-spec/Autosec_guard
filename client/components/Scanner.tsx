@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ScanSession, ScanLog, ScanResult, Severity, POC, Category, ConnectionParams } from '../types';
 import { POC_DATABASE } from '../constants';
 import ScanLogs from './ScanLogs';
-import { generateSecurityReport } from '../services/geminiService';
+import { generateSecurityReport } from '../services/LLMService';
 import PocDetailModal from './PocDetailModal';
 import ManualTestModal from './ManualTestModal';
 import { checkBackendHealth, executePocScript, setBackendUrl, getBackendUrl, listPocs, fingerprintOS, runPocPlugin, saveScanSession } from '../services/api';
@@ -309,7 +309,7 @@ const Scanner: React.FC<ScannerProps> = ({
 
     const now = new Date(session.startTime || Date.now()).toLocaleString('zh-CN', { hour12: false });
     const targetInfo = session.targetName || session.connection.ip || 'Unknown Target';
-    
+
     // Parse Markdown manually like AgentScan to ensure clean print styles
     const reportHtml = session.aiReport
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
