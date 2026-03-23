@@ -7,14 +7,14 @@
   <img src="https://img.shields.io/badge/版本-v3.0.0-blue?style=flat-square" />
   <img src="https://img.shields.io/badge/PoC%20模块-67-green?style=flat-square" />
   <img src="https://img.shields.io/badge/攻击面类别-6-orange?style=flat-square" />
-  <img src="https://img.shields.io/badge/AI%20报告-Gemini%202.5-purple?style=flat-square" />
+  <img src="https://img.shields.io/badge/AI%20报告-Qwen%20千问-purple?style=flat-square" />
   <img src="https://img.shields.io/badge/license-MIT-brightgreen?style=flat-square" />
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey?style=flat-square" />
 </p>
 
 **智驭安盾（SmartDrive Shield）** 是一款面向智能网联车辆（ICV）的自动化安全漏洞验证平台。  
-集成 **67 个真实 PoC 验证模块**，覆盖侦察信息收集、网络服务、CAN 总线、无线射频、应用系统及高级攻击等 6 大攻击维度，  
-并具备**目标系统智能指纹识别**与 **AI 驱动的中文安全报告生成**能力。
+集成了 **67 个真实 PoC 验证模块**，覆盖侦察信息收集、网络服务、CAN 总线、无线射频、应用系统及高级攻击等 6 大攻击维度，  
+并具备**目标系统智能指纹识别**、**MCP 多智能体自主渗透策略**与 **AI 驱动（基于阿里千问 Qwen 大模型）中文安全报告生成**能力。
 
 </div>
 
@@ -39,6 +39,16 @@
 </div>
 
 > 提供 **Global Auto Scan**（全局自动扫描）和 **Manual Diagnostic**（手动诊断）两种操作模式。
+
+---
+
+### 🤖 Agent Scan - 多Agent自主渗透测试
+
+<div align="center">
+  <img src="assets/agent_scan.png" width="90%" alt="Agent Scan" />
+</div>
+
+> 提供 **Agent Scan**（多Agent自主渗透测试）。
 
 ---
 
@@ -69,8 +79,9 @@
 | 🎯 **67 个真实 PoC 模块** | 全部使用原生 Python 库（`scapy`、`socket`、`subprocess`、`python-can`）进行真实网络交互，非模拟演示 |
 | 🧠 **智能目标指纹识别** | 扫描前自动探测目标操作系统（QNX / Android / Linux），跳过不适用的漏洞项 |
 | 🔒 **安全的 PoC 检测模式** | 所有检测仅发送 1~3 个验证探测包，绝不导致目标系统崩溃或失能 |
-| 🤖 **AI 中文安全报告** | 集成 Gemini 2.5 Flash API，自动生成中文专业安全评估报告，含风险等级、漏洞分析与修复建议 |
-| 📄 **PDF 报告导出** | 支持将扫描结果与 AI 报告一键导出为 PDF 文件，便于存档与汇报 |
+| 🤖 **AI 中文安全报告** | 接入阿里千问（DashScope Qwen）大模型 API，自动生成中文专业安全评估报告，含风险等级、漏洞分析与修复建议 |
+| 🕵️ **多 Agent 自主渗透** | 全新基于 MCP 协议与 OpenAI Function Calling 标准构建的四阶段特化 Agent（侦察、决策、执行、评估），全自动完成台架渗透 |
+| 📄 **PDF 报告导出** | 支持将原生的 Markdown 分析日志、执行信息一键高质量导出排版精美的 PDF 报告文件，便于存档与汇报 |
 | 🌐 **全栈攻击面覆盖** | 涵盖侦察、网络服务、CAN 总线、无线射频、应用系统、高级攻击 6 大维度 |
 | ⚙️ **灵活参数化输入** | 按需输入 IP、蓝牙 MAC、CAN 接口、Wi-Fi 接口等，仅扫描与输入参数相关的漏洞 |
 | 👥 **多用户 RBAC 权限管理** | 支持管理员/普通用户角色，管理员可查看全局扫描历史及管理账户 |
@@ -100,7 +111,7 @@
 │         Dashboard · Scanner · PoC Database · Scan History         │
 │              Profile · UserManagement · AuthPage                  │
 ├────────────────────────┬─────────────────────────────────────────┤
-│   Gemini AI Service    │           Flask 后端 API                 │
+│    Qwen AI Service     │           Flask 后端 API                 │
 │   geminiService.ts     │           server.py (:5002)              │
 │   (中文报告生成)         │                                         │
 │                        │  /api/health        /api/list_pocs       │
@@ -111,7 +122,7 @@
 ├────────────────────────┴─────────────────────────────────────────┤
 │                     MySQL 扫描历史数据库                            │
 ├──────────────────────────────────────────────────────────────────┤
-│                   Pocs/ (61 个 Python 插件)                        │
+│                   Pocs/ (67 个 Python 插件)                        │
 │  reconnaissance · network · canbus · wireless · application · advanced │
 │       scapy · python-can · AF_BLUETOOTH · raw socket · ...        │
 └──────────────────────────────────────────────────────────────────┘
@@ -140,8 +151,8 @@ cd AutoSec_Guard
 cd client
 npm install
 
-# 3. 配置 Gemini API Key（用于 AI 中文报告生成）
-echo "API_KEY=your_gemini_api_key_here" > .env.local
+# 3. 配置 Qwen API Key（用于多智能体驱动及 AI 中文报告生成）
+echo "DASHSCOPE_API_KEY=your_dashscope_api_key_here" > .env.local
 
 # 4. 安装后端 Python 依赖
 cd ../server
@@ -209,7 +220,7 @@ AutoSec_Guard/
 │   │   └── ScanLogs.tsx         #     实时扫描日志组件
 │   ├── services/                #   服务层
 │   │   ├── api.ts               #     后端 REST API 通信接口
-│   │   └── geminiService.ts     #     Gemini AI 中文报告生成
+│   │   └── geminiService.ts     #     Qwen AI 中文报告与大模型接口（保留原文件名）
 │   ├── App.tsx                  #   主应用与路由（侧边栏导航）
 │   ├── index.tsx                #   React 渲染入口
 │   ├── index.html               #   HTML 模板（浏览器标题：智驭安盾）

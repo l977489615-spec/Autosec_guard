@@ -576,7 +576,8 @@ def save_session(current_user):
                 "results": results,
                 "logs": logs,
                 "aiReport": ai_report,
-                "connection": connection
+                "connection": connection,
+                "mode": data.get("mode", "batch")
             })
             history.completed_at = datetime.datetime.utcnow()
             history.risk_score = risk_score
@@ -594,7 +595,8 @@ def save_session(current_user):
                     "results": results,
                     "logs": logs,
                     "aiReport": ai_report,
-                    "connection": connection
+                    "connection": connection,
+                    "mode": data.get("mode", "batch")
                 }),
                 risk_score=risk_score
             )
@@ -704,9 +706,142 @@ def execute_script():
         if os.path.exists(temp_script_path):
             os.remove(temp_script_path)
 
+# ==========================================
+# Patent-1: Topology-Aware Scan Endpoint
+# ==========================================
+
+@app.route('/api/topology', methods=['POST'])
+@token_required
+def topology_scan(current_user):
+    """
+    拓扑感知网络扫描 — 发现安全网关、枚举 ECU 节点、推荐最优攻击向量
+    """
+    data = request.json or {}
+    target_ip = data.get('target_ip')
+    if not target_ip:
+        return jsonify({"error": "target_ip is required"}), 400
+
+    try:
+        from topology_scanner import TopologyAwareScanner
+        scanner = TopologyAwareScanner(target_ip, timeout=4.0)
+        topo = scanner.scan()
+        logger.info(f"Topology scan by {current_user.username}: {target_ip} -> "
+                    f"SEC-GW={topo.has_security_gateway}, vector={topo.recommended_attack_vector}")
+        return jsonify(topo.to_dict())
+    except ImportError:
+        return jsonify({"error": "topology_scanner module not found"}), 500
+    except Exception as e:
+        logger.error(f"Topology scan error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ==========================================
+# Patent-1: Adaptive Context Endpoint (IVI/Static CAN)
+# ==========================================
+
+@app.route('/api/adaptive-context', methods=['POST'])
+@token_required
+def adaptive_context(current_user):
+    """
+    自适应上下文探测 — 针对 IVI 台架测试场景。
+    基于已知开放端口，探测：
+      1. 服务指纹 → 自动裁剪相关 PoC 集合
+      2. IVI 系统负载状态 → 推荐扫描节奏
+      3. 认证机制 (SSH/HTTP/UDS) → 推荐最优利用策略
+      4. 协议响应反馈历史 → 闭环决策依据
+    """
+    data = request.json or {}
+    target_ip = data.get('target_ip')
+    open_ports = data.get('open_ports', [])
+
+    if not target_ip:
+        return jsonify({"error": "target_ip is required"}), 400
+
+    try:
+        from physical_safety_monitor import get_or_create_engine, clear_engine
+        if data.get('reset', False):
+            clear_engine(target_ip)
+        engine = get_or_create_engine(target_ip)
+        summary = engine.initialize(open_ports)
+        logger.info(
+            f"Adaptive context by {current_user.username}: {target_ip}, "
+            f"services={summary.get('detected_services')}, "
+            f"load={summary.get('ivi_load', {}).get('status')}"
+        )
+        return jsonify(summary)
+    except Exception as e:
+        logger.error(f"Adaptive context error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ==========================================
+# Patent-2: Multi-Agent Orchestrator Endpoint
+# ==========================================
+
+@app.route('/api/agent-scan', methods=['POST'])
+@token_required
+def agent_scan(current_user):
+    """
+    启动 4-Agent 自主协作渗透测试（侦察 → 决策 → 执行 → 评估）
+    使用 MCP 工具 + Qwen (千问) Function Calling 驱动
+    """
+    data = request.json or {}
+    target_ip = data.get('target_ip')
+    target_name = data.get('target_name', 'Vehicle Target')
+    phase = data.get('phase')  # 可指定单独执行某个 phase
+    context = data.get('context', '')
+    # 可选资源参数（用于 Agent 智能过滤 PoC）
+    can_interface  = data.get('can_interface', '')
+    bluetooth_mac  = data.get('bluetooth_mac', '')
+    wifi_interface = data.get('wifi_interface', '')
+
+    if not target_ip:
+        return jsonify({"error": "target_ip is required"}), 400
+
+    logger.info(f"Agent scan started by {current_user.username}: {target_name} ({target_ip})")
+
+    try:
+        from agent_orchestrator import AgentOrchestrator
+        orch = AgentOrchestrator(
+            target_ip=target_ip,
+            target_name=target_name,
+            can_interface=can_interface,
+            bluetooth_mac=bluetooth_mac,
+            wifi_interface=wifi_interface,
+        )
+
+
+        if phase:
+            # 单 Phase 模式（用于步进式调试）
+            result = orch.run_phase(phase, context=context)
+            return jsonify({
+                "phase": phase,
+                "target_ip": target_ip,
+                "result": result,
+            })
+        else:
+            # 全量 4-Agent 协作模式
+            report = orch.run_full_assessment()
+            logger.info(f"Agent scan completed for {target_ip} in {report['duration_seconds']}s")
+            return jsonify(report)
+
+    except ImportError as e:
+        return jsonify({"error": f"Agent module not available: {e}"}), 500
+    except Exception as e:
+        logger.error(f"Agent scan error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == '__main__':
     logger.info(f"AutoSec Execution Engine starting on port 5002...")
     logger.info(f"PoCs directory: {POCS_DIR}")
+
+    # ── 初始化自适应上下文引擎（Patent-1: Adaptive Context for IVI Lab）──
+    try:
+        from physical_safety_monitor import AdaptiveContextEngine
+        logger.info("Adaptive Context Engine loaded (IVI service-fingerprint + load-adaptive mode)")
+    except Exception as e:
+        logger.warning(f"Adaptive Context Engine load warning: {e}")
     
     poc_count = 0
     categories = []
@@ -720,6 +855,8 @@ if __name__ == '__main__':
                 poc_count += 1
                 
     logger.info(f"Available PoC files: {poc_count} across {len(categories)} categories: {', '.join(sorted(categories))}")
+    logger.info("New endpoints: /api/topology, /api/physical-state, /api/agent-scan")
+
     # Bind to 0.0.0.0 to allow access if frontend is on a different device
     # Disable flask default click logger to favor our custom logger
     log = logging.getLogger('werkzeug')

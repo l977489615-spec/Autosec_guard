@@ -54,7 +54,8 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                             logs: isWrapper && parsedJson.logs ? parsedJson.logs : ['Logs not saved to previous database schema.'],
                             aiReport: isWrapper ? parsedJson.aiReport : null,
                             riskScore: h.risk_score,
-                            username: h.username
+                            username: h.username,
+                            mode: isWrapper && parsedJson.mode ? parsedJson.mode : 'batch'
                         };
                     });
                     setDbHistory(mappedHistory);
@@ -90,7 +91,12 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                     {/* Meta Info */}
                     <div className="space-y-6 flex flex-col">
                         <div className="bg-cyber-800 border border-cyber-700 p-6 rounded-lg">
-                            <h2 className="text-xl font-bold text-white mb-2">{selectedSession.targetName}</h2>
+                            <div className="flex items-center gap-3 mb-2">
+                                <h2 className="text-xl font-bold text-white">{selectedSession.targetName}</h2>
+                                {selectedSession.mode === 'agent' && (
+                                    <span className="text-[10px] bg-purple-900/40 text-purple-300 border border-purple-700 px-2 py-0.5 rounded uppercase tracking-wider">Agent Scan</span>
+                                )}
+                            </div>
                             <div className="text-sm text-gray-400 font-mono mb-4">{selectedSession.id}</div>
 
                             <div className="space-y-3">
@@ -196,25 +202,30 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                         <div
                             key={session.id}
                             onClick={() => setSelectedSession(session)}
-                            className="bg-cyber-800 border border-cyber-700 p-4 rounded-lg hover:border-cyber-500 cursor-pointer transition-all flex justify-between items-center group relative overflow-hidden"
+                            className="bg-cyber-800 border border-cyber-700 p-5 rounded-lg hover:border-cyber-500 cursor-pointer transition-all flex justify-between items-center group relative overflow-hidden"
                         >
-                            {/* Admin View: Show the User who ran it */}
-                            {currentUser.role === 'admin' && (
-                                <div className="absolute top-0 right-0 bg-cyber-900 border-b border-l border-cyber-700 px-3 py-1 rounded-bl-lg text-[10px] text-gray-400 font-mono">
-                                    OPERATOR: <span className="text-cyber-accent">{session.username || 'System'}</span>
-                                </div>
-                            )}
 
                             <div className="flex items-center gap-4">
-                                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${session.results.filter(r => r.vulnerable).length > 0 ? 'bg-red-900/20 text-red-500' : 'bg-green-900/20 text-green-500'}`}>
+                                <div className={`w-10 h-10 shrink-0 rounded-full flex items-center justify-center ${session.results.filter(r => r.vulnerable).length > 0 ? 'bg-red-900/20 text-red-500' : 'bg-green-900/20 text-green-500'}`}>
                                     {session.results.filter(r => r.vulnerable).length > 0 ? <AlertTriangle size={20} /> : <Shield size={20} />}
                                 </div>
-                                <div>
-                                    <h3 className="font-bold text-white">{session.targetName}</h3>
-                                    <div className="flex flex-col sm:flex-row gap-1 sm:gap-3 text-xs text-gray-400 mt-1">
+                                <div className="flex flex-col justify-center">
+                                    <div className="flex items-center gap-2 mb-1.5">
+                                        <h3 className="font-bold text-white text-base leading-none">{session.targetName}</h3>
+                                        {session.mode === 'agent' && (
+                                            <span className="text-[10px] bg-purple-900/40 text-purple-300 border border-purple-700 px-2 py-0.5 rounded leading-none flex items-center">AGENT SCAN</span>
+                                        )}
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-400 leading-none">
                                         <span className="font-mono">{session.id}</span>
-                                        <span className="hidden sm:inline">|</span>
+                                        <span className="hidden sm:inline opacity-30">|</span>
                                         <span>{new Date(session.startTime).toLocaleString()}</span>
+                                        {currentUser.role === 'admin' && (
+                                            <>
+                                                <span className="hidden sm:inline opacity-30">|</span>
+                                                <span className="font-mono">OP: <span className="text-cyber-accent">{session.username || 'System'}</span></span>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
                             </div>

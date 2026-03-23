@@ -16,8 +16,6 @@ class SOMEIPServiceDiscoveryPlugin(IVIVulnerabilityPlugin):
     且默认无认证机制。攻击者接入车载以太网后，可枚举全部 ECU 服务及控制端口，
     进而针对性地发起注入或中间人攻击。
     
-    WP 来源: 2025.8 杭州 CCF - 极氪 "SOME/IP 车辆控制报文" 题目（WP-敏感信息-6）
-    
     检测逻辑:
     1. 向 SOME/IP SD 广播地址（224.0.0.1:30490）发送 FindService 消息
     2. 同时监听目标 IP 的 SD 单播响应（30490 端口）

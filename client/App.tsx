@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LayoutDashboard, Radio, Database, Shield, Github, History, User } from 'lucide-react';
+import { LayoutDashboard, Radio, Database, Shield, Github, History, User, Bot } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Scanner from './components/Scanner';
 import PocDatabase from './components/PocDatabase';
@@ -7,6 +7,7 @@ import ScanHistory from './components/ScanHistory';
 import AuthPage from './components/AuthPage';
 import Profile from './components/Profile';
 import UserManagement from './components/UserManagement';
+import AgentScan from './components/AgentScan';
 import { ScanSession } from './types';
 
 enum View {
@@ -14,6 +15,7 @@ enum View {
   SCANNER = 'scanner',
   DATABASE = 'database',
   HISTORY = 'history',
+  AGENT_SCAN = 'agent_scan',
   PROFILE = 'profile',
   USER_MANAGEMENT = 'user_management'
 }
@@ -135,6 +137,14 @@ const App: React.FC = () => {
           </button>
 
           <button
+            onClick={() => setCurrentView(View.AGENT_SCAN)}
+            className={`w-full flex items-center p-3 rounded-lg transition-colors ${currentView === View.AGENT_SCAN ? 'bg-cyan-900/60 text-cyan-400 border-l-4 border-cyan-400' : 'text-gray-400 hover:bg-cyber-700 hover:text-white'}`}
+          >
+            <Bot size={20} />
+            <span className="hidden lg:block ml-3 font-medium">Agent Scan</span>
+          </button>
+
+          <button
             onClick={() => setCurrentView(View.DATABASE)}
             className={`w-full flex items-center p-3 rounded-lg transition-colors ${currentView === View.DATABASE ? 'bg-cyber-700 text-cyber-accent border-l-4 border-cyber-accent' : 'text-gray-400 hover:bg-cyber-700 hover:text-white'}`}
           >
@@ -149,6 +159,7 @@ const App: React.FC = () => {
             <History size={20} />
             <span className="hidden lg:block ml-3 font-medium">Scan History</span>
           </button>
+
 
           <button
             onClick={() => setCurrentView(View.PROFILE)}
@@ -209,6 +220,7 @@ const App: React.FC = () => {
             {currentView === View.SCANNER && 'Vulnerability Scanner'}
             {currentView === View.DATABASE && 'Threat Intelligence Database'}
             {currentView === View.HISTORY && 'Scan Records & Audit'}
+            {currentView === View.AGENT_SCAN && 'Multi-Agent Autonomous Pentest'}
             {currentView === View.PROFILE && 'User Profile & Settings'}
             {currentView === View.USER_MANAGEMENT && 'System Operators'}
           </h1>
@@ -246,6 +258,11 @@ const App: React.FC = () => {
             )}
             {currentView === View.DATABASE && <PocDatabase />}
             {currentView === View.HISTORY && <ScanHistory localHistory={scanHistory} currentUser={user} token={token} onUnauthorized={handleUnauthorized} />}
+
+            {/* AgentScan: always mounted to preserve state across navigation */}
+            <div style={{ display: currentView === View.AGENT_SCAN ? 'flex' : 'none' }} className="flex-col h-full">
+              {token && <AgentScan token={token} />}
+            </div>
 
             {currentView === View.PROFILE && (
               <Profile

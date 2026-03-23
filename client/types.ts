@@ -67,7 +67,7 @@ export interface ScanSession {
   startTime: string;
   endTime?: string;
   status: 'idle' | 'connecting' | 'running' | 'completed' | 'failed';
-  mode: 'batch' | 'manual';
+  mode: 'batch' | 'manual' | 'agent';
   logs: ScanLog[];
   results: ScanResult[];
   riskScore: number;

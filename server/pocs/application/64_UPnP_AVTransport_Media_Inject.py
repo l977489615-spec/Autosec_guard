@@ -21,9 +21,6 @@ class UPnPAVTransportMediaInjectPlugin(IVIVulnerabilityPlugin):
     
     完整攻击链：协议未授权访问 → 媒体强制加载 → 媒体解析器崩溃（DoS）
     
-    WP 来源: 2025.8 杭州 CCF - 极氪 IVI 系统 UPnP AVTransport SOAP 接口
-             未认证远程控制漏洞（WP-IVI-12 & WP-IVI-13）
-    
     与现有 PoC #17 的区别: 本 PoC 实现完整攻击链：
     - 设置媒体 URI 并发送 Play 指令
     - 本地启动临时 HTTP 服务验证目标是否主动回连（证明执行了播放）

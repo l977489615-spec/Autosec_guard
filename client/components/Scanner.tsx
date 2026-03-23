@@ -307,75 +307,69 @@ const Scanner: React.FC<ScannerProps> = ({
   const handleDownloadPdf = () => {
     if (!session.aiReport) return;
 
-    const reportElement = document.getElementById('ai-report-content');
-    if (!reportElement) return;
+    const now = new Date(session.startTime || Date.now()).toLocaleString('zh-CN', { hour12: false });
+    const targetInfo = session.targetName || session.connection.ip || 'Unknown Target';
+    
+    // Parse Markdown manually like AgentScan to ensure clean print styles
+    const reportHtml = session.aiReport
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+      .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+      .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+      .replace(/^[-*] (.+)$/gm, '<li>$1</li>')
+      .replace(/\n\n/g, '</p><p>')
+      .replace(/\n/g, '<br/>');
 
-    // Use native browser printing to generate a perfectly formatted PDF
-    // capturing the EXACT original visual styles and DOM elements.
+    const html = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>AutoSec Guard 安全评估报告</title>
+  <style>
+    body { font-family: 'Arial', 'SimSun', sans-serif; color: #111; background: #fff; margin: 40px; line-height: 1.7; font-size: 14px; }
+    .header { border-bottom: 2px solid #1e40af; padding-bottom: 16px; margin-bottom: 24px; }
+    .header h1 { font-size: 22px; color: #1e40af; margin: 0 0 8px; }
+    .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 24px; font-size: 13px; color: #444; }
+    .meta span { display: block; }
+    .meta .label { font-weight: bold; color: #222; }
+    .section { margin-top: 24px; }
+    h1, h2, h3 { color: #1e3a8a; page-break-after: avoid; }
+    h2 { font-size: 16px; border-left: 4px solid #3b82f6; padding-left: 8px; margin-top: 20px; }
+    h3 { font-size: 14px; color: #1e40af; margin-top: 14px; }
+    p { margin: 6px 0; }
+    li { margin: 4px 0 4px 20px; }
+    .content { max-width: 800px; }
+    @page { margin: 2cm; }
+    @media print { body { margin: 0; } }
+  </style>
+</head>
+<body>
+  <div class="content">
+    <div class="header">
+      <h1>AutoSec Guard 智能网联汽车安全评估报告</h1>
+      <div class="meta">
+        <span><span class="label">扫描目标：</span>${targetInfo}</span>
+        <span><span class="label">扫描时间：</span>${now}</span>
+        <span><span class="label">报告类型：</span>常规扫描引擎报告</span>
+        <span><span class="label">工具版本：</span>AutoSec Guard v2.0 · Qwen-Max (千问)</span>
+      </div>
+    </div>
+    <div class="section">
+      <p>${reportHtml}</p>
+    </div>
+  </div>
+  <script>window.onload = function(){ window.print(); }</script>
+</body>
+</html>`;
+
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
       alert("Please allow popups to generate the PDF report.");
       return;
     }
 
-    const reportHtml = reportElement.innerHTML;
-
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>智驭安盾_Report_${session.id}</title>
-          <script src="https://cdn.tailwindcss.com/3.4.5?plugins=typography"></script>
-          <style>
-            body { 
-              background-color: #ffffff;
-              color: #111111;
-              padding: 40px; 
-              font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-            }
-            /* Force light mode styles on all Tailwind elements */
-            .prose, .prose * {
-              color: #111111 !important;
-            }
-            .prose h1, .prose h2, .prose h3, .prose h4, .prose strong {
-              color: #000000 !important;
-            }
-            @media print {
-              body { 
-                padding: 0;
-              }
-              .bg-black\\/40, .bg-cyber-900 {
-                background-color: transparent !important;
-              }
-            }
-          </style>
-        </head>
-        <body class="bg-white text-gray-900">
-          <div class="mb-8 border-b border-gray-300 pb-4">
-            <h1 class="text-2xl font-bold tracking-[0.2em] text-black uppercase mb-2">Tactical Security Assessment</h1>
-            <div class="text-sm text-gray-700">
-              <p><strong>Session ID:</strong> ${session.id}</p>
-              <p><strong>Target Name:</strong> ${session.targetName || 'Unknown Target'}</p>
-              <p><strong>Date:</strong> ${new Date(session.startTime || Date.now()).toLocaleString()}</p>
-              <p><strong>Global Risk Score:</strong> ${session.riskScore}%</p>
-            </div>
-          </div>
-          <!-- Exact clone of the React rendered output but with light mode override -->
-          <div class="prose max-w-none text-sm text-gray-900 font-sans p-2">
-            ${reportHtml}
-          </div>
-        </body>
-      </html>
-    `;
-
-    printWindow.document.write(htmlContent);
+    printWindow.document.write(html);
     printWindow.document.close();
-
-    // Give Tailwind a second to parse and apply styles before printing
-    setTimeout(() => {
-      printWindow.focus();
-      printWindow.print();
-    }, 1000);
   };
 
   const handleLaunchManualTest = (poc: POC) => {

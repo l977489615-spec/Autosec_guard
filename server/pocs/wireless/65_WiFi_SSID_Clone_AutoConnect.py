@@ -14,8 +14,6 @@ class WiFiSSIDCloneAutoConnectPlugin(IVIVulnerabilityPlugin):
     攻击者可伪造与已知热点相同的 SSID，使车机自动将流量转发至攻击者控制的 AP，
     实现中间人攻击（MitM）。
     
-    奔腾 "车载WiFi未授权连接" 
-    
     检测逻辑（被动，不发射信号）:
     1. 使用无线网卡扫描当前环境中的 SSID 列表
     2. 检测是否存在车机常用的默认热点名称（明显缺乏认证机制）
