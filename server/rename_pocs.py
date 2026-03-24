@@ -1,113 +1,104 @@
 import os
-import shutil
+import re
 
-POCS_DIR = "/Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/Pocs"
-CONSTANTS_FILE = "/Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/constants.ts"
+# =================================================================
+# AutoSec Guard - PoC Re-enumeration & Standardization Script
+# This script renames PoC files sequentially and updates all 
+# internal/external references (metadata, constants.ts).
+# =================================================================
 
-# Original filename to New desired filename mapping
-MAPPING = {
-    # Phase 1: Recon (8)
-    "32_ICMP_Host_Discovery.py": "01_ICMP_Host_Discovery.py",
-    "33_TCP_Port_Scan.py": "02_TCP_Port_Scan.py",
-    "34_mDNS_Service_Discovery.py": "03_mDNS_Service_Discovery.py",
-    "35_UPnP_SSDP_Discovery.py": "04_UPnP_SSDP_Discovery.py",
-    "36_SNMP_Info_Leak.py": "05_SNMP_Info_Leak.py",
-    "49_BT_SDP_Enum.py": "06_BT_SDP_Enum.py",
-    "58_TBOX_Port_Scan.py": "07_TBOX_Port_Scan.py",
-    "30_HTTP_Service_Enum.py": "08_HTTP_Service_Enum.py",
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+POCS_DIR = os.path.join(PROJECT_ROOT, "server", "pocs")
+CONSTANTS_PATH = os.path.join(PROJECT_ROOT, "client", "constants.ts")
 
-    # Phase 2: Network Services (10)
-    "27_ADB_Debug_Port.py": "09_ADB_Debug_Port.py",
-    "28_SSH_Weak_Creds.py": "10_SSH_Weak_Creds.py",
-    "13_ToyotaHarmanSSHExploit.py": "11_SSH_Hardcoded_Creds.py",
-    "29_Telnet_Service.py": "12_Telnet_Service.py",
-    "31_FTP_Anonymous.py": "13_FTP_Anonymous.py",
-    "55_MQTT_Unauth.py": "14_MQTT_Unauth.py",
-    "9_JeepDBusPlugin.py": "15_DBus_Anon_Auth.py",
-    "23_RTSPLogLeakPlugin.py": "16_RTSP_Log_Leak.py",
-    "24_DLNAAVTransportPlugin.py": "17_DLNA_AVTransport_Unauth.py",
-    "14_PioneerHTTPSExploit.py": "18_HTTPS_No_Cert_Pin.py",
+# 1. Define the desired order by category
+CATEGORIES = ["reconnaissance", "network", "canbus", "wireless", "application", "advanced"]
 
-    # Phase 3: Protocol Exploits (10)
-    "37_CAN_Bus_Sniff.py": "19_CAN_Bus_Sniff.py",
-    "38_CAN_Message_Injection.py": "20_CAN_Message_Injection.py",
-    "39_CAN_DoS_Flood.py": "21_CAN_DoS_Flood.py",
-    "40_CAN_Replay_Attack.py": "22_CAN_Replay_Attack.py",
-    "41_UDS_DiagSession_Bypass.py": "23_UDS_DiagSession_Bypass.py",
-    "0_BaseTest.py": "24_UDS_Security_Access_Brute.py", # Reused BaseTest for this since it had UDS seed-key originally
-    "42_UDS_ReadMemory.py": "25_UDS_ReadMemory.py",
-    "43_UDS_RoutineControl.py": "26_UDS_RoutineControl.py",
-    "44_OBD_VIN_Spoof.py": "27_OBD_VIN_Spoof.py",
-    "8_QNXQnetPlugin.py": "28_QNX_Qnet_File_Read.py",
+def get_all_pocs():
+    all_pocs = []
+    for cat in CATEGORIES:
+        cat_path = os.path.join(POCS_DIR, cat)
+        if not os.path.exists(cat_path):
+            continue
+        files = [f for f in os.listdir(cat_path) if f.endswith(".py") and not f.startswith("__")]
+        # Sort by their current numeric prefix
+        files.sort(key=lambda x: int(x.split("_")[0]) if x[0].isdigit() else 999)
+        for f in files:
+            all_pocs.append({
+                "category": cat,
+                "old_name": f,
+                "old_rel_path": f"{cat}/{f}"
+            })
+    return all_pocs
 
-    # Phase 4: Wireless (16)
-    "50_WiFi_Deauth.py": "29_WiFi_Deauth.py",
-    "51_WiFi_Evil_Twin.py": "30_WiFi_Evil_Twin.py",
-    "52_WiFi_KRACK.py": "31_WiFi_KRACK.py",
-    "2_FordSyncWifiPlugin.py": "32_WiFi_TI_WL18xx_Overflow.py",
-    "11_TeslaConnManExploit.py": "33_ConnMan_DHCP_Overflow.py",
-    "22_BroadpwnExploit.py": "34_Broadcom_WME_Overflow.py",
-    "20_MitsubishiWiFiExploit.py": "35_WiFi_Unauth_Vehicle_Ctrl.py",
-    "5_NissanBlueOverflowPlugin.py": "36_BT_HFP_AT_Overflow.py",
-    "45_BT_BLUFFS.py": "37_BT_BLUFFS_Key_Downgrade.py",
-    "46_BT_PerfektBlue_L2CAP.py": "38_BT_PerfektBlue_L2CAP.py",
-    "47_BT_PerfektBlue_RFCOMM.py": "39_BT_PerfektBlue_RFCOMM.py",
-    "48_BT_HFP_UAF.py": "40_BT_HFP_UAF.py",
-    "25_BluetoothKeyboardSpoofPlugin.py": "41_BT_Keystroke_Injection.py",
-    "7_BlueBornePlugin.py": "42_BlueBorne_BNEP_Overflow.py",
-    "19_BleedingToothExploit.py": "43_BleedingTooth_L2CAP.py",
-    "26_AirBorneVerifyPlugin.py": "44_AirPlay_AirBorne_UAF.py",
+def run_migration():
+    pocs = get_all_pocs()
+    print(f"[*] Found {len(pocs)} PoCs to migrate.")
+    
+    mapping = {} # old_rel_path -> new_rel_path
+    
+    # Generate new names
+    for i, poc in enumerate(pocs, 1):
+        new_id = f"{i:02d}"
+        # Remove old ID prefix from filename
+        name_part = re.sub(r"^\d+_", "", poc["old_name"])
+        poc["new_name"] = f"{new_id}_{name_part}"
+        poc["new_rel_path"] = f"{poc['category']}/{poc['new_name']}"
+        mapping[poc["old_rel_path"]] = poc["new_rel_path"]
+        print(f"    [Plan] {poc['old_rel_path']} -> {poc['new_rel_path']}")
 
-    # Phase 5: Application & Local (10)
-    "1_MazdaSQLiPlugin.py": "45_IVI_USB_SQLi.py",
-    "4_AlpineCarPlayPlugin.py": "46_CarPlay_Stack_Overflow.py",
-    "3_MercedesHiQnetPlugin.py": "47_HiQnet_Stack_Overflow_TCP.py",
-    "17_MercedesHiQnetExploit.py": "48_HiQnet_Heap_Overflow_UDP.py",
-    "21_HondaWebViewExploit.py": "49_WebView_File_Exfil.py",
-    "15_AlpineCommandInjectionPoC.py": "50_Filename_Command_Injection.py",
-    "16_MazdaCMUExploit.py": "51_USB_Path_Injection.py",
-    "56_IVI_DevMode_Bypass.py": "52_IVI_DevMode_Bypass.py",
-    "57_CarlinKit_Auth_Bypass.py": "53_Wireless_Dongle_Auth_Bypass.py",
-    "59_OTA_MITM.py": "54_OTA_MITM_Interception.py",
+    # 2. Update files on disk (Renaming)
+    # Strategy: Rename to temporary names first to avoid collisions if multiple passes are needed
+    # But since we are moving across categories or just shifting up, we can just do it carefully.
+    
+    # Sort backwards to avoid overwriting if shifting up in the same dir
+    for poc in reversed(pocs):
+        old_full = os.path.join(POCS_DIR, poc["old_rel_path"])
+        new_full = os.path.join(POCS_DIR, poc["new_rel_path"])
+        
+        if old_full == new_full:
+            continue
+            
+        print(f"[*] Renaming file: {poc['old_rel_path']} -> {poc['new_rel_path']}")
+        os.rename(old_full, new_full)
 
-    # Phase 6: Advanced/Hardware (6)
-    "10_HondaReplayPlugin.py": "55_RF_Keyfob_Replay.py",
-    # GPS doesn't have a script, but we can create a dummy one or use None.
-    "53_TPMS_Spoof.py": "57_TPMS_Signal_Spoofing.py",
-    "54_V2X_BSM_Spoof.py": "58_V2X_BSM_Injection.py",
-    "6_TeslaGatewayRacePlugin.py": "59_FW_Update_TOCTOU.py",
-    "18_SubaruUpdateExploit.py": "60_QNX_Unsigned_Firmware.py",
-    "12_KiaHyundaiAppUpgradeExploit.py": "61_USB_Unsigned_Update.py", # Need to fit this in
-}
+    # 3. Update Internal Content (Docstrings/Logger)
+    for poc in pocs:
+        file_path = os.path.join(POCS_DIR, poc["new_rel_path"])
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+            
+        # Update "Usage: python3 XX_..."
+        old_prefix = poc["old_name"].split("_")[0]
+        new_prefix = poc["new_name"].split("_")[0]
+        
+        # Replace occurrences of old filename with new filename in docstring/comments
+        content = content.replace(poc["old_name"], poc["new_name"])
+        
+        # Replace "PoC Name: XX_..." or similar patterns if they exist
+        # We also specifically look for "Usage: python3 12_..." etc.
+        content = re.sub(r"(python3\s+)(\d+)(_)", rf"\g<1>{new_prefix}\g<3>", content)
 
-# Add a dummy for GPS to make it 60 actual script files if needed, but since 12_KiaHyundai was left out, let's use it
-# The original 60 included 12_KiaHyundai, we have 61 now?
-# MAPPING length is 59 files mapped. Since one in constants.ts was missing pocFile (GPS Spoofing).
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(content)
 
-# Rename files in directory
-for old_file, new_file in MAPPING.items():
-    old_path = os.path.join(POCS_DIR, old_file)
-    new_path = os.path.join(POCS_DIR, new_file)
-    if os.path.exists(old_path):
-        os.rename(old_path, new_path)
-        print(f"Renamed: {old_file} -> {new_file}")
+    # 4. Update client/constants.ts
+    if os.path.exists(CONSTANTS_PATH):
+        print(f"[*] Updating {CONSTANTS_PATH}...")
+        with open(CONSTANTS_PATH, "r", encoding="utf-8") as f:
+            ts_content = f.read()
+            
+        for old_rel, new_rel in mapping.items():
+            # Match pocFile: 'category/XX_filename.py'
+            ts_content = ts_content.replace(f"pocFile: '{old_rel}'", f"pocFile: '{new_rel}'")
+            # Also catch double quotes just in case
+            ts_content = ts_content.replace(f'pocFile: "{old_rel}"', f'pocFile: "{new_rel}"')
 
-# Special handling for "0_BaseTest.py" becoming UDS Security Access
-with open(os.path.join(POCS_DIR, "24_UDS_Security_Access_Brute.py"), 'r', encoding='utf-8') as f:
-    content = f.read()
-    content = content.replace("0_BaseTest.py", "24_UDS_Security_Access_Brute.py")
-with open(os.path.join(POCS_DIR, "24_UDS_Security_Access_Brute.py"), 'w', encoding='utf-8') as f:
-    f.write(content)
+        with open(CONSTANTS_PATH, "w", encoding="utf-8") as f:
+            f.write(ts_content)
+        print("[+] constants.ts updated successfully.")
 
-# Update constants.ts
-with open(CONSTANTS_FILE, 'r', encoding='utf-8') as f:
-    constants = f.read()
+    print("\n[SUCCESS] All PoCs re-enumerated and synchronized!")
 
-for old_file, new_file in MAPPING.items():
-    if old_file in constants:
-        constants = constants.replace(old_file, new_file)
-
-with open(CONSTANTS_FILE, 'w', encoding='utf-8') as f:
-    f.write(constants)
-
-print("Renaming complete.")
+if __name__ == "__main__":
+    run_migration()
