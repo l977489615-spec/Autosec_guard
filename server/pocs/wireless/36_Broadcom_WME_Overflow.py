@@ -1,13 +1,13 @@
 """
 PoC Name: Broadcom WME IE Overflow
 CVE: CVE-2017-9417
-Component: Wi-Fi Firmware (Broadcom/Cypress)
+Component: Wireless Stack
 Category: Wireless
 Severity: Critical
 CVSS: 9.8
-Description: 著名的 Broadpwn 漏洞。通过发送带有畸形 WME (Wireless Multimedia Extensions) Information Element 的各种 802.11 帧，造成 Broadcom 网卡固件堆栈溢出。
+Description: 畸形WME Information Element利用Broadcom WiFi固件漏洞
 Prerequisites: 支持Monitor模式的无线网卡 (如 wlan0mon)，已安装 scapy。
-Usage: python3 34_Broadcom_WME_Overflow.py <interface>
+Usage: python3 36_Broadcom_WME_Overflow.py <interface>
 """
 import sys
 import time
@@ -78,7 +78,9 @@ class BroadcomWMEPlugin(IVIVulnerabilityPlugin):
                 "details": str(e)
             }
 
-if __name__ == '__main__':
-    iface = sys.argv[1] if len(sys.argv) > 1 else "wlan0mon"
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python3 36_Broadcom_WME_Overflow.py <interface>")
+        sys.exit(1)
     plugin = BroadcomWMEPlugin({"interface": iface})
     plugin.run_verify()

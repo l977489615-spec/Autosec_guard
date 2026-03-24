@@ -1,13 +1,13 @@
 """
-PoC Name: mDNS/Bonjour Service Discovery
+PoC Name: mDNS Service Discovery
 CVE: N/A
-Component: mDNS (Multicast DNS)
+Component: Recon Stack
 Category: Recon
 Severity: Low
 CVSS: 3.0
-Description: 通过mDNS多播查询发现网络上的服务(AirPlay, CarPlay, DLNA等)。
+Description: 通过mDNS多播查询发现AirPlay/CarPlay/DLNA等服务
 Prerequisites: 与目标同一网段。
-Usage: python3 34_mDNS_Service_Discovery.py <target_ip>
+Usage: python3 03_mDNS_Service_Discovery.py <target_ip>
 """
 import socket
 import struct
@@ -54,7 +54,10 @@ class mDNSDiscoveryPlugin(IVIVulnerabilityPlugin):
             self.results["vulnerable"] = False
         return self.results
 
+
 if __name__ == "__main__":
-    target = sys.argv[1] if len(sys.argv) > 1 else ""
+    if len(sys.argv) < 2:
+        print("Usage: python3 03_mDNS_Service_Discovery.py <target_ip>")
+        sys.exit(1)
     plugin = mDNSDiscoveryPlugin({"target_ip": target})
     plugin.run_verify()

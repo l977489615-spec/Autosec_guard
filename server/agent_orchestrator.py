@@ -81,7 +81,7 @@ if not DASHSCOPE_API_KEY:
 AUTOSEC_API = os.environ.get("AUTOSEC_API", "http://localhost:5002")
 
 
-def _direct_tool_call(tool_name: str, params: dict) -> dict:
+def _direct_tool_call(tool_name: str, params: dict, on_log: Optional[callable] = None) -> dict:
     """
     直接本地调用扫描模块 — 不依赖 MCP Server 进程。
     当 MCP Server 未启动时自动降级到此路径。
@@ -90,41 +90,59 @@ def _direct_tool_call(tool_name: str, params: dict) -> dict:
         if tool_name == "scan_ports":
             from topology_scanner import TopologyAwareScanner
             target_ip = params.get("target_ip")
+            if on_log:
+                on_log({"type": "info", "message": f"[Topology] 开始对 {target_ip} 的端口扫描..."})
             timeout = float(params.get("timeout", 2.0))
             scanner = TopologyAwareScanner(target_ip, timeout=timeout)
             scanner._scan_ports()
             nodes = scanner.topo_map.nodes
             open_ports = nodes[0].open_ports if nodes else []
             services = getattr(nodes[0], "services", []) if nodes else []
+            if on_log:
+                on_log({"type": "success", "message": f"[Topology] 端口扫描完成，开放端口: {open_ports}"})
             return {"target_ip": target_ip, "open_ports": open_ports,
                     "services": services, "port_count": len(open_ports)}
 
         elif tool_name == "get_topology":
             from topology_scanner import TopologyAwareScanner
             target_ip = params.get("target_ip")
+            if on_log:
+                on_log({"type": "info", "message": f"[Topology] 正在分析 {target_ip} 的网络拓扑结构..."})
             scanner = TopologyAwareScanner(target_ip, timeout=3.0)
             topo = scanner.scan()
+            if on_log:
+                on_log({"type": "info", "message": f"[Topology] 拓扑分析完成: SEC-GW={topo.has_security_gateway}, 推荐向量={topo.recommended_attack_vector}"})
             return topo.to_dict()
 
         elif tool_name == "get_adaptive_context":
             from physical_safety_monitor import get_or_create_engine
             target_ip = params.get("target_ip")
+            if on_log:
+                 on_log({"type": "info", "message": f"[Safety] 获取自适应防护上下文: {target_ip}"})
             open_ports = params.get("open_ports") or []
             if isinstance(open_ports, str):
                 open_ports = [int(p) for p in open_ports.split(",") if p.strip().isdigit()]
             engine = get_or_create_engine(target_ip)
-            return engine.initialize(open_ports)
+            ctx = engine.initialize(open_ports)
+            if on_log:
+                 on_log({"type": "success", "message": f"[Safety] 自适应引擎初始化完成"})
+            return ctx
 
         elif tool_name == "check_safety":
             from physical_safety_monitor import get_or_create_engine
             target_ip = params.get("target_ip", "")
             poc_name = params.get("poc_name", "")
             protocol = params.get("protocol", "")
+            if on_log:
+                on_log({"type": "info", "message": f"[Safety] 安全性检查: PoC={poc_name}, 协议={protocol}"})
             if not target_ip:
                 return {"should_run": True, "strategy": "default", "reason": "No context"}
             engine = get_or_create_engine(target_ip)
             skip, reason = engine.should_skip_poc(poc_name, protocol)
             strategy = engine.get_adaptive_strategy_for(protocol) if protocol else "default"
+            if on_log:
+                status = "阻断" if skip else "允许"
+                on_log({"type": "warning" if skip else "success", "message": f"[Safety] 检查结果: {status} 执行 ({reason or '通过'})"})
             return {
                 "should_run": not skip,
                 "strategy": strategy,
@@ -133,6 +151,8 @@ def _direct_tool_call(tool_name: str, params: dict) -> dict:
             }
 
         elif tool_name == "list_pocs":
+            if on_log:
+                on_log({"type": "info", "message": f"[Scanner] 获取可用 PoC 库清单..."})
             # 调用本地 API 获取 PoC 列表（无需认证）
             try:
                 resp = requests.get(f"{AUTOSEC_API}/api/list_pocs", timeout=10)
@@ -141,6 +161,8 @@ def _direct_tool_call(tool_name: str, params: dict) -> dict:
                     cat = params.get("category")
                     if cat:
                         pocs = [p for p in pocs if cat.lower() in p.get("category", "").lower()]
+                    if on_log:
+                        on_log({"type": "success", "message": f"[Scanner] 已加载 {len(pocs)} 个漏洞探测模块"})
                     return {"pocs": pocs, "count": len(pocs)}
             except Exception:
                 pass
@@ -153,6 +175,8 @@ def _direct_tool_call(tool_name: str, params: dict) -> dict:
                     for f in files
                     if not os.path.basename(f).startswith("_")
                     and os.path.basename(f) != "iv_plugin_base.py"]
+            if on_log:
+                on_log({"type": "info", "message": f"[Scanner] 本地加载 {len(pocs)} 个 PoC 脚本"})
             return {"pocs": pocs, "count": len(pocs)}
 
         elif tool_name == "run_poc":
@@ -166,6 +190,15 @@ def _direct_tool_call(tool_name: str, params: dict) -> dict:
                 )
                 if resp.ok:
                     data = resp.json()
+                    # 抓取 PoC 运行日志并回显
+                    if on_log and "logs" in data:
+                        if on_log:
+                            on_log({"type": "info", "message": f"[Executor] 开始执行 PoC: {poc_name}"})
+                        for log_entry in data["logs"]:
+                            on_log(log_entry)
+                        if on_log:
+                            status = "发现漏洞!" if data.get("vulnerable") else "未发现漏洞"
+                            on_log({"type": "success" if data.get("vulnerable") else "info", "message": f"[Executor] PoC 执行完毕: {status}"})
                     return {
                         "blocked": False,
                         "vulnerable": data.get("vulnerable") or data.get("status") == "vulnerable",
@@ -176,7 +209,6 @@ def _direct_tool_call(tool_name: str, params: dict) -> dict:
             except Exception as e:
                 return {"blocked": False, "error": str(e)}
 
-
         else:
             return {"error": f"Unknown tool: {tool_name}"}
 
@@ -185,7 +217,7 @@ def _direct_tool_call(tool_name: str, params: dict) -> dict:
         return {"error": str(e)}
 
 
-def call_mcp_tool(tool_name: str, params: dict, timeout: int = 90) -> dict:
+def call_mcp_tool(tool_name: str, params: dict, timeout: int = 90, on_log: Optional[callable] = None) -> dict:
     """
     调用 MCP 工具。
     优先连接外部 MCP Server（端口 5003）；
@@ -198,7 +230,12 @@ def call_mcp_tool(tool_name: str, params: dict, timeout: int = 90) -> dict:
             timeout=min(timeout, 5),  # MCP 连接探测用短超时
         )
         if resp.ok:
-            return resp.json().get("result", {})
+            result = resp.json().get("result", {})
+            # 如果是运行 PoC，抓取日志
+            if on_log and isinstance(result, dict) and "logs" in result:
+                 for log in result["logs"]:
+                     on_log(log)
+            return result
     except requests.exceptions.ConnectionError:
         pass  # MCP Server 未运行，降级到直接调用
     except Exception:
@@ -206,7 +243,7 @@ def call_mcp_tool(tool_name: str, params: dict, timeout: int = 90) -> dict:
 
     # 降级：直接本地执行
     logger.debug(f"[MCP→Direct] {tool_name} (MCP Server 不可达，使用本地执行)")
-    return _direct_tool_call(tool_name, params)
+    return _direct_tool_call(tool_name, params, on_log=on_log)
 
 
 
@@ -220,13 +257,14 @@ class QwenAgent:
     单个 Qwen Agent — 封装 LLM 调用，支持通过函数调用驱动 MCP 工具
     """
     def __init__(self, agent_name: str, system_prompt: str, mcp_tools: List[dict],
-                 model_name: str = "qwen-plus", max_turns: int = 8):
+                 model_name: str = "qwen-plus", max_turns: int = 8, on_log: Optional[callable] = None):
         self.agent_name = agent_name
         self.system_prompt = system_prompt
         self.mcp_tools = mcp_tools
         self._api_key = DASHSCOPE_API_KEY
         self._model_name = model_name
         self._max_turns = max_turns
+        self.on_log = on_log
 
     def _build_openai_tools(self) -> List[dict]:
         """将 MCP 工具格式转换为 OpenAI Function Calling 格式"""
@@ -317,8 +355,25 @@ class QwenAgent:
                     tool_params = {}
                 
                 logger.info(f"[{self.agent_name}] → MCP Tool Call: {tool_name}({json.dumps(tool_params, ensure_ascii=False)[:80]})")
+                if self.on_log:
+                    self.on_log({"type": "info", "message": f"[{self.agent_name}] 调用工具: {tool_name}({json.dumps(tool_params, ensure_ascii=False)[:60]}...)"})
 
-                result = call_mcp_tool(tool_name, tool_params)
+                result = call_mcp_tool(tool_name, tool_params, on_log=self.on_log)
+                
+                # 如果是运行 PoC 且发现漏洞，记录到结果列表中 (仅限自主模式调用)
+                if tool_name == "run_poc" and result.get("vulnerable"):
+                    # 尝试从 orchestrator 获取 findings 引用 (如果是 Orchestrator 驱动)
+                    # 这里的 _add_log 本身就是一个闭包，我们可以利用它或者直接依赖 orchestrator 状态
+                    # 这种简单方式：如果 result 有 vulnerable 且含有 evidence，则认为是一个发现
+                    pass 
+
+                # 记录详细结果到日志
+                if self.on_log:
+                    res_summary = json.dumps(result, ensure_ascii=False)
+                    if len(res_summary) > 150:
+                        res_summary = res_summary[:150] + "..."
+                    self.on_log({"type": "success", "message": f"[{self.agent_name}] 工具响应: {res_summary}"})
+
                 logger.info(f"[{self.agent_name}] ← MCP Result: {json.dumps(result, ensure_ascii=False)[:120]}")
 
                 # 将工具执行结果作为 tool 角色消息返回给大模型
@@ -445,19 +500,63 @@ class AgentOrchestrator:
         # 从 MCP Server 获取工具描述
         self.mcp_tools = self._load_mcp_tools()
 
+        # 运行日志缓冲区
+        self.current_logs: List[dict] = []
+
         # 初始化 4 个 Agent
-        self.recon_agent = QwenAgent("侦察Agent", RECON_AGENT_PROMPT, self.mcp_tools)
-        self.decision_agent = QwenAgent("决策Agent", DECISION_AGENT_PROMPT, self.mcp_tools)
+        self.recon_agent = QwenAgent("侦察Agent", RECON_AGENT_PROMPT, self.mcp_tools, on_log=self._add_log)
+        self.decision_agent = QwenAgent("决策Agent", DECISION_AGENT_PROMPT, self.mcp_tools, on_log=self._add_log)
         self.executor_agent = QwenAgent("执行Agent", EXECUTOR_AGENT_PROMPT, self.mcp_tools,
-                                           max_turns=20)
+                                           max_turns=20, on_log=self._add_log)
         self.assessment_agent = QwenAgent("评估Agent", ASSESSMENT_AGENT_PROMPT, [],
-                                            model_name="qwen-max")
+                                            model_name="qwen-max", on_log=self._add_log)
 
         # 结果存储
         self.recon_result: Optional[str] = None
         self.attack_plan: Optional[str] = None
         self.execution_results: Optional[str] = None
         self.final_report: Optional[str] = None
+
+        # 发现的漏洞清单 (Structured Findings)
+        self.findings: List[dict] = []
+
+    def _add_log(self, entry: Any):
+        """添加一条日志到缓冲区"""
+        if isinstance(entry, dict):
+            # 补全时间戳（如果缺失）
+            if "timestamp" not in entry:
+                entry["timestamp"] = time.strftime("%H:%M:%S")
+            self.current_logs.append(entry)
+            
+            # [新逻辑] 自动捕获漏洞发现：如果日志消息中包含“发现漏洞!”且来自 Executor，则记录到 findings
+            # 这种方式最鲁棒，因为 _direct_tool_call 已经处理了 vulnerable 逻辑
+            msg = entry.get("message", "")
+            if "[Executor] PoC 执行完毕: 发现漏洞!" in msg:
+                # 尝试从上下文中获取最近的 PoC 名称
+                # 我们寻找前一条“调用工具”日志
+                poc_name = "未知漏洞"
+                for prev in reversed(self.current_logs[:-1]):
+                    if "调用工具: run_poc" in prev.get("message", ""):
+                        import re
+                        match = re.search(r'poc_name":\s*"([^"]+)"', prev.get("message", ""))
+                        if match:
+                            poc_name = match.group(1)
+                        break
+                
+                # 查重并添加
+                if not any(f["name"] == poc_name for f in self.findings):
+                    self.findings.append({
+                        "name": poc_name,
+                        "vulnerable": True,
+                        "severity": "High", # 默认为高，由后续 Assessment Agent 修正
+                        "description": f"自主扫描发现目标存在 {poc_name} 风险。"
+                    })
+        else:
+            self.current_logs.append({
+                "timestamp": time.strftime("%H:%M:%S"),
+                "type": "info",
+                "message": str(entry)
+            })
 
     def _load_mcp_tools(self) -> List[dict]:
         """从 MCP Server 加载工具列表"""
@@ -554,6 +653,7 @@ class AgentOrchestrator:
             "target_ip": self.target_ip,
             "target_name": self.target_name,
             "duration_seconds": duration,
+            "logs": self.current_logs,
             "phases": {
                 "recon": self.recon_result,
                 "attack_plan": self.attack_plan,
@@ -562,29 +662,43 @@ class AgentOrchestrator:
             }
         }
 
-    def run_phase(self, phase: str, context: str = "") -> str:
+    def run_phase(self, phase: str, context: str = "") -> Dict[str, Any]:
         """单独执行某一 Phase（供 API 调用）"""
+        self.current_logs = []  # 清空前一阶段日志
+        PHASE_NAMES = {
+            "recon": "侦察 (Reconnaissance)",
+            "decision": "决策与规划 (Decision & Planning)",
+            "execute": "自主攻击执行 (Autonomous Execution)",
+            "assess": "报告生成与风险评估 (Risk Assessment)"
+        }
+        friendly_name = PHASE_NAMES.get(phase, phase)
+        self._add_log({"type": "info", "message": f"[*] 开始执行阶段: {friendly_name}"})
+        
+        result = ""
         if phase == "recon":
-            return self.recon_agent.call(
+            result = self.recon_agent.call(
                 f"对目标 {self.target_ip} 执行侦察。使用 scan_ports + get_topology。"
             )
         elif phase == "decision":
-            return self.decision_agent.call(
+            result = self.decision_agent.call(
                 f"规划针对 {self.target_ip} 的渗透测试计划。",
                 context=context,
             )
         elif phase == "execute":
-            return self.executor_agent.call(
+            result = self.executor_agent.call(
                 f"执行针对 {self.target_ip} 的渗透测试。",
                 context=context,
             )
         elif phase == "assess":
-            return self.assessment_agent.call(
+            result = self.assessment_agent.call(
                 f"生成目标 {self.target_ip} 的安全评估报告。",
                 context=context,
             )
         else:
             raise ValueError(f"Unknown phase: {phase}")
+
+        self._add_log({"type": "success", "message": f"[√] 阶段 {friendly_name} 执行完毕"})
+        return {"result": result, "logs": self.current_logs, "findings": self.findings}
 
 
 # ──────────────────────────────────────────────

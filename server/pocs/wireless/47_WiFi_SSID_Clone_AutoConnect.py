@@ -1,3 +1,14 @@
+"""
+PoC Name: WiFi SSID Clone Auto-Connect (No BSSID Validation)
+CVE: N/A
+Component: Wireless Stack
+Category: Wireless
+Severity: Medium
+CVSS: 6.5
+Description: 车载 WiFi 自动连接时仅验证 SSID，不验证 BSSID（AP MAC 地址），攻击者可伪造同名热点实施 Evil AP 中间人攻击。杭州 CCF 中奔腾车机实测可触发
+Prerequisites: 支持Monitor模式的无线网卡及scapy环境
+Usage: python3 47_WiFi_SSID_Clone_AutoConnect.py <args>
+"""
 import sys
 import subprocess
 import re
@@ -82,9 +93,21 @@ class WiFiSSIDCloneAutoConnectPlugin(IVIVulnerabilityPlugin):
         except Exception:
             pass
 
+        # 尝试 system_profiler (macOS 通用后备方案)
+        try:
+            result = subprocess.run(
+                ["system_profiler", "SPAirPortDataType"],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0 and "Network" in result.stdout:
+                self.logger.info("[+] macOS system_profiler 可用，将使用此工具扫描 WiFi 网络。")
+                return True
+        except Exception:
+            pass
+
         self.logger.warning(
-            "未找到 iwlist/iw/airport 工具，无法执行无线扫描。"
-            "请安装 wireless-tools 或 iw 包。"
+            "[-] 环境限制：未找到 iwlist/iw/airport/system_profiler 工具，"
+            "缺少无线管理工具链，无法执行真实的 Wi-Fi 主动扫描和伪造断网攻击。"
         )
         return False
 
@@ -236,7 +259,8 @@ class WiFiSSIDCloneAutoConnectPlugin(IVIVulnerabilityPlugin):
 
 
 if __name__ == "__main__":
-    iface = sys.argv[1] if len(sys.argv) > 1 else "wlan0"
-    config = {"interface": iface}
+    if len(sys.argv) < 2:
+        print("Usage: python3 47_WiFi_SSID_Clone_AutoConnect.py <args>")
+        sys.exit(1)
     plugin = WiFiSSIDCloneAutoConnectPlugin(config)
     plugin.run_verify()

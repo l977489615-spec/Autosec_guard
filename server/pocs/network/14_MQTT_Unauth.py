@@ -1,13 +1,13 @@
 """
-PoC Name: MQTT Broker Unauthenticated Subscribe
+PoC Name: MQTT Unauthenticated Subscribe
 CVE: N/A
-Component: MQTT Broker
+Component: Network Stack
 Category: Network
 Severity: High
 CVSS: 7.0
-Description: 检测MQTT Broker是否允许匿名连接和订阅,常见于车联网T-Box和云平台。
+Description: 检测MQTT Broker是否允许匿名连接和通配符订阅
 Prerequisites: 目标MQTT端口(1883)开放。
-Usage: python3 55_MQTT_Unauth.py <target_ip>
+Usage: python3 14_MQTT_Unauth.py <target_ip>
 """
 import socket
 import struct
@@ -61,9 +61,10 @@ class MQTTUnauthPlugin(IVIVulnerabilityPlugin):
             self.logger.error(f"MQTT测试失败: {e}")
             self.results["vulnerable"] = False
         return self.results
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 55_MQTT_Unauth.py <target_ip>")
+        print("Usage: python3 14_MQTT_Unauth.py <target_ip>")
         sys.exit(1)
     plugin = MQTTUnauthPlugin({"target_ip": sys.argv[1]})
     plugin.run_verify()

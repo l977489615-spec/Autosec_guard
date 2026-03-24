@@ -1,13 +1,13 @@
 """
-PoC Name: BlueSDK RFCOMM Parameter Confusion (PerfektBlue)
+PoC Name: BlueSDK RFCOMM Confusion (PerfektBlue)
 CVE: CVE-2024-45432
-Component: BlueSDK Bluetooth Stack (RFCOMM)
+Component: Wireless Stack
 Category: Wireless
 Severity: High
 CVSS: 7.5
-Description: BlueSDK RFCOMM协议中函数调用使用错误参数,导致信息泄露或异常行为。
+Description: BlueSDK RFCOMM函数调用参数错误导致信息泄露
 Prerequisites: Linux蓝牙适配器, 目标设备运行BlueSDK栈。
-Usage: python3 47_BT_PerfektBlue_RFCOMM.py <target_mac>
+Usage: python3 41_BT_PerfektBlue_RFCOMM.py <target_mac>
 """
 import sys
 import socket
@@ -48,9 +48,10 @@ class PerfektBlueRFCOMMPlugin(IVIVulnerabilityPlugin):
             self.logger.info(f"蓝牙连接失败: {e}")
             self.results["vulnerable"] = False
         return self.results
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 47_BT_PerfektBlue_RFCOMM.py <target_mac>")
+        print("Usage: python3 41_BT_PerfektBlue_RFCOMM.py <target_mac>")
         sys.exit(1)
     plugin = PerfektBlueRFCOMMPlugin({"target_ip": "N/A", "bd_addr": sys.argv[1]})
     plugin.run_verify()

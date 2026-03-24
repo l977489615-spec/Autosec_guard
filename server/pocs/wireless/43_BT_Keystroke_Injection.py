@@ -1,3 +1,14 @@
+"""
+PoC Name: Bluetooth Keystroke Injection
+CVE: CVE-2023-45866
+Component: Wireless Stack
+Category: Wireless
+Severity: High
+CVSS: 7.5
+Description: 伪造BT键盘(CoD=0x002540)进行HID注入
+Prerequisites: 兼容易受控使用的Linux蓝牙适配器(如hci0)
+Usage: sudo python3 43_BT_Keystroke_Injection.py <target_mac>
+"""
 import socket
 import sys
 import subprocess
@@ -120,12 +131,7 @@ class BluetoothKeyboardSpoofPlugin(IVIVulnerabilityPlugin):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: sudo python3 BluetoothKeyboardSpoofPlugin.py <target_mac>")
-        print("Example: sudo python3 BluetoothKeyboardSpoofPlugin.py AA:BB:CC:11:22:33")
+        print("Usage: sudo python3 43_BT_Keystroke_Injection.py <target_mac>")
         sys.exit(1)
-    
-    # 注意：这里传入的是 MAC 地址而非 IP
-    config = {"target_mac": sys.argv[1]}
-    
     plugin = BluetoothKeyboardSpoofPlugin(config)
     plugin.run_verify()

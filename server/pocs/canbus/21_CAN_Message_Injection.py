@@ -1,13 +1,13 @@
 """
 PoC Name: CAN Message Injection
 CVE: N/A
-Component: CAN Bus (SocketCAN)
-Category: Protocol
+Component: Canbus Stack
+Category: Canbus
 Severity: Critical
 CVSS: 9.0
-Description: 向CAN总线注入任意帧,验证是否缺少认证和过滤机制。
+Description: 注入UDS TesterPresent帧,验证CAN总线认证机制
 Prerequisites: SocketCAN接口, python-can库, 授权测试环境。
-Usage: python3 38_CAN_Message_Injection.py <can_interface>
+Usage: python3 21_CAN_Message_Injection.py <can_interface>
 """
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
@@ -47,7 +47,10 @@ class CANInjectionPlugin(IVIVulnerabilityPlugin):
             self.results["vulnerable"] = False
         return self.results
 
+
 if __name__ == "__main__":
-    iface = sys.argv[1] if len(sys.argv) > 1 else "can0"
+    if len(sys.argv) < 2:
+        print("Usage: python3 21_CAN_Message_Injection.py <can_interface>")
+        sys.exit(1)
     plugin = CANInjectionPlugin({"target_ip": "N/A", "can_interface": iface})
     plugin.run_verify()

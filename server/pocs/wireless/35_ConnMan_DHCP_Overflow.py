@@ -1,13 +1,13 @@
 """
 PoC Name: ConnMan DHCP Buffer Overflow
 CVE: CVE-2021-26675
-Component: Network Manager (ConnMan)
+Component: Wireless Stack
 Category: Wireless
 Severity: Critical
 CVSS: 9.8
-Description: 通过发送恶意的带有超长 Hostname Option 的 DHCP Offer，触发 IVI 系统的 ConnMan 组件内存崩溃。
+Description: 恶意DHCP Offer超长hostname溢出ConnMan
 Prerequisites: 与车机处于同一局域网（或伪造AP诱导车机连接），网卡支持收发原始数据包，已安装 scapy。
-Usage: python3 33_ConnMan_DHCP_Overflow.py <interface>
+Usage: python3 35_ConnMan_DHCP_Overflow.py <interface>
 """
 import sys
 import time
@@ -82,7 +82,9 @@ class ConnManDHCPOKPlugin(IVIVulnerabilityPlugin):
                 "details": str(e)
             }
 
-if __name__ == '__main__':
-    iface = sys.argv[1] if len(sys.argv) > 1 else "wlan0"
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python3 35_ConnMan_DHCP_Overflow.py <interface>")
+        sys.exit(1)
     plugin = ConnManDHCPOKPlugin({"interface": iface})
     plugin.run_verify()

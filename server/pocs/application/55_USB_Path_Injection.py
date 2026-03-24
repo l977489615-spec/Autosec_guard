@@ -1,13 +1,13 @@
 """
-PoC Name: USB Path Traversal (Arbitrary File Write)
+PoC Name: USB Path Traversal Injection
 CVE: N/A
-Component: VFS / OTA Update / Media Sync
-Category: Hardware/Interface
+Component: Application Stack
+Category: Application
 Severity: Critical
 CVSS: 8.5
-Description: 在本机生成一组含有畸形路径遍历(`../../../`)特征的目录和文件载荷。当插入车机并发生文件拷贝/同步(如更新Logo、导出日志)时，将覆盖车辆主系统的敏感文件。
+Description: 恶意USB目录结构利用路径操作获取反弹Shell
 Prerequisites: 本机权限。生成后须手动挂载至U盘。
-Usage: python3 51_USB_Path_Injection.py
+Usage: python3 55_USB_Path_Injection.py
 """
 import sys
 import os
@@ -61,6 +61,9 @@ class UsbPathTraversalPlugin(IVIVulnerabilityPlugin):
             self.logger.error(f"构建压缩包发生错误: {str(e)}")
             return {"status": "error", "details": str(e)}
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python3 55_USB_Path_Injection.py")
+        sys.exit(1)
     plugin = UsbPathTraversalPlugin()
     plugin.run_verify()

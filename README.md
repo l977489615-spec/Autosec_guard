@@ -76,9 +76,9 @@
 
 | 特性 | 描述 |
 |------|------|
-| 🎯 **67 个真实 PoC 模块** | 全部使用原生 Python 库（`scapy`、`socket`、`subprocess`、`python-can`）进行真实网络交互，非模拟演示 |
+| 🎯 **67 个真实 PoC 模块** | 全部使用原生 Python 库（`scapy`、`socket`、`subprocess`、`python-can`）进行真实网络交互 |
 | 🧠 **智能目标指纹识别** | 扫描前自动探测目标操作系统（QNX / Android / Linux），跳过不适用的漏洞项 |
-| 🔒 **安全的 PoC 检测模式** | 所有检测仅发送 1~3 个验证探测包，绝不导致目标系统崩溃或失能 |
+| 🔒 **安全的 PoC 检测模式** | 所有检测仅发送 1~3 个验证探测包，谨防目标系统崩溃或失能 |
 | 🤖 **AI 中文安全报告** | 接入阿里千问（DashScope Qwen）大模型 API，自动生成中文专业安全评估报告，含风险等级、漏洞分析与修复建议 |
 | 🕵️ **多 Agent 自主渗透** | 全新基于 MCP 协议与 OpenAI Function Calling 标准构建的四阶段特化 Agent（侦察、决策、执行、评估），全自动完成台架渗透 |
 | 📄 **PDF 报告导出** | 支持将原生的 Markdown 分析日志、执行信息一键高质量导出排版精美的 PDF 报告文件，便于存档与汇报 |
@@ -108,23 +108,23 @@
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │                        React 前端 (TypeScript + Vite)             │
-│         Dashboard · Scanner · PoC Database · Scan History         │
-│              Profile · UserManagement · AuthPage                  │
+│         Dashboard · Scanner · PoC Database · Scan History        │
+│              Profile · UserManagement · AuthPage                 │
 ├────────────────────────┬─────────────────────────────────────────┤
 │    Qwen AI Service     │           Flask 后端 API                 │
-│   LLMService.ts     │           server.py (:5002)              │
-│   (中文报告生成)         │                                         │
-│                        │  /api/health        /api/list_pocs       │
-│                        │  /api/run_poc       /api/execute         │
-│                        │  /api/fingerprint   /api/save_session    │
-│                        │  /api/history       /api/login           │
-│                        │  /api/register      /api/admin/*         │
+│     LLMService.ts      │           server.py (:5002)             │
+│      (中文报告生成)      │                                         │
+│                        │  /api/health        /api/list_pocs      │
+│                        │  /api/run_poc       /api/execute        │
+│                        │  /api/fingerprint   /api/save_session   │
+│                        │  /api/history       /api/login          │
+│                        │  /api/register      /api/admin/*        │
 ├────────────────────────┴─────────────────────────────────────────┤
 │                     MySQL 扫描历史数据库                            │
 ├──────────────────────────────────────────────────────────────────┤
 │                   Pocs/ (67 个 Python 插件)                        │
 │  reconnaissance · network · canbus · wireless · application · advanced │
-│       scapy · python-can · AF_BLUETOOTH · raw socket · ...        │
+│       scapy · python-can · AF_BLUETOOTH · raw socket · ...       │
 └──────────────────────────────────────────────────────────────────┘
 ```
 

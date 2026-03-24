@@ -1,13 +1,13 @@
 """
-PoC Name: UPnP/SSDP Device Discovery
+PoC Name: UPnP/SSDP Discovery
 CVE: N/A
-Component: UPnP/SSDP Protocol
+Component: Recon Stack
 Category: Recon
 Severity: Low
 CVSS: 3.0
-Description: 通过SSDP M-SEARCH广播发现UPnP设备和服务。
+Description: 通过SSDP M-SEARCH广播发现UPnP设备
 Prerequisites: 与目标同一网段。
-Usage: python3 35_UPnP_SSDP_Discovery.py <target_ip>
+Usage: python3 04_UPnP_SSDP_Discovery.py <target_ip>
 """
 import socket
 import sys
@@ -64,7 +64,10 @@ class UPnPSSDPPlugin(IVIVulnerabilityPlugin):
             self.results["vulnerable"] = False
         return self.results
 
+
 if __name__ == "__main__":
-    target = sys.argv[1] if len(sys.argv) > 1 else ""
+    if len(sys.argv) < 2:
+        print("Usage: python3 04_UPnP_SSDP_Discovery.py <target_ip>")
+        sys.exit(1)
     plugin = UPnPSSDPPlugin({"target_ip": target})
     plugin.run_verify()

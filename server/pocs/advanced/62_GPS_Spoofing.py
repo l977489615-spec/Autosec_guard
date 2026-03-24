@@ -1,13 +1,13 @@
 """
 PoC Name: GPS Signal Spoofing
 CVE: N/A
-Component: ADAS / Navigation
-Category: ADAS
+Component: Multiple
+Category: Advanced
 Severity: High
 CVSS: 7.0
-Description: 使用HackRF广播伪造GPS L1信号，导致车辆定位偏移或ADAS功能受影响。
+Description: 使用HackRF广播伪造GPS L1信号
 Prerequisites: 需安装 hackrf 驱动组件，连接 HackRF SDR 硬件，并预先使用 gps-sdr-sim 生成 gpssim.bin 信号源文件。
-Usage: python3 56_GPS_Spoofing.py
+Usage: python3 62_GPS_Spoofing.py
 """
 import os
 import time
@@ -116,6 +116,9 @@ class GPSSpoofingPlugin(IVIVulnerabilityPlugin):
                 "details": str(e)
             }
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python3 62_GPS_Spoofing.py")
+        sys.exit(1)
     plugin = GPSSpoofingPlugin()
-    plugin.run()
+    plugin.run_verify()

@@ -1,13 +1,13 @@
 """
 PoC Name: WebView file:// Data Exfiltration
 CVE: N/A
-Component: In-Vehicle App (Android/Linux WebView)
-Category: IVI System
+Component: Application Stack
+Category: Application
 Severity: Medium
 CVSS: 5.0
-Description: 生成并挂载含有恶意的 JavaScript 的 HTML 页面，配合 XSS 或跨域问题让车机 WebView 触发本地敏感文件读取并窃取回传给攻击机。
+Description: WebView file:// URI访问窃取本地数据库
 Prerequisites: 车内网络可达，需要先诱导车机由于其他漏洞(例如隐蔽的二维码/推送)打开此服务器托管的 HTML。
-Usage: python3 49_WebView_File_Exfil.py <bind_ip>
+Usage: python3 53_WebView_File_Exfil.py <bind_ip>
 """
 import sys
 import os
@@ -125,7 +125,9 @@ class WebViewExfilPlugin(IVIVulnerabilityPlugin):
                  "details": str(e)
              }
 
-if __name__ == '__main__':
-    ip = sys.argv[1] if len(sys.argv) > 1 else "0.0.0.0"
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python3 53_WebView_File_Exfil.py <bind_ip>")
+        sys.exit(1)
     plugin = WebViewExfilPlugin({"target_ip": ip})
     plugin.run_verify()

@@ -1,13 +1,13 @@
 """
 PoC Name: TCP Port Scan
 CVE: N/A
-Component: Network Stack (TCP)
+Component: Recon Stack
 Category: Recon
-Severity: Info
-CVSS: 0.0
-Description: 对IVI系统执行Top-50常见端口扫描,发现开放的服务。
+Severity: Medium
+CVSS: 5.0
+Description: 扫描IVI系统Top-50常见TCP端口
 Prerequisites: 网络可达性。
-Usage: python3 33_TCP_Port_Scan.py <target_ip>
+Usage: python3 02_TCP_Port_Scan.py <target_ip>
 """
 import socket
 import sys
@@ -51,9 +51,10 @@ class TCPPortScanPlugin(IVIVulnerabilityPlugin):
             self.logger.info("未发现开放端口")
         return self.results
 
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 33_TCP_Port_Scan.py <target_ip>")
+        print("Usage: python3 02_TCP_Port_Scan.py <target_ip>")
         sys.exit(1)
     plugin = TCPPortScanPlugin({"target_ip": sys.argv[1]})
     plugin.run_verify()

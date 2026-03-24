@@ -1,11 +1,11 @@
 """
 PoC Name: Wireless Dongle Auth Bypass
 CVE: CVE-2025-2765
-Component: Wireless CarPlay/Android Auto Dongle
+Component: Application Stack
 Category: Application
 Severity: Critical
 CVSS: 8.8
-Description: 利用无线CarPlay/AA适配器硬编码Wi-Fi凭据和认证绕过漏洞。
+Description: 无线CarPlay/AA适配器硬编码WiFi凭据和认证绕过
 Prerequisites: 目标无线适配器可达。
 Usage: python3 57_CarlinKit_Auth_Bypass.py <target_ip>
 """
@@ -56,6 +56,7 @@ class CarlinKitBypassPlugin(IVIVulnerabilityPlugin):
         self.logger.info("[-] 未发现可利用的管理接口")
         self.results["vulnerable"] = False
         return self.results
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 57_CarlinKit_Auth_Bypass.py <target_ip>")

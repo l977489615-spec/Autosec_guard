@@ -1,13 +1,13 @@
 """
-PoC Name: Firmware Update TOCTOU Race Condition
+PoC Name: Firmware Update TOCTOU Race
 CVE: N/A
-Component: OTA / USB Update Service
-Category: OS/Firmware
-Severity: High
-CVSS: 7.7
-Description: 利用 Time-Of-Check to Time-Of-Use (TOCTOU) 条件竞争漏洞。在升级程序校验完合法签名的更新包之后，提取执行之前，瞬间将其替换为恶意的包，从而绕过签名校验。
+Component: Multiple
+Category: Advanced
+Severity: Critical
+CVSS: 8.1
+Description: 固件更新签名验证TOCTOU竞态条件
 Prerequisites: 攻击者能够在更新进行时持续操作本地挂载或修改文件路径 (如在拥有低权限 Shell 或物理更换 USB)。
-Usage: python3 59_FW_Update_TOCTOU.py <target_update_dir>
+Usage: python3 65_FW_Update_TOCTOU.py <target_update_dir>
 """
 import sys
 import os
@@ -83,7 +83,9 @@ class FwUpdateToctouPlugin(IVIVulnerabilityPlugin):
             "details": f"Performed {self.swaps} swaps. Watch OEM installer behavior."
         }
 
-if __name__ == '__main__':
-    target = sys.argv[1] if len(sys.argv) > 1 else "/tmp/ivi_update_mnt"
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python3 65_FW_Update_TOCTOU.py <target_update_dir>")
+        sys.exit(1)
     plugin = FwUpdateToctouPlugin({"target_dir": target})
     plugin.run_verify()

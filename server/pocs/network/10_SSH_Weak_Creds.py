@@ -1,13 +1,13 @@
 """
 PoC Name: SSH Weak Credentials
 CVE: N/A
-Component: SSH Service (OpenSSH/Dropbear)
+Component: Network Stack
 Category: Network
 Severity: High
 CVSS: 8.0
-Description: 对IVI系统SSH服务进行弱口令检测,使用常见的车机默认账号密码组合。
+Description: 车机SSH服务弱口令检测(12组常见默认密码)
 Prerequisites: 目标SSH端口(22)开放, 需要paramiko库。
-Usage: python3 28_SSH_Weak_Creds.py <target_ip>
+Usage: python3 10_SSH_Weak_Creds.py <target_ip>
 """
 import socket
 import sys
@@ -82,9 +82,10 @@ class SSHWeakCredsPlugin(IVIVulnerabilityPlugin):
             self.results["vulnerable"] = False
         return self.results
 
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 28_SSH_Weak_Creds.py <target_ip>")
+        print("Usage: python3 10_SSH_Weak_Creds.py <target_ip>")
         sys.exit(1)
     plugin = SSHWeakCredsPlugin({"target_ip": sys.argv[1]})
     plugin.run_verify()

@@ -1,13 +1,13 @@
 """
 PoC Name: UDS ReadMemoryByAddress
 CVE: N/A
-Component: UDS Protocol (ISO 14229)
-Category: Protocol
+Component: Canbus Stack
+Category: Canbus
 Severity: Critical
 CVSS: 8.5
-Description: 尝试UDS 0x23服务读取ECU内存,检测是否存在未授权内存读取。
+Description: UDS 0x23服务未授权读取ECU内存
 Prerequisites: SocketCAN接口, python-can库。
-Usage: python3 42_UDS_ReadMemory.py <can_interface>
+Usage: python3 26_UDS_ReadMemory.py <can_interface>
 """
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
@@ -48,7 +48,10 @@ class UDSReadMemoryPlugin(IVIVulnerabilityPlugin):
             self.logger.error(f"UDS测试失败: {e}")
             self.results["vulnerable"] = False
         return self.results
+
 if __name__ == "__main__":
-    iface = sys.argv[1] if len(sys.argv) > 1 else "can0"
+    if len(sys.argv) < 2:
+        print("Usage: python3 26_UDS_ReadMemory.py <can_interface>")
+        sys.exit(1)
     plugin = UDSReadMemoryPlugin({"target_ip": "N/A", "can_interface": iface})
     plugin.run_verify()

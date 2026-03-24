@@ -1,13 +1,13 @@
 """
 PoC Name: WiFi Evil Twin AP
 CVE: N/A
-Component: Wi-Fi Stack
+Component: Wireless Stack
 Category: Wireless
 Severity: High
 CVSS: 7.0
-Description: 发送伪造的802.11 Beacon信标帧，模拟一个未加密的 Evil Twin 恶意热点，测试车辆是否会自动连接。
+Description: 创建同名伪造AP测试自动连接行为
 Prerequisites: 支持Monitor模式的无线网卡 (如 wlan0mon)，并已安装 scapy。
-Usage: python3 30_WiFi_Evil_Twin.py <interface>
+Usage: python3 32_WiFi_Evil_Twin.py <interface>
 """
 import sys
 import time
@@ -70,7 +70,9 @@ class EvilTwinPlugin(IVIVulnerabilityPlugin):
                 "details": str(e)
             }
 
-if __name__ == '__main__':
-    iface = sys.argv[1] if len(sys.argv) > 1 else "wlan0mon"
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python3 32_WiFi_Evil_Twin.py <interface>")
+        sys.exit(1)
     plugin = EvilTwinPlugin({"interface": iface})
     plugin.run_verify()

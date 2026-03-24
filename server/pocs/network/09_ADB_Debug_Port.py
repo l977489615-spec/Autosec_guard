@@ -1,23 +1,11 @@
 """
-PoC Name: ADB Debug Port Multi-Port Detection
+PoC Name: ADB Debug Port Detection
 CVE: CVE-2018-6242
-Component: Android Debug Bridge (ADB) over TCP
+Component: Network Stack
 Category: Network
 Severity: Critical
 CVSS: 9.8
-Description: 扫描 IVI 系统上所有已知 ADB TCP 端口（标准 5555 及工程模式/厂商非标准端口），
-             尝试 ADB CNXN 握手以确认是否存在未授权远程访问。
-             覆盖端口:
-               5555        - 标准 ADB over TCP 端口
-               5556/5558   - 多设备顺延端口（adb connect 自增）
-               9527        - 工程模式常见端口（AION/部分国产 IVI）
-               6789        - HarmonyOS/鸿蒙车机常见 ADB 端口
-               4444        - 旧版 ADB server 遗留端口
-               7777        - 部分 MTK/高通车机测试端口
-               8888/9999   - 第三方工具常用监听端口
-               2233/4567   - 部分 OEM 私有工程端口
-               5037        - ADB server 本地通信端口（偶尔对外暴露）
-               1234        - 部分 root 工具绑定端口
+Description: 扫描所有已知 ADB TCP 端口（5555/5556/5558/9527/6789/4444/7777/8888/9999/2233/4567/5037/1234）并尝试 ADB CNXN 握手，检测未授权远程 Shell 访问（含工程模式端口）
 Prerequisites: 目标 IVI 运行 Android/HarmonyOS 系统，且 ADB over TCP 已启用。
 Usage: python3 09_ADB_Debug_Port.py <target_ip>
 """
@@ -92,8 +80,42 @@ class ADBDebugPortPlugin(IVIVulnerabilityPlugin):
 
     def exploit(self):
         host = self.target_ip
+        
+        # 1. 优先检测有线 / 本地相连的物理 ADB 设备 (USB)
+        try:
+            import subprocess
+            adb_result = subprocess.run(['adb', 'devices'], capture_output=True, text=True, timeout=5)
+            if adb_result.returncode == 0:
+                lines = adb_result.stdout.strip().split('\n')
+                wired_devices = []
+                for line in lines[1:]:  # Skip "List of devices attached"
+                    line = line.strip()
+                    if line and not line.startswith('*'):  # filter daemon logs
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            dev_id, status = parts[0], parts[1]
+                            # 过滤掉模拟器和网络端点，只将其视为有线物理 USB 设备
+                            if ":" not in dev_id and "emulator" not in dev_id:
+                                wired_devices.append((dev_id, status))
+                
+                if wired_devices:
+                    self.logger.warning(f"  [!!!] 发现真实物理直连的 USB ADB 设备: {wired_devices}")
+                    self.results["vulnerable"] = True
+                    details = "\n".join(f"  直连设备标示: {d[0]}, 授权状态: {d[1]}" for d in wired_devices)
+                    self.results["evidence"] = f"【危】检测到车机向外部暴露了实体的有线 USB ADB 调试口:\n{details}"
+                    print(f"[!] 【漏洞存在】物理接口暴露！车机引出了未关闭的有线 ADB 调试通道: {[d[0] for d in wired_devices]}")
+                    # 若发现高危的物理底座泄露，直接报漏洞，可跳过后续网络扫描
+                    return self.results
+                else:
+                    self.logger.info("  [-] 当前系统未检出直连的有线 ADB 设备。下放至网络端口扫描...")
+        except FileNotFoundError:
+            self.logger.debug("  [*] 扫描端未安装 `adb` 命令行工具，主动跳过有线 USB 接口检测。")
+        except Exception as e:
+            self.logger.debug(f"  [*] 尝试检测有线 ADB 状态时发生错误: {e}")
+
+        # 2. 回退到基于 IP 的原生网络 TCP 扫描
         self.logger.info(
-            f"开始扫描 {host} 上所有已知 ADB 端口（共 {len(ADB_PORTS)} 个）..."
+            f"开始网络扫描 {host} 上所有已知 ADB 端口（共 {len(ADB_PORTS)} 个）..."
         )
 
         open_ports = []       # 仅端口开放
@@ -153,9 +175,10 @@ class ADBDebugPortPlugin(IVIVulnerabilityPlugin):
         return self.results
 
 
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("用法: python3 09_ADB_Debug_Port.py <target_ip>")
+        print("Usage: python3 09_ADB_Debug_Port.py <target_ip>")
         sys.exit(1)
     plugin = ADBDebugPortPlugin({"target_ip": sys.argv[1]})
     plugin.run_verify()

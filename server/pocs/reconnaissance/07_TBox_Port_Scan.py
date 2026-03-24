@@ -1,13 +1,13 @@
 """
-PoC Name: T-Box/TCU Network Port Scan
+PoC Name: N/A
 CVE: N/A
-Component: Telematics Control Unit (T-Box/TCU)
-Category: Recon
-Severity: Medium
-CVSS: 5.0
-Description: 扫描T-Box/TCU特有端口,发现远程管理、OTA、诊断等服务。
+Component: N/A
+Category: N/A
+Severity: N/A
+CVSS: N/A
+Description: N/A
 Prerequisites: T-Box/TCU网络可达(通过4G/LTE APN或同网络)。
-Usage: python3 58_TBOX_Port_Scan.py <target_ip>
+Usage: python3 07_TBox_Port_Scan.py <target_ip>
 """
 import socket
 import sys
@@ -47,9 +47,10 @@ class TBOXPortScanPlugin(IVIVulnerabilityPlugin):
             self.results["vulnerable"] = False
             self.logger.info("未发现开放端口")
         return self.results
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 58_TBOX_Port_Scan.py <target_ip>")
+        print("Usage: python3 07_TBox_Port_Scan.py <target_ip>")
         sys.exit(1)
     plugin = TBOXPortScanPlugin({"target_ip": sys.argv[1]})
     plugin.run_verify()

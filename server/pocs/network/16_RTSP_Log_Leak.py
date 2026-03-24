@@ -1,3 +1,14 @@
+"""
+PoC Name: RTSP Log Information Leak
+CVE: N/A
+Component: Network Stack
+Category: Network
+Severity: Medium
+CVSS: 5.5
+Description: RTSP ANY请求检测端口7000未授权日志访问
+Prerequisites: 与目标车机处于同一局域网并放行相关应用层端口
+Usage: python3 16_RTSP_Log_Leak.py <target_ip>
+"""
 import socket
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
@@ -83,9 +94,7 @@ class RTSPLogLeakPlugin(IVIVulnerabilityPlugin):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 23_RTSPLogLeakPlugin.py <target_ip>")
+        print("Usage: python3 16_RTSP_Log_Leak.py <target_ip>")
         sys.exit(1)
-    
-    config = {"target_ip": sys.argv[1]}
     plugin = RTSPLogLeakPlugin(config)
     plugin.run_verify()

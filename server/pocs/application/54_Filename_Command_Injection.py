@@ -1,13 +1,13 @@
 """
-PoC Name: Filename Command Injection (USB/Media)
+PoC Name: Filename Command Injection
 CVE: N/A
-Component: Media Player (e.g. GStreamer / ffmpeg parser)
-Category: IVI System
+Component: Application Stack
+Category: Application
 Severity: High
 CVSS: 7.5
-Description: 在本机生成一份带有恶意命令注入文件名的音频/多媒体文件。当车机的多媒体索引服务读取该文件时，低级的 shell 拼接导致命令(如开启后门)被用作 root/app 权限执行。
+Description: 恶意文件名Shell注入(;telnetd -p 4444;)
 Prerequisites: 攻击机能够在本地生成文件。生成后须手动拷贝至 U盘 并插入车机触发扫描。
-Usage: python3 50_Filename_Command_Injection.py
+Usage: python3 54_Filename_Command_Injection.py
 """
 import sys
 import os
@@ -60,6 +60,9 @@ class FilenameCmdInjectPlugin(IVIVulnerabilityPlugin):
             self.logger.error(f"创建畸形文件名失败 (OS 可能不允许某些字符限制): {e}")
             return {"status": "error", "details": str(e)}
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python3 54_Filename_Command_Injection.py")
+        sys.exit(1)
     plugin = FilenameCmdInjectPlugin()
     plugin.run_verify()

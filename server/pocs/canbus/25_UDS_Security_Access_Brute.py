@@ -1,3 +1,14 @@
+"""
+PoC Name: UDS Security Access Brute Force
+CVE: N/A
+Component: Canbus Stack
+Category: Canbus
+Severity: Critical
+CVSS: 8.5
+Description: UDS 0x27安全访问Seed-Key暴力破解
+Prerequisites: 激活的SocketCAN接口(如can0)及python-can支持
+Usage: python3 25_UDS_Security_Access_Brute.py <args>
+"""
 import socket
 import subprocess
 import paramiko
@@ -223,10 +234,8 @@ class IVIVulnerabilityScanner(IVIVulnerabilityPlugin):
         self.logger.info("Scan complete.")
 
 if __name__ == "__main__":
-    # 使用示例：扫描连接到本地热点的车机
-    try:
-        scanner = IVIVulnerabilityScanner(target_ip="192.168.31.158") 
-        # Using run_verify() from base class which calls check_prerequisites and then exploit (which calls run_all)
-        scanner.run_verify()
-    except Exception as e:
-        print(f"Error: {e}")
+    if len(sys.argv) < 2:
+        print("Usage: python3 25_UDS_Security_Access_Brute.py <args>")
+        sys.exit(1)
+    plugin = IVIVulnerabilityScanner({})
+    plugin.run_verify()

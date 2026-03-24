@@ -1,13 +1,13 @@
 """
 PoC Name: CAN Replay Attack
 CVE: N/A
-Component: CAN Bus
-Category: Protocol
+Component: Canbus Stack
+Category: Canbus
 Severity: High
 CVSS: 7.0
-Description: 录制CAN总线消息并重放,验证是否缺少序列号/时间戳保护。
+Description: 录制并重放CAN帧,验证是否缺少序列号保护
 Prerequisites: SocketCAN接口, python-can库。
-Usage: python3 40_CAN_Replay_Attack.py <can_interface>
+Usage: python3 23_CAN_Replay_Attack.py <can_interface>
 """
 import sys
 import time
@@ -58,7 +58,10 @@ class CANReplayPlugin(IVIVulnerabilityPlugin):
             self.results["vulnerable"] = False
         return self.results
 
+
 if __name__ == "__main__":
-    iface = sys.argv[1] if len(sys.argv) > 1 else "can0"
+    if len(sys.argv) < 2:
+        print("Usage: python3 23_CAN_Replay_Attack.py <can_interface>")
+        sys.exit(1)
     plugin = CANReplayPlugin({"target_ip": "N/A", "can_interface": iface})
     plugin.run_verify()

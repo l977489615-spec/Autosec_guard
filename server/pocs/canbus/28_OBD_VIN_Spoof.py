@@ -1,13 +1,13 @@
 """
 PoC Name: OBD-II VIN Spoofing
 CVE: N/A
-Component: OBD-II Protocol
-Category: Protocol
+Component: Canbus Stack
+Category: Canbus
 Severity: Medium
 CVSS: 5.0
-Description: 通过CAN总线发送伪造VIN响应,验证OBD-II是否缺少VIN完整性保护。
+Description: 通过CAN注入伪造VIN响应
 Prerequisites: SocketCAN接口, python-can库。
-Usage: python3 44_OBD_VIN_Spoof.py <can_interface>
+Usage: python3 28_OBD_VIN_Spoof.py <can_interface>
 """
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
@@ -43,7 +43,10 @@ class OBDVINSpoofPlugin(IVIVulnerabilityPlugin):
             self.logger.error(f"VIN欺骗测试失败: {e}")
             self.results["vulnerable"] = False
         return self.results
+
 if __name__ == "__main__":
-    iface = sys.argv[1] if len(sys.argv) > 1 else "can0"
+    if len(sys.argv) < 2:
+        print("Usage: python3 28_OBD_VIN_Spoof.py <can_interface>")
+        sys.exit(1)
     plugin = OBDVINSpoofPlugin({"target_ip": "N/A", "can_interface": iface})
     plugin.run_verify()

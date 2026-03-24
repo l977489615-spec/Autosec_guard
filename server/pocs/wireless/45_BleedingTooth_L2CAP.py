@@ -1,13 +1,13 @@
 """
 PoC Name: BleedingTooth L2CAP Type Confusion
 CVE: CVE-2020-12351
-Component: Linux Net/Bluetooth Subsystem (L2CAP Core)
+Component: Wireless Stack
 Category: Wireless
 Severity: Critical
 CVSS: 8.3
-Description: 发送含有错误目标信道(CID)的高速蓝牙连接请求(A2MP)，触发 Linux 内核 L2CAP 协议层中的类型混淆错误，从而造成零接触代码执行。
+Description: 畸形A2MP L2CAP包触发Linux内核类型混淆
 Prerequisites: 目标设备的蓝牙MAC地址，本机(Linux环境)支持创建原始蓝牙 L2CAP 连接。
-Usage: python3 43_BleedingTooth_L2CAP.py <bluetooth_mac>
+Usage: python3 45_BleedingTooth_L2CAP.py <bluetooth_mac>
 """
 import sys
 import socket
@@ -80,7 +80,9 @@ class BleedingToothPlugin(IVIVulnerabilityPlugin):
             except:
                  pass
 
-if __name__ == '__main__':
-    mac = sys.argv[1] if len(sys.argv) > 1 else "FF:FF:FF:FF:FF:FF"
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python3 45_BleedingTooth_L2CAP.py <bluetooth_mac>")
+        sys.exit(1)
     plugin = BleedingToothPlugin({"bluetooth_mac": mac})
     plugin.run_verify()

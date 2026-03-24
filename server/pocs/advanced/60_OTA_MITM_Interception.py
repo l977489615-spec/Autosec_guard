@@ -1,13 +1,13 @@
 """
 PoC Name: OTA Update MITM Interception
 CVE: N/A
-Component: OTA Update Channel
-Category: Application
+Component: Multiple
+Category: Advanced
 Severity: Critical
 CVSS: 8.5
-Description: 检测OTA更新通道是否使用证书固定(Certificate Pinning),验证是否容易受到MITM攻击。
+Description: 检测OTA更新通道是否使用自签名证书(MITM风险)
 Prerequisites: 与目标同一网络。
-Usage: python3 59_OTA_MITM.py <target_ip>
+Usage: python3 60_OTA_MITM_Interception.py <target_ip>
 """
 import socket
 import ssl
@@ -60,9 +60,10 @@ class OTAMITMPlugin(IVIVulnerabilityPlugin):
             self.logger.info("[-] 未发现TLS配置弱点")
             self.results["vulnerable"] = False
         return self.results
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 59_OTA_MITM.py <target_ip>")
+        print("Usage: python3 60_OTA_MITM_Interception.py <target_ip>")
         sys.exit(1)
     plugin = OTAMITMPlugin({"target_ip": sys.argv[1]})
     plugin.run_verify()

@@ -1,13 +1,13 @@
 """
 PoC Name: AirPlay AirBorne UAF
 CVE: CVE-2025-24252
-Component: Infotainment App (Apple AirPlay)
-Category: Wireless
+Component: Application Stack
+Category: Application
 Severity: Critical
 CVSS: 9.8
-Description: 通过发送恶意的 RTSP ANNOUNCE 载荷触发 AirPlay 进程中的 Use-After-Free 漏洞，可导致服务崩溃或远程代码执行。
+Description: AirPlay协议UAF漏洞+用户交互绕过实现零点击RCE
 Prerequisites: 与车机处于同一局域网并能访问 TCP 7000/5000 (AirPlay/RTSP) 端口。
-Usage: python3 44_AirPlay_AirBorne_UAF.py <target_ip>
+Usage: python3 48_AirPlay_AirBorne_UAF.py <target_ip>
 """
 import sys
 import socket
@@ -79,9 +79,9 @@ class AirBorneUAFPlugin(IVIVulnerabilityPlugin):
         finally:
              sock.close()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 44_AirPlay_AirBorne_UAF.py <target_ip>")
+        print("Usage: python3 48_AirPlay_AirBorne_UAF.py <target_ip>")
         sys.exit(1)
     plugin = AirBorneUAFPlugin({"target_ip": sys.argv[1]})
     plugin.run_verify()

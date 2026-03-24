@@ -57,6 +57,7 @@ app.config['SECRET_KEY'] = 'autosec_super_secret_key_change_in_production'
 # Default format: mysql+pymysql://username:password@server/db
 app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:1@localhost/autosec_db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+from sqlalchemy.dialects.mysql import LONGTEXT
 
 db = SQLAlchemy(app)
 
@@ -90,7 +91,8 @@ class ScanHistory(db.Model):
     status = db.Column(db.String(20), nullable=False) # 'completed', 'failed', 'running'
     started_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
     completed_at = db.Column(db.DateTime, nullable=True)
-    results_json = db.Column(db.Text, nullable=True) # Full JSON data of results
+    results_json = db.Column(LONGTEXT, nullable=True) # Full JSON data of results
+    logs = db.Column(LONGTEXT, nullable=True) # Dedicated column for logs
     risk_score = db.Column(db.Integer, default=0)
 
     user = db.relationship('User', backref=db.backref('scans', lazy=True))
@@ -104,10 +106,11 @@ class ScanHistory(db.Model):
             "target_ip": self.target_ip,
             "target_mac": self.target_mac,
             "status": self.status,
-            "started_at": self.started_at.isoformat() if self.started_at else None,
-            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "started_at": self.started_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.started_at else None,
+            "completed_at": self.completed_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.completed_at else None,
             "risk_score": self.risk_score,
-            "results_json": json.loads(self.results_json) if self.results_json else []
+            "results_json": json.loads(self.results_json) if self.results_json else [],
+            "logs": json.loads(self.logs) if self.logs else []
         }
 
 # ==========================================
@@ -447,8 +450,12 @@ def run_poc():
         params['target_ip'] = params['ip']
     if 'port' in params and 'target_port' not in params:
         params['target_port'] = params['port']
-    if 'bluetooth_mac' in params and 'target_mac' not in params:
-        params['target_mac'] = params['bluetooth_mac']
+    # Bluetooth MAC 映射：前端字段 bluetoothMac -> 后端各 PoC 使用的 bd_addr / target_mac / bluetooth_mac
+    bt_mac = params.get('bluetoothMac') or params.get('bluetooth_mac') or params.get('bd_addr') or ''
+    if bt_mac:
+        params['bd_addr'] = bt_mac
+        params['target_mac'] = bt_mac
+        params['bluetooth_mac'] = bt_mac
 
     if not poc_filename:
         return jsonify({"error": "No PoC filename provided"}), 400
@@ -504,23 +511,50 @@ def run_poc():
         # Instantiate and run
         plugin = plugin_class(params)
         
-        # Capture stdout
+        # Capture stdout AND inject a temporary logging handler to capture all log records
         import io
-        from contextlib import redirect_stdout, redirect_stderr
+        from contextlib import redirect_stdout
         stdout_capture = io.StringIO()
-        stderr_capture = io.StringIO()
         
-        with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-            plugin.run_verify()
+        # 注入临时 logging handler 以捕获 Python logging 模块输出的中间过程日志
+        captured_log_lines = []
+        class _CaptureHandler(logging.Handler):
+            def emit(self, record):
+                try:
+                    captured_log_lines.append(self.format(record))
+                except Exception:
+                    pass
+        
+        capture_handler = _CaptureHandler()
+        capture_handler.setLevel(logging.DEBUG)
+        capture_handler.setFormatter(logging.Formatter('[%(asctime)s][%(levelname)s] %(message)s'))
+        
+        # 挂载到 root logger 和插件 logger 确保全量捕获
+        root_logger = logging.getLogger()
+        root_logger.addHandler(capture_handler)
+        plugin.logger.addHandler(capture_handler)
+        
+        try:
+            with redirect_stdout(stdout_capture):
+                plugin.run_verify()
+        finally:
+            # 移除临时 handler 防止内存泄漏
+            root_logger.removeHandler(capture_handler)
+            plugin.logger.removeHandler(capture_handler)
 
         elapsed = round(time.time() - start_time, 2)
         stdout_text = stdout_capture.getvalue()
-        stderr_text = stderr_capture.getvalue()
+
+        # 合并 stdout print() 输出 + logging 捕获的日志行
+        all_logs = []
+        if stdout_text:
+            all_logs.extend(stdout_text.splitlines())
+        all_logs.extend(captured_log_lines)
 
         response = {
             "success": True,
-            "logs": stdout_text.splitlines() if stdout_text else [],
-            "errors": stderr_text.splitlines() if stderr_text else [],
+            "logs": all_logs,
+            "errors": [],
             "vulnerable": plugin.results.get('vulnerable', False),
             "evidence": plugin.results.get('evidence', ''),
             "cve_id": plugin.results.get('cve_id', ''),
@@ -533,8 +567,6 @@ def run_poc():
 
         return jsonify(response)
 
-        return jsonify(response)
-
     except Exception as e:
         elapsed = round(time.time() - start_time, 2)
         return jsonify({
@@ -544,6 +576,173 @@ def run_poc():
             "vulnerable": False,
             "elapsed_seconds": elapsed
         })
+
+@app.route('/api/run_poc_stream', methods=['POST', 'OPTIONS'])
+@cross_origin()
+def run_poc_stream():
+    """SSE streaming endpoint: 实时逐行推送 PoC 执行日志到前端 System Console"""
+    if request.method == 'OPTIONS':
+        return '', 200
+
+    data = request.json
+    poc_filename = data.get('filename')
+    params = data.get('params', {}).copy()
+
+    # 统一参数映射
+    if 'ip' in params and 'target_ip' not in params:
+        params['target_ip'] = params['ip']
+    if 'port' in params and 'target_port' not in params:
+        params['target_port'] = params['port']
+    bt_mac = params.get('bluetoothMac') or params.get('bluetooth_mac') or params.get('bd_addr') or ''
+    if bt_mac:
+        params['bd_addr'] = bt_mac
+        params['target_mac'] = bt_mac
+        params['bluetooth_mac'] = bt_mac
+
+    if not poc_filename:
+        return jsonify({"error": "No PoC filename provided"}), 400
+
+    poc_path = os.path.join(POCS_DIR, poc_filename)
+    if not os.path.exists(poc_path):
+        basename = os.path.basename(poc_filename)
+        found = False
+        for dirpath, _, filenames in os.walk(POCS_DIR):
+            if basename in filenames:
+                poc_path = os.path.join(dirpath, basename)
+                found = True
+                break
+        if not found:
+            return jsonify({"error": f"PoC file not found: {poc_filename}"}), 404
+
+    def generate():
+        import queue
+        log_queue = queue.Queue()
+        start_time = time.time()
+
+        class _StreamHandler(logging.Handler):
+            def emit(self, record):
+                try:
+                    msg = self.format(record)
+                    log_queue.put(msg)
+                except Exception:
+                    pass
+
+        stream_handler = _StreamHandler()
+        stream_handler.setLevel(logging.DEBUG)
+        stream_handler.setFormatter(logging.Formatter('[%(asctime)s][%(levelname)s] %(message)s'))
+
+        try:
+            if POCS_DIR not in sys.path:
+                sys.path.insert(0, POCS_DIR)
+            spec = importlib.util.spec_from_file_location(poc_filename.replace('.py', ''), poc_path)
+            module = importlib.util.module_from_spec(spec)
+            base_path = os.path.join(POCS_DIR, 'iv_plugin_base.py')
+            if os.path.exists(base_path):
+                base_spec = importlib.util.spec_from_file_location('iv_plugin_base', base_path)
+                base_module = importlib.util.module_from_spec(base_spec)
+                sys.modules['iv_plugin_base'] = base_module
+                base_spec.loader.exec_module(base_module)
+            spec.loader.exec_module(module)
+
+            plugin_class = None
+            for attr_name in dir(module):
+                attr = getattr(module, attr_name)
+                if isinstance(attr, type) and attr_name not in ['IVIVulnerabilityPlugin'] and hasattr(attr, 'run_verify'):
+                    plugin_class = attr
+                    break
+
+            if not plugin_class:
+                yield f"data: {json.dumps({'type': 'result', 'success': False, 'errors': ['No plugin class found']})}\n\n"
+                return
+
+            plugin = plugin_class(params)
+
+            # 挂载 streaming handler
+            root_logger = logging.getLogger()
+            root_logger.addHandler(stream_handler)
+            plugin.logger.addHandler(stream_handler)
+
+            import io
+            from contextlib import redirect_stdout
+            class _StreamToQueue:
+                def __init__(self, queue):
+                    self.queue = queue
+                    self.buffer = ""
+                def write(self, msg):
+                    self.buffer += msg
+                    while '\n' in self.buffer:
+                        line, self.buffer = self.buffer.split('\n', 1)
+                        if line.strip():
+                            self.queue.put(line.strip())
+                def flush(self):
+                    if self.buffer.strip():
+                        self.queue.put(self.buffer.strip())
+                        self.buffer = ""
+
+            stdout_capture = _StreamToQueue(log_queue)
+
+            import threading
+            exec_result = {}
+            exec_error = [None]
+
+            def run_plugin():
+                try:
+                    with redirect_stdout(stdout_capture):
+                        plugin.run_verify()
+                except Exception as e:
+                    exec_error[0] = str(e)
+
+            thread = threading.Thread(target=run_plugin, daemon=True)
+            thread.start()
+            
+            # 实时推送日志
+            while thread.is_alive():
+                thread.join(timeout=0.1)
+                while not log_queue.empty():
+                    msg = log_queue.get_nowait()
+                    yield f"data: {json.dumps({'type': 'log', 'message': msg})}\n\n" + (" " * 1024) + "\n\n"
+
+            # Flush stdout buffer at the end
+            stdout_capture.flush()
+
+            # 推送剩余日志
+            while not log_queue.empty():
+                msg = log_queue.get_nowait()
+                yield f"data: {json.dumps({'type': 'log', 'message': msg})}\n\n" + (" " * 1024) + "\n\n"
+
+            elapsed = round(time.time() - start_time, 2)
+
+            result = {
+                'type': 'result',
+                'success': exec_error[0] is None,
+                'vulnerable': plugin.results.get('vulnerable', False),
+                'evidence': plugin.results.get('evidence', ''),
+                'cve_id': plugin.results.get('cve_id', ''),
+                'elapsed_seconds': elapsed,
+                'poc_id': poc_filename,
+                'logs': [],
+                'errors': [exec_error[0]] if exec_error[0] else [],
+            }
+            status_msg = "VULNERABLE" if result["vulnerable"] else "SECURE"
+            logger.info(f"PoC Result [{poc_filename}]: {status_msg} (Elapsed: {elapsed}s)")
+            yield f"data: {json.dumps(result)}\n\n" + (" " * 1024) + "\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'result', 'success': False, 'errors': [str(e)], 'vulnerable': False})}\n\n"
+        finally:
+            root_logger = logging.getLogger()
+            root_logger.removeHandler(stream_handler)
+            try:
+                plugin.logger.removeHandler(stream_handler)
+            except:
+                pass
+
+    return app.response_class(generate(), mimetype='text/event-stream', headers={
+        'Cache-Control': 'no-cache',
+        'X-Accel-Buffering': 'no',
+        'Access-Control-Allow-Origin': '*',
+    })
+
 
 @app.route('/api/save_session', methods=['POST', 'OPTIONS'])
 @cross_origin()
@@ -574,11 +773,11 @@ def save_session(current_user):
             history.results_json = json.dumps({
                 "targetName": target_name,
                 "results": results,
-                "logs": logs,
                 "aiReport": ai_report,
                 "connection": connection,
                 "mode": data.get("mode", "batch")
             })
+            history.logs = json.dumps(logs)
             history.completed_at = datetime.datetime.utcnow()
             history.risk_score = risk_score
         else:
@@ -593,11 +792,11 @@ def save_session(current_user):
                 results_json=json.dumps({
                     "targetName": target_name,
                     "results": results,
-                    "logs": logs,
                     "aiReport": ai_report,
                     "connection": connection,
                     "mode": data.get("mode", "batch")
                 }),
+                logs=json.dumps(logs), # Added logs here
                 risk_score=risk_score
             )
             db.session.add(history)
@@ -813,11 +1012,13 @@ def agent_scan(current_user):
 
         if phase:
             # 单 Phase 模式（用于步进式调试）
-            result = orch.run_phase(phase, context=context)
+            res_data = orch.run_phase(phase, context=context)
             return jsonify({
                 "phase": phase,
                 "target_ip": target_ip,
-                "result": result,
+                "result": res_data["result"],
+                "logs": res_data.get("logs", []),
+                "findings": res_data.get("findings", [])
             })
         else:
             # 全量 4-Agent 协作模式

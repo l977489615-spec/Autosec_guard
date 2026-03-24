@@ -1,13 +1,13 @@
 """
 PoC Name: WPA2 KRACK Key Reinstallation
 CVE: CVE-2017-13077
-Component: Wi-Fi Stack (WPA2 Supplicant)
+Component: Wireless Stack
 Category: Wireless
 Severity: High
 CVSS: 6.8
-Description: 检测目标 Wi-Fi 客户端是否对 WPA2 4-way handshake 密钥重装攻击漏洞免疫。
+Description: WPA2 4-way handshake密钥重装攻击检测
 Prerequisites: 需要克隆官方 krackattacks-scripts 工具包，并具备支持注入的无线网卡。
-Usage: python3 31_WiFi_KRACK.py <interface>
+Usage: python3 33_WiFi_KRACK.py <interface>
 """
 import sys
 import shutil
@@ -79,7 +79,9 @@ class WiFiKRACKPlugin(IVIVulnerabilityPlugin):
                 "details": str(e)
             }
 
-if __name__ == '__main__':
-    iface = sys.argv[1] if len(sys.argv) > 1 else "wlan0mon"
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python3 33_WiFi_KRACK.py <interface>")
+        sys.exit(1)
     plugin = WiFiKRACKPlugin({"interface": iface})
     plugin.run_verify()

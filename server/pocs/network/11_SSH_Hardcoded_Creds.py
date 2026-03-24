@@ -1,3 +1,14 @@
+"""
+PoC Name: SSH Hardcoded Credentials
+CVE: N/A
+Component: Network Stack
+Category: Network
+Severity: Critical
+CVSS: 9.8
+Description: 检测IVI系统SSH硬编码凭据(falcOn/harman_fara等)
+Prerequisites: 目标车机暴露22端口且可以提供交互Shell环境
+Usage: python3 11_SSH_Hardcoded_Creds.py <args>
+"""
 import paramiko
 import os
 from iv_plugin_base import IVIVulnerabilityPlugin

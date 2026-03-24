@@ -1,13 +1,13 @@
 """
 PoC Name: FTP Anonymous Login
 CVE: N/A
-Component: FTP Service
+Component: Network Stack
 Category: Network
 Severity: High
 CVSS: 7.5
-Description: 检测IVI系统FTP服务是否允许匿名登录。
+Description: 检测FTP服务是否允许匿名登录
 Prerequisites: 目标FTP端口(21)开放。
-Usage: python3 31_FTP_Anonymous.py <target_ip>
+Usage: python3 13_FTP_Anonymous.py <target_ip>
 """
 import socket
 import sys
@@ -52,9 +52,10 @@ class FTPAnonymousPlugin(IVIVulnerabilityPlugin):
             self.results["vulnerable"] = False
         return self.results
 
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 31_FTP_Anonymous.py <target_ip>")
+        print("Usage: python3 13_FTP_Anonymous.py <target_ip>")
         sys.exit(1)
     plugin = FTPAnonymousPlugin({"target_ip": sys.argv[1]})
     plugin.run_verify()

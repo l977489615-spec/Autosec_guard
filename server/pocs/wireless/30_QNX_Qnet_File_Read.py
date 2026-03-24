@@ -1,13 +1,13 @@
 """
 PoC Name: QNX Qnet Unauthorized File Read
 CVE: CVE-2017-3891
-Component: Network Stack (QNX Qnet / Qconn)
-Category: Protocol
+Component: Wireless Stack
+Category: Wireless
 Severity: Critical
 CVSS: 9.1
-Description: 探测通过默认开放的 Qconn 服务(Port 8000)不经身份验证远程读取敏感系统文件(如 /etc/shadow 或配置)。
+Description: Qnet/Qconn服务暴露允许远程读取敏感文件
 Prerequisites: 与基于 QNX 的 IVI 系统网络可达。
-Usage: python3 28_QNX_Qnet_File_Read.py <target_ip>
+Usage: python3 30_QNX_Qnet_File_Read.py <target_ip>
 """
 import sys
 import socket
@@ -81,9 +81,9 @@ class QNXQconnReadPlugin(IVIVulnerabilityPlugin):
         finally:
              sock.close()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 28_QNX_Qnet_File_Read.py <target_ip>")
+        print("Usage: python3 30_QNX_Qnet_File_Read.py <target_ip>")
         sys.exit(1)
     plugin = QNXQconnReadPlugin({"target_ip": sys.argv[1]})
     plugin.run_verify()

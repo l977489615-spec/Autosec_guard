@@ -1,11 +1,11 @@
 """
 PoC Name: HTTPS Missing Certificate Pinning
 CVE: N/A
-Component: Transport Layer Security (OTA Client)
-Category: IVI System
+Component: Network Stack
+Category: Network
 Severity: Medium
 CVSS: 5.5
-Description: 模拟在本地建立带自签名证书的恶意 HTTPS 代理服务器，拦截车辆的 OTA 或网联请求。测试车辆是否缺乏证书固定(Certificate Pinning)从而被轻易执行中间人攻击。
+Description: 检测HTTPS更新通道是否缺少证书固定
 Prerequisites: 已经对目标车辆执行了 ARP 欺骗和 DNS 劫持，将外连域名解析到测试机 IP，并传入 target_ip 作为测试绑定的本机网卡。
 Usage: python3 18_HTTPS_No_Cert_Pin.py <local_bind_ip>
 """
@@ -112,7 +112,9 @@ class CertPinningPlugin(IVIVulnerabilityPlugin):
         finally:
              sock.close()
 
-if __name__ == '__main__':
-    ip = sys.argv[1] if len(sys.argv) > 1 else "0.0.0.0"
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python3 18_HTTPS_No_Cert_Pin.py <local_bind_ip>")
+        sys.exit(1)
     plugin = CertPinningPlugin({"target_ip": ip})
     plugin.run_verify()

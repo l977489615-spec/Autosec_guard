@@ -1,13 +1,13 @@
 """
 PoC Name: HTTP Service Enumeration
 CVE: N/A
-Component: Web Service (HTTP/HTTPS)
+Component: Recon Stack
 Category: Recon
 Severity: Medium
 CVSS: 5.0
-Description: 扫描IVI系统常见Web端口,获取HTTP响应头和Server信息。
+Description: 扫描常见Web端口,获取Server信息
 Prerequisites: 目标Web端口开放。
-Usage: python3 30_HTTP_Service_Enum.py <target_ip>
+Usage: python3 08_HTTP_Service_Enum.py <target_ip>
 """
 import socket
 import sys
@@ -49,9 +49,10 @@ class HTTPServiceEnumPlugin(IVIVulnerabilityPlugin):
             self.logger.info("未发现开放的Web端口")
         return self.results
 
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 30_HTTP_Service_Enum.py <target_ip>")
+        print("Usage: python3 08_HTTP_Service_Enum.py <target_ip>")
         sys.exit(1)
     plugin = HTTPServiceEnumPlugin({"target_ip": sys.argv[1]})
     plugin.run_verify()

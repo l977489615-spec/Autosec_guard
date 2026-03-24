@@ -1,13 +1,13 @@
 """
-PoC Name: QNX Unsigned Firmware Update
+PoC Name: QNX Unsigned Firmware Image
 CVE: N/A
-Component: QNX Bootloader / Update Service
-Category: OS/Firmware
-Severity: Critical
-CVSS: 9.8
-Description: 生成能够绕过某些弱校验 QNX IVI 的恶意固件升级镜像(如 swdl.iso 或 update.ifs)。
+Component: Multiple
+Category: Advanced
+Severity: High
+CVSS: 7.0
+Description: 构造带后门的QNX IFS映像绕过签名验证
 Prerequisites: 攻击者将生层的镜像存入 FAT32 格式的 U 盘并插入汽车启动。
-Usage: python3 60_QNX_Unsigned_Firmware.py
+Usage: python3 66_QNX_Unsigned_Firmware.py
 """
 import sys
 import os
@@ -67,6 +67,9 @@ class QNXUnsignedFwPlugin(IVIVulnerabilityPlugin):
                  "details": str(e)
              }
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python3 66_QNX_Unsigned_Firmware.py")
+        sys.exit(1)
     plugin = QNXUnsignedFwPlugin()
     plugin.run_verify()

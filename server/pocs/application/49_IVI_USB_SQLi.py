@@ -1,13 +1,13 @@
 """
 PoC Name: IVI USB Gadget SQL Injection
 CVE: CVE-2024-8355
-Component: IVI Host & USB Subsystem
-Category: Hardware/Interface
+Component: Application Stack
+Category: Application
 Severity: High
 CVSS: 6.8
-Description: 通过控制本机的 Linux USB Gadget 子系统，将自己伪装成带有恶意 SQL 注入(如 "'; DROP TABLE config;--")设备序列号或制造商名称的 iPod 或 U盘，插入目标车辆 USB 口触发漏洞。
+Description: USB Gadget序列号SQL注入IVI数据库(CMU)
 Prerequisites: 必须在支持 USB OTG (如 Raspberry Pi Zero、USB Armory) 并加载了 libcomposite 驱动的 Linux 设备上运行，需 root 权限。
-Usage: sudo python3 45_IVI_USB_SQLi.py
+Usage: sudo python3 49_IVI_USB_SQLi.py
 """
 import sys
 import os
@@ -108,6 +108,9 @@ class IVIUsbSqliPlugin(IVIVulnerabilityPlugin):
                 "details": str(e)
             }
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: sudo python3 49_IVI_USB_SQLi.py")
+        sys.exit(1)
     plugin = IVIUsbSqliPlugin()
     plugin.run_verify()

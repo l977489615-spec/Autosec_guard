@@ -1,11 +1,11 @@
 """
 PoC Name: IVI Developer Mode Bypass
 CVE: CVE-2025-32063
-Component: BOSCH IVI System
+Component: Application Stack
 Category: Application
 Severity: Critical
 CVSS: 8.5
-Description: 通过启动时序攻击激活IVI的开发者模式,关闭防火墙并启动SSH服务。
+Description: BOSCH IVI启动时序攻击激活开发者模式
 Prerequisites: 物理接触或在IVI启动时接入。
 Usage: python3 56_IVI_DevMode_Bypass.py <target_ip>
 """
@@ -51,6 +51,7 @@ class IVIDevModePlugin(IVIVulnerabilityPlugin):
         self.logger.info("[-] 未检测到开发者模式特征")
         self.results["vulnerable"] = False
         return self.results
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 56_IVI_DevMode_Bypass.py <target_ip>")

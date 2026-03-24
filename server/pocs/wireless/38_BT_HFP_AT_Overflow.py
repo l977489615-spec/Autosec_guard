@@ -1,3 +1,14 @@
+"""
+PoC Name: Bluetooth HFP AT Command Overflow
+CVE: CVE-2025-32059
+Component: Wireless Stack
+Category: Wireless
+Severity: High
+CVSS: 7.8
+Description: 畸形+ANDROID AT命令溢出HFP解析器栈
+Prerequisites: 兼容易受控使用的Linux蓝牙适配器(如hci0)
+Usage: python3 38_BT_HFP_AT_Overflow.py <target_mac_address>
+"""
 import socket
 import time
 import sys
@@ -69,9 +80,7 @@ class NissanBlueOverflowPlugin(IVIVulnerabilityPlugin):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python poc_nissan_bt.py <target_mac_address>")
+        print("Usage: python3 38_BT_HFP_AT_Overflow.py <target_mac_address>")
         sys.exit(1)
-    
-    config = {"target_mac": sys.argv[1]}
     plugin = NissanBlueOverflowPlugin(config)
     plugin.run_verify()

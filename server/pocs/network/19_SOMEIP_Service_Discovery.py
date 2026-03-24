@@ -1,3 +1,14 @@
+"""
+PoC Name: SOME/IP Service Discovery Information Leak
+CVE: N/A
+Component: Network Stack
+Category: Network
+Severity: Medium
+CVSS: 6.0
+Description: SOME/IP SD（服务发现）无认证机制，攻击者接入车载以太网后可枚举全部 ECU 服务（ID/实例/版本/端口），为进一步攻击提供情报。极氪等车型实测有效
+Prerequisites: 与目标车机处于同一局域网并放行相关应用层端口
+Usage: python3 19_SOMEIP_Service_Discovery.py <args>
+"""
 import socket
 import struct
 import sys
@@ -266,9 +277,7 @@ class SOMEIPServiceDiscoveryPlugin(IVIVulnerabilityPlugin):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("用法: python3 66_SOMEIP_Service_Discovery.py <target_ip>")
-        print("示例: python3 66_SOMEIP_Service_Discovery.py 192.168.100.1")
+        print("Usage: python3 19_SOMEIP_Service_Discovery.py <args>")
         sys.exit(1)
-    config = {"target_ip": sys.argv[1]}
     plugin = SOMEIPServiceDiscoveryPlugin(config)
     plugin.run_verify()

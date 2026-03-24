@@ -1,13 +1,13 @@
 """
 PoC Name: SNMP Community String Check
 CVE: N/A
-Component: SNMP Service
+Component: Recon Stack
 Category: Recon
 Severity: Medium
 CVSS: 5.5
-Description: 检测IVI/T-Box上SNMP服务是否使用默认community string(public/private)。
+Description: 检测SNMP服务是否使用默认community string
 Prerequisites: 目标SNMP端口(161)开放。
-Usage: python3 36_SNMP_Info_Leak.py <target_ip>
+Usage: python3 05_SNMP_Info_Leak.py <target_ip>
 """
 import socket
 import sys
@@ -53,9 +53,10 @@ class SNMPInfoLeakPlugin(IVIVulnerabilityPlugin):
         self.results["vulnerable"] = False
         return self.results
 
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 36_SNMP_Info_Leak.py <target_ip>")
+        print("Usage: python3 05_SNMP_Info_Leak.py <target_ip>")
         sys.exit(1)
     plugin = SNMPInfoLeakPlugin({"target_ip": sys.argv[1]})
     plugin.run_verify()

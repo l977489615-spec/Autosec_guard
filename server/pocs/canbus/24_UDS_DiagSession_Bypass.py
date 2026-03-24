@@ -1,13 +1,13 @@
 """
 PoC Name: UDS Diagnostic Session Bypass
 CVE: N/A
-Component: UDS Protocol (ISO 14229)
-Category: Protocol
+Component: Canbus Stack
+Category: Canbus
 Severity: High
 CVSS: 7.5
-Description: 尝试通过UDS 0x10服务直接进入扩展诊断会话,检测是否缺少访问控制。
+Description: 尝试UDS 0x10直接进入扩展诊断/编程会话
 Prerequisites: SocketCAN接口, python-can库。
-Usage: python3 41_UDS_DiagSession_Bypass.py <can_interface>
+Usage: python3 24_UDS_DiagSession_Bypass.py <can_interface>
 """
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
@@ -45,7 +45,10 @@ class UDSDiagSessionPlugin(IVIVulnerabilityPlugin):
             self.logger.error(f"UDS测试失败: {e}")
             self.results["vulnerable"] = False
         return self.results
+
 if __name__ == "__main__":
-    iface = sys.argv[1] if len(sys.argv) > 1 else "can0"
+    if len(sys.argv) < 2:
+        print("Usage: python3 24_UDS_DiagSession_Bypass.py <can_interface>")
+        sys.exit(1)
     plugin = UDSDiagSessionPlugin({"target_ip": "N/A", "can_interface": iface})
     plugin.run_verify()

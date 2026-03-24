@@ -1,3 +1,14 @@
+"""
+PoC Name: UDS ECU Reset Unauthenticated (0x11)
+CVE: N/A
+Component: Canbus Stack
+Category: Canbus
+Severity: High
+CVSS: 7.5
+Description: 在 UDS DefaultSession 下无需 SecurityAccess 认证，直接向目标 ECU 发送 0x11 SoftReset/HardReset 指令。覆盖 ECM/TCM/BCM/IC 等常见 ECU，全车通用
+Prerequisites: 激活的SocketCAN接口(如can0)及python-can支持
+Usage: python3 29_UDS_ECU_Reset_Unauth.py <args>
+"""
 import sys
 import struct
 import time
@@ -262,13 +273,8 @@ class UDSECUResetPlugin(IVIVulnerabilityPlugin):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("用法: python3 67_UDS_ECU_Reset_Unauth.py <can_interface>")
-        print("示例: python3 67_UDS_ECU_Reset_Unauth.py can0")
+    if len(sys.argv) < 3:
+        print("Usage: python3 29_UDS_ECU_Reset_Unauth.py <args>")
         sys.exit(1)
-    config = {"can_interface": sys.argv[1]}
-    if len(sys.argv) > 2 and sys.argv[2] == "--hard":
-        config["test_hard_reset"] = True
-        print("[!] 已启用 HardReset 模式（ECU 将完整重启）")
     plugin = UDSECUResetPlugin(config)
     plugin.run_verify()

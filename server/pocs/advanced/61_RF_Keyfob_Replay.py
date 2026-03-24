@@ -1,3 +1,14 @@
+"""
+PoC Name: RF Keyfob Signal Replay
+CVE: CVE-2022-27254
+Component: Multiple
+Category: Advanced
+Severity: High
+CVSS: 6.5
+Description: 录制/重放433.92MHz钥匙遥控解锁信号
+Prerequisites: 支持SDR收发硬件环境 (如 HackRF, rpitx等)
+Usage: python3 61_RF_Keyfob_Replay.py <args>
+"""
 import subprocess
 import sys
 import os
@@ -62,5 +73,8 @@ class HondaReplayPlugin(IVIVulnerabilityPlugin):
         return self.results
 
 if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python3 61_RF_Keyfob_Replay.py <args>")
+        sys.exit(1)
     plugin = HondaReplayPlugin({})
     plugin.run_verify()

@@ -1,13 +1,13 @@
 """
 PoC Name: WiFi Deauthentication Attack
 CVE: N/A
-Component: Wi-Fi Stack
+Component: Wireless Stack
 Category: Wireless
 Severity: Medium
 CVSS: 6.5
-Description: 发送802.11 Deauth帧测试目标是否启用了PMF (Protected Management Frames) 保护。
+Description: 发送802.11 Deauth帧测试PMF保护
 Prerequisites: 支持Monitor模式和包注入的无线网卡 (如 wlan0mon)，并已安装 scapy。
-Usage: python3 29_WiFi_Deauth.py <interface> [target_bssid] [client_mac]
+Usage: python3 31_WiFi_Deauth.py <interface> [target_bssid] [client_mac]
 """
 import sys
 import time
@@ -70,8 +70,9 @@ class WiFiDeauthPlugin(IVIVulnerabilityPlugin):
                 "details": str(e)
             }
 
-if __name__ == '__main__':
-    # 支持命令行参数快速调用
-    iface = sys.argv[1] if len(sys.argv) > 1 else "wlan0mon"
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python3 31_WiFi_Deauth.py <interface> [target_bssid] [client_mac]")
+        sys.exit(1)
     plugin = WiFiDeauthPlugin({"interface": iface})
     plugin.run_verify()

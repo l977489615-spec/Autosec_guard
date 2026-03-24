@@ -1,13 +1,13 @@
 """
 PoC Name: BlueBorne BNEP Heap Overflow
 CVE: CVE-2017-0781
-Component: Bluetooth Stack (Android/Linux)
+Component: Wireless Stack
 Category: Wireless
 Severity: Critical
 CVSS: 8.8
-Description: 探测目标设备是否易受 BlueBorne BNEP 溢出漏洞影响。向 BNEP 服务发送超长的控制流扩展包以触发堆溢出。
+Description: 畸形BNEP控制帧触发Android BT栈堆溢出
 Prerequisites: 目标设备的蓝牙MAC地址，本机支持蓝牙通信。
-Usage: python3 42_BlueBorne_BNEP_Overflow.py <bluetooth_mac>
+Usage: python3 44_BlueBorne_BNEP_Overflow.py <bluetooth_mac>
 """
 import sys
 import socket
@@ -81,7 +81,9 @@ class BlueBorneBNEPPlugin(IVIVulnerabilityPlugin):
             except:
                 pass
 
-if __name__ == '__main__':
-    mac = sys.argv[1] if len(sys.argv) > 1 else "AA:BB:CC:DD:EE:FF"
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python3 44_BlueBorne_BNEP_Overflow.py <bluetooth_mac>")
+        sys.exit(1)
     plugin = BlueBorneBNEPPlugin({"bluetooth_mac": mac})
     plugin.run_verify()

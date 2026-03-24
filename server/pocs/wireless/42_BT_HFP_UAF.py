@@ -1,13 +1,13 @@
 """
-PoC Name: Bluetooth HFP Use-After-Free RCE
+PoC Name: Bluetooth HFP Use-After-Free
 CVE: CVE-2025-0084
-Component: Bluetooth HFP Stack
+Component: Wireless Stack
 Category: Wireless
 Severity: Critical
 CVSS: 9.0
-Description: Bluetooth HFP Profile中use-after-free漏洞,可导致OOB写入和远程代码执行。
+Description: BT HFP Profile UAF导致OOB写入和远程代码执行
 Prerequisites: Linux蓝牙适配器, 目标启用HFP Profile。
-Usage: python3 48_BT_HFP_UAF.py <target_mac>
+Usage: python3 42_BT_HFP_UAF.py <target_mac>
 """
 import sys
 import socket
@@ -54,9 +54,10 @@ class BTHFPUAFPlugin(IVIVulnerabilityPlugin):
             self.logger.info(f"蓝牙连接失败: {e}")
             self.results["vulnerable"] = False
         return self.results
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 48_BT_HFP_UAF.py <target_mac>")
+        print("Usage: python3 42_BT_HFP_UAF.py <target_mac>")
         sys.exit(1)
     plugin = BTHFPUAFPlugin({"target_ip": "N/A", "bd_addr": sys.argv[1]})
     plugin.run_verify()

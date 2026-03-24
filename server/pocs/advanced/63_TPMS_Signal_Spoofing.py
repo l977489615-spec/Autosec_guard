@@ -1,13 +1,13 @@
 """
 PoC Name: TPMS Signal Spoofing
 CVE: N/A
-Component: TPMS Sensor (315/433MHz)
-Category: Wireless
+Component: Multiple
+Category: Advanced
 Severity: Medium
 CVSS: 5.0
-Description: 伪造TPMS传感器信号(315/433MHz),发送异常胎压数据。
+Description: 伪造TPMS传感器信号(315/433MHz)发送异常胎压数据
 Prerequisites: HackRF/RTL-SDR, rpitx或hackrf_transfer。
-Usage: python3 53_TPMS_Spoof.py <frequency>
+Usage: python3 63_TPMS_Signal_Spoofing.py <frequency>
 """
 import sys
 import os
@@ -37,7 +37,10 @@ class TPMSSpoofPlugin(IVIVulnerabilityPlugin):
             self.logger.info("[*] 此攻击需要SDR发射设备")
             self.results["vulnerable"] = False
         return self.results
+
 if __name__ == "__main__":
-    freq = sys.argv[1] if len(sys.argv) > 1 else "315000000"
+    if len(sys.argv) < 2:
+        print("Usage: python3 63_TPMS_Signal_Spoofing.py <frequency>")
+        sys.exit(1)
     plugin = TPMSSpoofPlugin({"target_ip": "N/A", "frequency": freq})
     plugin.run_verify()

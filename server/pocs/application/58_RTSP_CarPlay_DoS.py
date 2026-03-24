@@ -1,3 +1,14 @@
+"""
+PoC Name: RTSP CarPlay DoS (CVE-2023-28898)
+CVE: CVE-2023-28898
+Component: Application Stack
+Category: Application
+Severity: High
+CVSS: 7.5
+Description: 大众 ID4X 等车型 CarPlay RTSP 服务对畸形 ANY /logs?id=0 请求处理不当，导致 IVI 头单元拒绝服务
+Prerequisites: 与目标车机处于同一局域网并放行相关应用层端口
+Usage: python3 58_RTSP_CarPlay_DoS.py <args>
+"""
 import socket
 import sys
 import time
@@ -138,12 +149,8 @@ class RTSPCarPlayDoSPlugin(IVIVulnerabilityPlugin):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("用法: python3 62_RTSP_CarPlay_DoS.py <target_ip> [port]")
+    if len(sys.argv) < 3:
+        print("Usage: python3 58_RTSP_CarPlay_DoS.py <args>")
         sys.exit(1)
-    config = {
-        "target_ip": sys.argv[1],
-        "target_port": sys.argv[2] if len(sys.argv) > 2 else 7000,
-    }
     plugin = RTSPCarPlayDoSPlugin(config)
     plugin.run_verify()

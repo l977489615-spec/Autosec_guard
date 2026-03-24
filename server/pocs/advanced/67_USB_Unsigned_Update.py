@@ -1,13 +1,13 @@
 """
 PoC Name: USB Unsigned Firmware Update (Android/Linux)
 CVE: N/A
-Component: Recovery / Update Service
-Category: OS/Firmware
+Component: Multiple
+Category: Advanced
 Severity: Critical
 CVSS: 9.8
-Description: 生成一个 Android/Linux IVI 专用的伪造 update.zip。该升级包剥离了签名验证元数据(或使用泄漏的 test-keys)，以评估目标车机 Recovery 模式是否允许刷入外来的非法固件。
+Description: 生成 Android/Linux IVI 专用伪造 update.zip 绕过签名验证
 Prerequisites: 与物理车机交互。生成的 update.zip 将落盘，需用户手动烤入FAT32/exFAT格式的U盘。
-Usage: python3 61_USB_Unsigned_Update.py
+Usage: python3 67_USB_Unsigned_Update.py
 """
 import sys
 import os
@@ -68,6 +68,9 @@ class USBUnsignedUpdatePlugin(IVIVulnerabilityPlugin):
             self.logger.error(f"打包 update.zip 失败: {str(e)}")
             return {"status": "error", "details": str(e)}
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python3 67_USB_Unsigned_Update.py")
+        sys.exit(1)
     plugin = USBUnsignedUpdatePlugin()
     plugin.run_verify()

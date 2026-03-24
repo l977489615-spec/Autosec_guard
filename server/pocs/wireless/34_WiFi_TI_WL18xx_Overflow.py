@@ -1,13 +1,13 @@
 """
 PoC Name: TI WL18xx WiFi Driver Overflow
 CVE: CVE-2023-29468
-Component: Wi-Fi Driver (Texas Instruments WL18xx)
+Component: Wireless Stack
 Category: Wireless
 Severity: Critical
 CVSS: 9.6
-Description: 发送包含超大 Vendor Specific Information Element 的畸形 Beacon 帧，触发TI WL18xx 驱动堆溢出。
+Description: 超大Vendor IE的WiFi Beacon触发TI WL18xx驱动溢出
 Prerequisites: 支持Monitor模式的无线网卡 (如 wlan0mon)，已安装 scapy。
-Usage: python3 32_WiFi_TI_WL18xx_Overflow.py <interface>
+Usage: python3 34_WiFi_TI_WL18xx_Overflow.py <interface>
 """
 import sys
 import time
@@ -75,7 +75,9 @@ class TIWL18xxOverflowPlugin(IVIVulnerabilityPlugin):
                 "details": str(e)
             }
 
-if __name__ == '__main__':
-    iface = sys.argv[1] if len(sys.argv) > 1 else "wlan0mon"
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python3 34_WiFi_TI_WL18xx_Overflow.py <interface>")
+        sys.exit(1)
     plugin = TIWL18xxOverflowPlugin({"interface": iface})
     plugin.run_verify()

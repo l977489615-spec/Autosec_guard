@@ -1,3 +1,14 @@
+"""
+PoC Name: HiQnet Audio Protocol Stack Overflow
+CVE: CVE-2021-23906
+Component: Application Stack
+Category: Application
+Severity: Critical
+CVSS: 9.8
+Description: 畸形HiQnet头部(长度0xFFFFFFFF)触发TCP:3804栈溢出
+Prerequisites: 与目标车机处于同一局域网并放行相关应用层端口
+Usage: python3 51_HiQnet_Stack_Overflow_TCP.py <target_ip>
+"""
 import socket
 import struct
 import sys
@@ -89,9 +100,7 @@ class MercedesHiQnetPlugin(IVIVulnerabilityPlugin):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 3_MercedesHiQnetPlugin.py <target_ip>")
+        print("Usage: python3 51_HiQnet_Stack_Overflow_TCP.py <target_ip>")
         sys.exit(1)
-        
-    config = {"target_ip": sys.argv[1]}
     plugin = MercedesHiQnetPlugin(config)
     plugin.run_verify()

@@ -1,13 +1,13 @@
 """
 PoC Name: BLUFFS Session Key Downgrade
 CVE: CVE-2023-24023
-Component: Bluetooth BR/EDR (Core 4.2-5.4)
+Component: Wireless Stack
 Category: Wireless
 Severity: High
 CVSS: 6.8
-Description: 利用BLUFFS攻击强制Bluetooth BR/EDR使用短密钥,可能导致会话被破解。
+Description: 强制Bluetooth BR/EDR协商最短密钥(entropy=1)
 Prerequisites: Bluetooth适配器, 目标设备可达。
-Usage: python3 45_BT_BLUFFS.py <target_mac>
+Usage: python3 39_BT_BLUFFS_Key_Downgrade.py <target_mac>
 """
 import sys
 import socket
@@ -39,9 +39,10 @@ class BLUFFSPlugin(IVIVulnerabilityPlugin):
             self.logger.info(f"蓝牙连接失败: {e}")
             self.results["vulnerable"] = False
         return self.results
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 45_BT_BLUFFS.py <target_mac>")
+        print("Usage: python3 39_BT_BLUFFS_Key_Downgrade.py <target_mac>")
         sys.exit(1)
     plugin = BLUFFSPlugin({"target_ip": "N/A", "bd_addr": sys.argv[1]})
     plugin.run_verify()

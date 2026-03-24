@@ -1,13 +1,13 @@
 """
 PoC Name: UDS RoutineControl Abuse
 CVE: N/A
-Component: UDS Protocol (ISO 14229)
-Category: Protocol
+Component: Canbus Stack
+Category: Canbus
 Severity: Critical
 CVSS: 8.0
-Description: 尝试UDS 0x31服务执行ECU例程(如擦除内存、重置等),检测访问控制。
+Description: UDS 0x31服务未授权执行ECU例程(擦除/重置等)
 Prerequisites: SocketCAN接口, python-can库。
-Usage: python3 43_UDS_RoutineControl.py <can_interface>
+Usage: python3 27_UDS_RoutineControl.py <can_interface>
 """
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
@@ -44,7 +44,10 @@ class UDSRoutineControlPlugin(IVIVulnerabilityPlugin):
             self.logger.error(f"UDS测试失败: {e}")
             self.results["vulnerable"] = False
         return self.results
+
 if __name__ == "__main__":
-    iface = sys.argv[1] if len(sys.argv) > 1 else "can0"
+    if len(sys.argv) < 2:
+        print("Usage: python3 27_UDS_RoutineControl.py <can_interface>")
+        sys.exit(1)
     plugin = UDSRoutineControlPlugin({"target_ip": "N/A", "can_interface": iface})
     plugin.run_verify()

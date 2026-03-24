@@ -1,13 +1,13 @@
 """
 PoC Name: ICMP Host Discovery
 CVE: N/A
-Component: Network Stack (ICMP)
+Component: Recon Stack
 Category: Recon
-Severity: Info
+Severity: Low
 CVSS: 0.0
-Description: 通过ICMP Ping检测目标主机是否在线,获取基本网络信息。
+Description: ICMP Ping检测目标主机是否在线
 Prerequisites: 网络可达性,可能需要root权限发送原始ICMP包。
-Usage: python3 32_ICMP_Host_Discovery.py <target_ip>
+Usage: python3 01_ICMP_Host_Discovery.py <target_ip>
 """
 import subprocess
 import sys
@@ -43,9 +43,10 @@ class ICMPHostDiscoveryPlugin(IVIVulnerabilityPlugin):
             self.results["vulnerable"] = False
         return self.results
 
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 32_ICMP_Host_Discovery.py <target_ip>")
+        print("Usage: python3 01_ICMP_Host_Discovery.py <target_ip>")
         sys.exit(1)
     plugin = ICMPHostDiscoveryPlugin({"target_ip": sys.argv[1]})
     plugin.run_verify()

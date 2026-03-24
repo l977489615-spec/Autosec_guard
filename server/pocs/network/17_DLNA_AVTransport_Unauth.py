@@ -1,3 +1,14 @@
+"""
+PoC Name: DLNA AVTransport Unauth Control
+CVE: N/A
+Component: Network Stack
+Category: Network
+Severity: Medium
+CVSS: 6.0
+Description: SSDP发现+未授权SetAVTransportURI命令
+Prerequisites: 与目标车机处于同一局域网并放行相关应用层端口
+Usage: python3 17_DLNA_AVTransport_Unauth.py <target_ip>
+"""
 import socket
 import requests
 import xml.etree.ElementTree as ET
@@ -193,9 +204,7 @@ class DLNAAVTransportPlugin(IVIVulnerabilityPlugin):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 24_DLNAAVTransportPlugin.py <target_ip>")
+        print("Usage: python3 17_DLNA_AVTransport_Unauth.py <target_ip>")
         sys.exit(1)
-    
-    config = {"target_ip": sys.argv[1]}
     plugin = DLNAAVTransportPlugin(config)
     plugin.run_verify()

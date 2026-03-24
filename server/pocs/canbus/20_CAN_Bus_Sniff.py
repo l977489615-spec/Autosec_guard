@@ -1,13 +1,13 @@
 """
 PoC Name: CAN Bus Traffic Capture
 CVE: N/A
-Component: CAN Bus (SocketCAN)
-Category: Protocol
+Component: Canbus Stack
+Category: Canbus
 Severity: Medium
 CVSS: 5.0
-Description: 捕获CAN总线流量,分析帧ID分布和数据模式。
+Description: 捕获CAN总线流量,分析帧ID分布和数据模式
 Prerequisites: SocketCAN接口(如can0/vcan0), python-can库。
-Usage: python3 37_CAN_Bus_Sniff.py <can_interface>
+Usage: python3 20_CAN_Bus_Sniff.py <can_interface>
 """
 import sys
 import time
@@ -48,7 +48,10 @@ class CANBusSniffPlugin(IVIVulnerabilityPlugin):
             self.results["vulnerable"] = False
         return self.results
 
+
 if __name__ == "__main__":
-    iface = sys.argv[1] if len(sys.argv) > 1 else "can0"
+    if len(sys.argv) < 2:
+        print("Usage: python3 20_CAN_Bus_Sniff.py <can_interface>")
+        sys.exit(1)
     plugin = CANBusSniffPlugin({"target_ip": "N/A", "can_interface": iface})
     plugin.run_verify()

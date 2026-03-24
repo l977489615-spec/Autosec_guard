@@ -1,13 +1,13 @@
 """
 PoC Name: BlueSDK L2CAP Null CID (PerfektBlue)
 CVE: CVE-2024-45431
-Component: BlueSDK Bluetooth Stack (L2CAP)
+Component: Wireless Stack
 Category: Wireless
 Severity: Critical
 CVSS: 8.8
-Description: 利用OpenSynergy BlueSDK中L2CAP远程CID验证不当,创建null CID通道导致RCE。
+Description: BlueSDK L2CAP远程CID验证不当,null CID触发RCE
 Prerequisites: Linux蓝牙适配器, 目标设备运行BlueSDK栈。
-Usage: python3 46_BT_PerfektBlue_L2CAP.py <target_mac>
+Usage: python3 40_BT_PerfektBlue_L2CAP.py <target_mac>
 """
 import sys
 import socket
@@ -52,9 +52,10 @@ class PerfektBlueL2CAPPlugin(IVIVulnerabilityPlugin):
             self.logger.info(f"蓝牙连接失败: {e}")
             self.results["vulnerable"] = False
         return self.results
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 46_BT_PerfektBlue_L2CAP.py <target_mac>")
+        print("Usage: python3 40_BT_PerfektBlue_L2CAP.py <target_mac>")
         sys.exit(1)
     plugin = PerfektBlueL2CAPPlugin({"target_ip": "N/A", "bd_addr": sys.argv[1]})
     plugin.run_verify()

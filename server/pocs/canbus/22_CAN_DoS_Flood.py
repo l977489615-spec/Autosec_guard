@@ -1,13 +1,13 @@
 """
 PoC Name: CAN Bus DoS Flood
 CVE: N/A
-Component: CAN Bus
-Category: Protocol
+Component: Canbus Stack
+Category: Canbus
 Severity: High
 CVSS: 7.5
-Description: 通过高频发送高优先级CAN帧,测试总线是否存在拒绝服务风险。
+Description: 高优先级CAN帧洪泛测试总线拒绝服务风险
 Prerequisites: SocketCAN接口, python-can库, 隔离测试环境。
-Usage: python3 39_CAN_DoS_Flood.py <can_interface>
+Usage: python3 22_CAN_DoS_Flood.py <can_interface>
 """
 import sys
 import time
@@ -47,7 +47,10 @@ class CANDoSFloodPlugin(IVIVulnerabilityPlugin):
             self.results["vulnerable"] = False
         return self.results
 
+
 if __name__ == "__main__":
-    iface = sys.argv[1] if len(sys.argv) > 1 else "can0"
+    if len(sys.argv) < 2:
+        print("Usage: python3 22_CAN_DoS_Flood.py <can_interface>")
+        sys.exit(1)
     plugin = CANDoSFloodPlugin({"target_ip": "N/A", "can_interface": iface})
     plugin.run_verify()
