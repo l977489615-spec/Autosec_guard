@@ -86,23 +86,23 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const s = JSON.parse(saved);
-        if (s.targetIp)    setTargetIp(s.targetIp);
-        if (s.targetName)  setTargetName(s.targetName);
-        if (s.phases)      setPhases(s.phases);
+        if (s.targetIp) setTargetIp(s.targetIp);
+        if (s.targetName) setTargetName(s.targetName);
+        if (s.phases) setPhases(s.phases);
         if (s.finalReport) setFinalReport(s.finalReport);
-        if (s.topology)    setTopology(s.topology);
+        if (s.topology) setTopology(s.topology);
         if (s.adaptiveCtx) setAdaptiveCtx(s.adaptiveCtx);
-        if (s.scanTime)    setScanTime(s.scanTime);
-        if (s.canInterface)  setCanInterface(s.canInterface);
-        if (s.bluetoothMac)  setBluetoothMac(s.bluetoothMac);
+        if (s.scanTime) setScanTime(s.scanTime);
+        if (s.canInterface) setCanInterface(s.canInterface);
+        if (s.bluetoothMac) setBluetoothMac(s.bluetoothMac);
         if (s.wifiInterface) setWifiInterface(s.wifiInterface);
-        if (s.rfFrequency)   setRfFrequency(s.rfFrequency);
+        if (s.rfFrequency) setRfFrequency(s.rfFrequency);
         if (typeof s.activeStep === 'number') setActiveStep(s.activeStep);
         if (s.riskScore) setRiskScore(s.riskScore);
         if (s.results) setResults(s.results);
         if (s.logs) setLogs(s.logs);
       }
-    } catch {}
+    } catch { }
   }, []);
 
   // ── 保存状态到 localStorage ──
@@ -116,7 +116,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
         ...override,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
-    } catch {}
+    } catch { }
   };
 
   const authHeaders = {
@@ -133,7 +133,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
         body: JSON.stringify({ target_ip: ip, open_ports: openPorts, reset: true }),
       });
       if (r.ok) setAdaptiveCtx(await r.json());
-    } catch {}
+    } catch { }
   };
 
   const fetchTopology = async (ip: string) => {
@@ -149,7 +149,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
         const ports = data.nodes?.[0]?.open_ports ?? [];
         await fetchAdaptiveContext(ip, ports);
       }
-    } catch {}
+    } catch { }
   };
 
   const handleReset = () => {
@@ -192,9 +192,11 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
     setRiskScore(0);
     setResults([]);
     setLogs([]);
-    saveState({ phases: resetPhases, finalReport: '', topology: null,
-                adaptiveCtx: null, activeStep: -1, scanTime: now,
-                riskScore: 0, results: [], logs: [] });
+    saveState({
+      phases: resetPhases, finalReport: '', topology: null,
+      adaptiveCtx: null, activeStep: -1, scanTime: now,
+      riskScore: 0, results: [], logs: []
+    });
 
     await fetchTopology(targetIp);
 
@@ -231,7 +233,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
           const data = await r.json();
           const output = data.result || data.error || JSON.stringify(data);
           updatePhase(i, { status: r.ok ? 'done' : 'error', output });
-          
+
           // 集成后端返回的所有详细日志 (工具调用、PoC 详情及 Agent 步骤)
           if (data.logs && Array.isArray(data.logs)) {
             collectedLogs.push(...data.logs);
@@ -259,10 +261,10 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
           }
         } catch (e: any) {
           updatePhase(i, { status: 'error', output: e.message });
-          const errorLog = { 
-            timestamp: new Date().toLocaleTimeString(), 
-            type: 'error', 
-            message: `[!] ${PHASES[i].label} 执行异常: ${e.message}` 
+          const errorLog = {
+            timestamp: new Date().toLocaleTimeString(),
+            type: 'error',
+            message: `[!] ${PHASES[i].label} 执行异常: ${e.message}`
           };
           collectedLogs.push(errorLog);
           setLogs([...collectedLogs]);
@@ -270,34 +272,34 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
       }
     } finally {
       setIsRunning(false);
-      
+
       let calculatedRisk = 0;
-      
+
       // 1. 累加逻辑：遍历所有结构化发现，根据 POC_DATABASE 中的生命等级折算分数 (与 Scan Engine 一致)
       collectedResults.forEach(res => {
         const poc = POC_DATABASE.find(p => p.name === res.name);
         if (poc) {
-           const score = poc.severity === Severity.CRITICAL ? 10 : poc.severity === Severity.HIGH ? 7 : 3;
-           calculatedRisk += score;
+          const score = poc.severity === Severity.CRITICAL ? 10 : poc.severity === Severity.HIGH ? 7 : 3;
+          calculatedRisk += score;
         } else {
-           // 如果找不到匹配的 POC，默认给个保底分
-           calculatedRisk += 5;
+          // 如果找不到匹配的 POC，默认给个保底分
+          calculatedRisk += 5;
         }
       });
-      
+
       // 2. AI 报告增强逻辑：如果 AI 报告明确提到了更高等级的风险，进行提升
       if (currentFinalReport) {
-         const hasCritical = /高危|Critical|严重/i.test(currentFinalReport);
-         const hasHigh = /中危|High|较高/i.test(currentFinalReport);
-         
-         if (hasCritical && calculatedRisk < 90) calculatedRisk = Math.max(calculatedRisk, 95);
-         else if (hasHigh && calculatedRisk < 60) calculatedRisk = Math.max(calculatedRisk, 75);
+        const hasCritical = /高危|Critical|严重/i.test(currentFinalReport);
+        const hasHigh = /中危|High|较高/i.test(currentFinalReport);
 
-         const noVulnerabilities = /未发现任何漏洞|无漏洞|No vulnerabilities|未发现.{1,5}漏洞|0个漏洞|0 vulnerabilities|None found|Secure/i.test(currentFinalReport);
-         // 仅在 AI 报告确认安全且确实无工具发现时置 0
-         if (noVulnerabilities && collectedResults.length === 0) {
-            calculatedRisk = 0;
-         }
+        if (hasCritical && calculatedRisk < 90) calculatedRisk = Math.max(calculatedRisk, 95);
+        else if (hasHigh && calculatedRisk < 60) calculatedRisk = Math.max(calculatedRisk, 75);
+
+        const noVulnerabilities = /未发现任何漏洞|无漏洞|No vulnerabilities|未发现.{1,5}漏洞|0个漏洞|0 vulnerabilities|None found|Secure/i.test(currentFinalReport);
+        // 仅在 AI 报告确认安全且确实无工具发现时置 0
+        if (noVulnerabilities && collectedResults.length === 0) {
+          calculatedRisk = 0;
+        }
       }
 
       calculatedRisk = Math.min(calculatedRisk, 100);
@@ -306,20 +308,20 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
       const sessionObj = {
         id: `SCAN-AGENT-${Date.now().toString().slice(-6)}`,
         targetName: targetName,
-        connection: { 
-          ip: targetIp, 
-          bluetoothMac: bluetoothMac, 
-          canInterface: canInterface, 
-          interface: wifiInterface, 
-          port: '', url: '', frequency: '' 
+        connection: {
+          ip: targetIp,
+          bluetoothMac: bluetoothMac,
+          canInterface: canInterface,
+          interface: wifiInterface,
+          port: '', url: '', frequency: ''
         },
         isConnected: true,
         startTime: now,
         endTime: new Date().toISOString(),
         status: 'completed',
         mode: 'agent',
-        logs: collectedLogs, 
-        results: collectedResults, 
+        logs: collectedLogs,
+        results: collectedResults,
         riskScore: calculatedRisk,
         aiReport: currentFinalReport
       };
@@ -415,16 +417,19 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
     <div className="flex flex-col gap-4 h-full overflow-y-auto p-4">
 
       {/* Header */}
-      <div className="flex items-center gap-3 pb-2 border-b border-cyan-900/40">
-        <Bot className="w-6 h-6 text-cyan-400" />
-        <div className="flex-1">
-          <h2 className="text-lg font-bold text-cyan-300">多 Agent 自主渗透测试</h2>
-          <p className="text-xs text-gray-400">针对 IVI 台架测试 · 服务感知自适应 + MCP + Qwen (千问) Function Calling</p>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 pb-3 border-b border-cyan-900/40">
+        <div className="flex items-center gap-3">
+          <Bot className="w-6 h-6 text-cyan-400 shrink-0" />
+          <div>
+            <h2 className="text-lg font-bold text-cyan-300">多 Agent 自主渗透测试</h2>
+            <p className="text-xs text-gray-400">针对 IVI 测试场景 · 服务感知自适应 + MCP + Qwen (千问) Function Calling</p>
+          </div>
         </div>
+        <div className="flex-1" />
         <button
           onClick={handleReset}
           disabled={isRunning}
-          className="flex items-center gap-2 bg-black/40 border border-gray-600 hover:border-red-500 hover:text-red-400 text-gray-400 disabled:opacity-50 disabled:cursor-not-allowed rounded px-3 py-1.5 text-xs font-semibold transition-colors"
+          className="flex items-center gap-2 bg-black/40 border border-gray-600 hover:border-red-500 hover:text-red-400 text-gray-400 disabled:opacity-50 disabled:cursor-not-allowed rounded px-3 py-1.5 text-xs font-semibold transition-colors w-fit self-end sm:self-auto"
         >
           <RotateCcw className="w-3.5 h-3.5" />
           重置设定与结果
@@ -432,8 +437,8 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
       </div>
 
       {/* Config Row */}
-      <div className="flex gap-3">
-        <div className="flex-1">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-2">
+        <div>
           <label className="text-xs text-gray-400 mb-1 block">目标 IP (IVI / ECU)</label>
           <input
             type="text"
@@ -443,7 +448,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
             className="w-full bg-black/40 border border-cyan-900/50 text-cyan-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500"
           />
         </div>
-        <div className="flex-1">
+        <div>
           <label className="text-xs text-gray-400 mb-1 block">目标名称</label>
           <input
             type="text"
@@ -453,12 +458,12 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
             className="w-full bg-black/40 border border-cyan-900/50 text-cyan-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500"
           />
         </div>
-        <div className="flex flex-col justify-end">
+        <div className="flex flex-col">
           <label className="text-xs text-gray-400 mb-1 block">模式</label>
           <select
             value={isFullMode ? 'full' : 'step'}
             onChange={e => setIsFullMode(e.target.value === 'full')}
-            className="bg-black/40 border border-cyan-900/50 text-cyan-300 rounded px-3 py-2 text-sm focus:outline-none"
+            className="w-full bg-black/40 border border-cyan-900/50 text-cyan-300 rounded px-3 py-2 text-sm focus:outline-none h-[38px]"
           >
             <option value="full">全量自动</option>
             <option value="step">步进调试</option>
@@ -468,7 +473,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
           <button
             onClick={runFullAssessment}
             disabled={isRunning || !targetIp.trim()}
-            className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded px-4 py-2 text-sm font-semibold transition-colors"
+            className="w-full flex items-center justify-center gap-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded px-4 py-2 text-sm font-semibold transition-colors h-[38px]"
           >
             {isRunning ? <Loader className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
             {isRunning ? '运行中...' : '启动评估'}
@@ -477,20 +482,19 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
       </div>
 
       {/* Connection Parameters — Collapsible but prominent */}
-      <div className="border border-cyan-900/30 rounded-lg overflow-hidden bg-black/20">
+      <div className="border border-cyan-900/30 rounded-lg bg-black/20 mt-2">
         <button
           onClick={() => setShowAdvanced(v => !v)}
-          className="w-full flex items-center justify-between px-4 py-2 hover:bg-cyan-950/20 transition-colors"
+          className="w-full flex items-center justify-between px-4 py-3 hover:bg-cyan-950/20 transition-colors"
         >
           <div className="flex items-center gap-2">
             <Sliders className="w-4 h-4 text-cyan-500" />
             <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider">连接参数设定 (可选多向量)</span>
-            <span className="text-[10px] text-gray-500">— 选择性填写以启用特定协议的攻击 Agent</span>
           </div>
           <span className="text-xs text-gray-500">{showAdvanced ? '▲ 收起' : '▼ 展开设定'}</span>
         </button>
         {showAdvanced && (
-          <div className="p-4 pt-1 grid grid-cols-2 lg:grid-cols-4 gap-4 bg-black/5 border-t border-cyan-900/20">
+          <div className="p-4 pt-2 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 bg-black/5 border-t border-cyan-900/20">
             <div>
               <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">蓝牙 MAC</label>
               <input
@@ -643,20 +647,18 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
           return (
             <div
               key={phase.name}
-              className={`bg-black/30 border rounded-lg p-3 transition-all ${
-                isActive ? 'border-cyan-500 shadow-[0_0_12px_rgba(0,200,255,0.2)]' :
+              className={`bg-black/30 border rounded-lg p-3 transition-all ${isActive ? 'border-cyan-500 shadow-[0_0_12px_rgba(0,200,255,0.2)]' :
                 r.status === 'done' ? 'border-emerald-800/60' :
-                r.status === 'error' ? 'border-red-800/60' :
-                'border-cyan-900/40'
-              }`}
+                  r.status === 'error' ? 'border-red-800/60' :
+                    'border-cyan-900/40'
+                }`}
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <PhaseIcon className={`w-4 h-4 ${
-                    isActive ? 'text-cyan-400' :
+                  <PhaseIcon className={`w-4 h-4 ${isActive ? 'text-cyan-400' :
                     r.status === 'done' ? 'text-emerald-400' :
-                    r.status === 'error' ? 'text-red-400' : 'text-gray-500'
-                  }`} />
+                      r.status === 'error' ? 'text-red-400' : 'text-gray-500'
+                    }`} />
                   <span className="text-xs font-semibold text-gray-300">{phase.label}</span>
                 </div>
                 {statusIcon(r.status)}
@@ -676,12 +678,12 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
       <div className="grid grid-cols-3 gap-4 h-[400px]">
         {/* Console - occupy 2/3 */}
         <div className="col-span-2 h-full">
-          <ScanLogs 
-            logs={logs} 
+          <ScanLogs
+            logs={logs}
             onClearLogs={() => {
               setLogs([]);
               saveState({ logs: [] });
-            }} 
+            }}
           />
         </div>
 
@@ -689,20 +691,19 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
         <div className="flex flex-col gap-3 h-full">
           {/* Risk Score */}
           <div className="bg-black/30 border border-cyan-900/40 rounded-lg p-4 flex flex-col items-center justify-center shrink-0">
-             <div className="flex items-center gap-2 mb-2 w-full">
-                <ShieldCheck className="w-4 h-4 text-cyan-400" />
-                <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Risk Score</span>
-             </div>
-             <div className="text-4xl font-mono font-bold text-cyan-400">
-                {riskScore} <span className="text-sm text-gray-600">/ 100</span>
-             </div>
-             <div className={`mt-2 text-[10px] uppercase font-bold px-3 py-1 rounded bg-black/40 border ${
-                riskScore >= 75 ? 'border-red-500/50 text-red-400' : 
-                riskScore >= 40 ? 'border-orange-500/50 text-orange-400' : 
+            <div className="flex items-center gap-2 mb-2 w-full">
+              <ShieldCheck className="w-4 h-4 text-cyan-400" />
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Risk Score</span>
+            </div>
+            <div className="text-4xl font-mono font-bold text-cyan-400">
+              {riskScore} <span className="text-sm text-gray-600">/ 100</span>
+            </div>
+            <div className={`mt-2 text-[10px] uppercase font-bold px-3 py-1 rounded bg-black/40 border ${riskScore >= 75 ? 'border-red-500/50 text-red-400' :
+              riskScore >= 40 ? 'border-orange-500/50 text-orange-400' :
                 'border-emerald-500/50 text-emerald-400'
-             }`}>
-                {riskScore >= 75 ? 'Critical Threat' : riskScore >= 40 ? 'Medium Risk' : 'System Secure'}
-             </div>
+              }`}>
+              {riskScore >= 75 ? 'Critical Threat' : riskScore >= 40 ? 'Medium Risk' : 'System Secure'}
+            </div>
           </div>
 
           {/* Vulnerabilities List */}
@@ -721,7 +722,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
                 ))
               ) : (
                 <div className="h-full flex flex-col items-center justify-center text-gray-600 italic text-[10px]">
-                   No vulnerabilities detected yet
+                  No vulnerabilities detected yet
                 </div>
               )}
             </div>

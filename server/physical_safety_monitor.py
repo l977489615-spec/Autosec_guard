@@ -308,13 +308,17 @@ class AdaptiveContextEngine:
         "bluetooth": ["BLE", "ble", "Bluetooth", "bluetooth"],
         "telnet": ["Telnet", "telnet"],
         "upnp": ["UPnP", "upnp", "AVTransport"],
+        "carplay": ["CarPlay", "carplay", "RTSP", "rtsp"],
+        "adb": ["ADB", "adb", "Android"],
+        "qnx": ["QNX", "qnx", "qconn"],
     }
 
     # 端口 → 服务类型映射
     PORT_TO_SERVICE: Dict[int, str] = {
         22: "ssh", 23: "telnet", 80: "http", 443: "http",
         8080: "http", 8443: "http", 1900: "upnp", 30490: "someip",
-        13400: "uds", 6800: "http",
+        13400: "uds", 6800: "http", 7000: "carplay", 5555: "adb",
+        8000: "qnx",
     }
 
     def __init__(self, target_ip: str):
@@ -411,13 +415,24 @@ class AdaptiveContextEngine:
 
         return "default"
 
-    def should_skip_poc(self, poc_name: str, protocol: str) -> Tuple[bool, str]:
+    def should_skip_poc(self, poc_name: str, protocol: str, is_disruptive: bool = False) -> Tuple[bool, str]:
         """
-        基于反馈历史判断是否应跳过某 PoC（避免重复和已知无效测试）。
+        基于反馈历史和安全策略判断是否应跳过某 PoC。
         """
-        # 如果同协议已确认漏洞，跳过非利用性 PoC
+        # 1. 如果同协议已确认漏洞，跳过冗余扫描 PoC
         if self.feedback.has_vulnerability_in(protocol):
             return True, f"同协议 {protocol} 已发现漏洞，跳过冗余扫描 PoC"
+
+        # 2. 破坏性测试策略 (DoS)
+        if is_disruptive:
+            # 在没有显式授权的情况下，默认在自适应引擎中警告或跳过
+            # 这里我们设定：如果系统当前处于高延迟状态，绝对禁止执行破坏性测试
+            if self.load_probe.get_load_status() in ("high", "critical"):
+                return True, f"目标系统当前负载过高 ({self.load_probe.get_load_status()})，严禁执行破坏性测试 (DoS)"
+            
+            # 返回 False 但在 logs 中记录警告（由 Orchestrator 决定是否继续）
+            logger.warning(f"[Safety] 警告: PoC {poc_name} 具有破坏性 (DoS)，请确认环境允许。")
+            
         return False, ""
 
     def get_throttle_delay(self) -> float:

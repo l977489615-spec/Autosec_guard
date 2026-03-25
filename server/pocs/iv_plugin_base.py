@@ -22,6 +22,8 @@ class IVIVulnerabilityPlugin(metaclass=abc.ABCMeta):
     智能网联汽车漏洞扫描插件基类 (Updated)
     强制执行标准化的漏洞验证生命周期：初始化 -> 环境检查 -> 执行利用 -> 结果反馈
     """
+    is_disruptive = False
+
     def __init__(self, target_config, logger=None):
         """
         :param target_config: 字典，包含 target_ip, target_port, interface 等配置

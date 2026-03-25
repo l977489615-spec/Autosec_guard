@@ -247,7 +247,7 @@ def _tool_run_poc(params: dict) -> dict:
     try:
         resp = requests.post(
             f"{AUTOSEC_API}/api/run_poc",
-            json={"poc_file": poc_name, "params": poc_params},
+            json={"filename": poc_name, "params": poc_params},
             timeout=60,
         )
         if resp.ok:
@@ -297,14 +297,26 @@ def _tool_check_safety(params: dict) -> dict:
         return {"should_run": True, "strategy": "default", "reason": "No context available"}
 
     engine = get_or_create_engine(target_ip)
-    skip, reason = engine.should_skip_poc(poc_name, protocol)
-    strategy = engine.get_adaptive_strategy_for(protocol) if protocol else "default"
-    interval = engine.get_throttle_delay()
+
+    # 尝试获取 PoC 详细信息以确定是否具有破坏性
+    is_disruptive = False
+    try:
+        resp = requests.get(f"{AUTOSEC_API}/api/list_pocs", timeout=5)
+        if resp.ok:
+            pocs = resp.json().get("pocs", [])
+            for p in pocs:
+                if p.get("filename") == poc_name:
+                    is_disruptive = p.get("is_disruptive", False)
+                    break
+    except:
+        pass
+
+    skip, reason = engine.should_skip_poc(poc_name, protocol, is_disruptive)
     return {
         "should_run": not skip,
-        "strategy": strategy,
-        "recommended_interval_s": interval,
-        "reason": reason or "Context check passed — proceed with recommended strategy",
+        "reason": reason,
+        "is_disruptive": is_disruptive,
+        "strategy": engine.get_adaptive_strategy_for(protocol)
     }
 
 
@@ -315,7 +327,7 @@ def _tool_list_pocs(params: dict) -> dict:
         if resp.ok:
             pocs = resp.json().get("pocs", [])
             if category_filter:
-                pocs = [p for p in pocs if category_filter.lower() in p.get("category", "").lower()]
+                pocs = [p for p in pocs if category_filter.lower() in p.get("category_dir", "").lower()]
             return {"pocs": pocs, "count": len(pocs)}
         return {"pocs": [], "count": 0, "error": f"API {resp.status_code}"}
     except Exception as e:

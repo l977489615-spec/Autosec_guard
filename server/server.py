@@ -376,6 +376,10 @@ def list_pocs():
                                     cve = line.split('=')[-1].strip().strip('"\'')
                                     poc_info['cve_id'] = cve
                                     break
+                        if 'is_disruptive = True' in content:
+                            poc_info['is_disruptive'] = True
+                        else:
+                            poc_info['is_disruptive'] = False
                         for line in content.splitlines():
                             if line.strip().startswith('class ') and '(' in line:
                                 poc_info['class_name'] = line.strip().split('(')[0].replace('class ', '').strip()
@@ -942,7 +946,7 @@ def topology_scan(current_user):
 @token_required
 def adaptive_context(current_user):
     """
-    自适应上下文探测 — 针对 IVI 台架测试场景。
+    自适应上下文探测 — 针对 IVI 测试场景。
     基于已知开放端口，探测：
       1. 服务指纹 → 自动裁剪相关 PoC 集合
       2. IVI 系统负载状态 → 推荐扫描节奏

@@ -99,6 +99,10 @@ class TopologyAwareScanner:
         (443,   "TCP", "HTTPS"),
         (6800,  "TCP", "Vehicle API"),
         (4500,  "UDP", "DoIP Entity"),
+        (7000,  "TCP", "CarPlay RTSP"),
+        (5555,  "TCP", "ADB Shell"),
+        (8000,  "TCP", "QNX Qconn"),
+        (1900,  "UDP", "UPnP SSDP"),
     ]
 
     # UDS 侦察探针：发送 DefaultSession 请求

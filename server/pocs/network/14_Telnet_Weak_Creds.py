@@ -21,11 +21,42 @@ class TelnetWeakCredsPlugin(IVIVulnerabilityPlugin):
             raise RuntimeError("需要指定目标IP地址。")
         return True
 
-    def _telnet_interact(self, s, data):
-        """基础的Telnet交互，处理简单的IAC协商"""
-        s.sendall(data.encode('ascii') + b"\r\n")
-        time.sleep(0.5)
-        return s.recv(4096).decode('ascii', 'ignore')
+    def _telnet_read_until(self, s, expected_list, timeout=5):
+        """读取直到匹配到预期的提示符，并简单处理 IAC 协商"""
+        buf = b""
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            try:
+                chunk = s.recv(1024)
+                if not chunk:
+                    break
+                
+                # 处理 IAC (Interpret As Command) 协商
+                # 简单逻辑: 遇到 IAC (0xff) + DO/DONT/WILL/WONT (0xfb-0xfe) + OPTION
+                i = 0
+                while i < len(chunk):
+                    if chunk[i] == 0xff: # IAC
+                        if i + 2 < len(chunk):
+                            cmd = chunk[i+1]
+                            opt = chunk[i+2]
+                            # 自动回复: 对方请求 DO (0xfd) -> 我们回复 WONT (0xfc); 对方 WILL (0xfb) -> 我们回复 DONT (0xfe)
+                            if cmd == 0xfd: # DO -> WONT
+                                s.sendall(bytes([0xff, 0xfc, opt]))
+                            elif cmd == 0xfb: # WILL -> DONT
+                                s.sendall(bytes([0xff, 0xfe, opt]))
+                            i += 3
+                        else:
+                            i += 1
+                    else:
+                        buf += bytes([chunk[i]])
+                        i += 1
+                
+                decoded_buf = buf.decode('ascii', 'ignore').lower()
+                if any(p in decoded_buf for p in expected_list):
+                    return buf.decode('ascii', 'ignore')
+            except socket.timeout:
+                break
+        return buf.decode('ascii', 'ignore')
 
     def exploit(self):
         port = 23
@@ -56,50 +87,70 @@ class TelnetWeakCredsPlugin(IVIVulnerabilityPlugin):
         # 3. 开始爆破
         self.logger.info(f"加载了 {len(credentials)} 组凭据，开始测试...")
         
+        start_scan_time = time.time()
+        consecutive_errors = 0
         for user, passwd in credentials:
+            # 检查时长是否超过2分钟
+            if time.time() - start_scan_time > 120:
+                self.logger.warning("Telnet字典测试超时 (2分钟限制), 自动终止。")
+                break
+
+            s = None
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 s.settimeout(5)
                 s.connect((self.target_ip, port))
                 
-                # 等待登录提示符
-                buffer = ""
-                start_time = time.time()
-                while time.time() - start_time < 5:
-                    chunk = s.recv(1024).decode('ascii', 'ignore')
-                    buffer += chunk
-                    if any(p in buffer.lower() for p in ["login:", "username:", "user:"]):
+                # 等待用户名提示符
+                resp = self._telnet_read_until(s, ["login:", "username:", "user:"])
+                if not any(p in resp.lower() for p in ["login:", "username:", "user:"]):
+                    consecutive_errors += 1
+                    s.close()
+                    if consecutive_errors >= 3:
+                        self.logger.error("连续 3 次未见登录提示符，可能服务已锁定或防护触发，中断。")
                         break
+                    continue
                 
-                # 发送用户名
-                s.sendall(user.encode('ascii') + b"\n")
+                # 发送用户名 (使用 \r\n)
+                s.sendall(user.encode('ascii') + b"\r\n")
                 
                 # 等待密码提示符
-                buffer = ""
-                start_time = time.time()
-                while time.time() - start_time < 5:
-                    chunk = s.recv(1024).decode('ascii', 'ignore')
-                    buffer += chunk
-                    if any(p in buffer.lower() for p in ["password:", "pass:"]):
-                        break
+                resp = self._telnet_read_until(s, ["password:", "pass:"])
+                if not any(p in resp.lower() for p in ["password:", "pass:"]):
+                    consecutive_errors += 1
+                    s.close()
+                    continue
                 
-                # 发送密码
-                s.sendall(passwd.encode('ascii') + b"\n")
-                time.sleep(1)
+                # 发送密码 (使用 \r\n)
+                s.sendall(passwd.encode('ascii') + b"\r\n")
                 
-                # 检查是否成功
-                final_buffer = s.recv(1024).decode('ascii', 'ignore')
-                # 通常登录成功的标识
-                if any(m in final_buffer for m in ["$", "#", "Welcome", "last login"]):
+                # 检查是否登录成功
+                resp = self._telnet_read_until(s, ["#", "$", ">", "welcome", "login incorrect"], timeout=3)
+                
+                if any(m in resp.lower() for m in ["#", "$", ">", "welcome"]) and "incorrect" not in resp.lower():
                     self.logger.warning(f"[+] 发现Telnet弱口令: {user} / {passwd}")
                     self.results["vulnerable"] = True
-                    self.results["evidence"] = f"Telnet login: {user}/{passwd}"
+                    self.results["evidence"] = f"Telnet login successful with {user}:{passwd}"
                     s.close()
                     return self.results
                 
+                # 重置错误计数（因为我们成功进行了交互）
+                consecutive_errors = 0
                 s.close()
+                if len(credentials) > 20: 
+                    time.sleep(0.1)
+                
+            except (ConnectionRefusedError, socket.gaierror):
+                self.logger.error("Telnet连接被拒绝，中断扫描。")
+                if s: s.close()
+                break
             except Exception as e:
-                self.logger.debug(f"测试 {user}:{passwd} 失败: {e}")
+                consecutive_errors += 1
+                self.logger.debug(f"测试 {user}:{passwd} 异常 ({consecutive_errors}/3): {e}")
+                if s: s.close()
+                if consecutive_errors >= 3:
+                    self.logger.error("连续多次操作异常，中断测试。")
+                    break
                 continue
 
         self.logger.info("测试结束，未发现弱口令。")

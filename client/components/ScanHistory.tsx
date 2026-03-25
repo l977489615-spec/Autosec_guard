@@ -211,7 +211,16 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                                 </h3>
                                 <div className="space-y-2">
                                     {selectedSession.results.filter(r => r.vulnerable).map((res) => {
-                                        const poc = POC_DATABASE.find(p => p.id === res.pocId);
+                                        // Helper to extract filename without index number or path
+                                        const normalizeFile = (f: string) => f?.split('/').pop()?.replace(/^\d+_/, '').toLowerCase();
+                                        const resName = res.pocId || res.name || "";
+                                        const cleanResName = normalizeFile(resName);
+                                        
+                                        const poc = POC_DATABASE.find(p => 
+                                            p.id === res.pocId || 
+                                            p.pocFile === resName || 
+                                            normalizeFile(p.pocFile) === cleanResName
+                                        );
                                         return (
                                             <div key={res.pocId} onClick={() => poc && setSelectedResultPoc(poc)} className="bg-cyber-900 border-l-2 border-cyber-danger p-2 rounded cursor-pointer hover:bg-black/40">
                                                 <div className="flex justify-between"><span className="text-white text-sm font-bold">{poc?.name}</span><span className="text-red-500 text-[10px]">{poc?.severity}</span></div>

@@ -158,9 +158,14 @@ def _direct_tool_call(tool_name: str, params: dict, on_log: Optional[callable] =
                 resp = requests.get(f"{AUTOSEC_API}/api/list_pocs", timeout=10)
                 if resp.ok:
                     pocs = resp.json().get("pocs", [])
+                    # [Sync ID Map]
+                    for p in pocs:
+                        if p.get("pocFile") and p.get("id"):
+                            self.poc_filename_to_id[os.path.basename(p["pocFile"])] = p["id"]
+                            self.poc_filename_to_id[p["pocFile"]] = p["id"]
                     cat = params.get("category")
                     if cat:
-                        pocs = [p for p in pocs if cat.lower() in p.get("category", "").lower()]
+                        pocs = [p for p in pocs if cat.lower() in p.get("category_dir", "").lower()]
                     if on_log:
                         on_log({"type": "success", "message": f"[Scanner] 已加载 {len(pocs)} 个漏洞探测模块"})
                     return {"pocs": pocs, "count": len(pocs)}
@@ -171,7 +176,7 @@ def _direct_tool_call(tool_name: str, params: dict, on_log: Optional[callable] =
             pocs_dir = os.path.join(os.path.dirname(__file__), "pocs")
             files = glob.glob(os.path.join(pocs_dir, "**", "*.py"), recursive=True)
             pocs = [{"filename": os.path.relpath(f, pocs_dir),
-                     "category": os.path.basename(os.path.dirname(f))}
+                     "category_dir": os.path.basename(os.path.dirname(f))}
                     for f in files
                     if not os.path.basename(f).startswith("_")
                     and os.path.basename(f) != "iv_plugin_base.py"]
@@ -360,12 +365,12 @@ class QwenAgent:
 
                 result = call_mcp_tool(tool_name, tool_params, on_log=self.on_log)
                 
-                # 如果是运行 PoC 且发现漏洞，记录到结果列表中 (仅限自主模式调用)
+                # [修正] 确保无论是通过 MCP 还是直接调用，只要 run_poc 发现漏洞，就记入 findings
                 if tool_name == "run_poc" and result.get("vulnerable"):
-                    # 尝试从 orchestrator 获取 findings 引用 (如果是 Orchestrator 驱动)
-                    # 这里的 _add_log 本身就是一个闭包，我们可以利用它或者直接依赖 orchestrator 状态
-                    # 这种简单方式：如果 result 有 vulnerable 且含有 evidence，则认为是一个发现
-                    pass 
+                    if self.on_log:
+                        # [优化] 直接在消息中包含文件名，避免 Orchestrator 回溯查找失败
+                        poc_filename = tool_params.get("poc_name") or tool_params.get("filename") or "unknown"
+                        self.on_log({"type": "success", "message": f"[Executor] PoC 执行完毕: 发现漏洞! (文件名: {poc_filename})"})
 
                 # 记录详细结果到日志
                 if self.on_log:
@@ -406,6 +411,7 @@ DECISION_AGENT_PROMPT = """
 你是一名经验丰富的汽车网络安全渗透专家，专注于 UDS、CAN、SOME/IP 等车载协议。
 基于侦察 Agent 提供的目标信息和【可用资源】，你需要：
 1. 调用 list_pocs 查询可用的 PoC 验证模块列表
+   • 注意：当前系统已全面升级为序号化命名规则（例如 10_SSH_Weak_Creds.py），请【必须】使用 list_pocs 返回的 filename 字段作为唯一执行标识。
 2. 调用 get_adaptive_context 获取目标的服务指纹和认证类型
 3. 批准过滤如下 PoC（不得将其列入攻击计划）：
    • 如果【可用资源】中没有 bluetooth_mac，则跳过所有荷包名包含 "bluetooth"/"BT"/"ble" 的 PoC
@@ -519,6 +525,8 @@ class AgentOrchestrator:
 
         # 发现的漏洞清单 (Structured Findings)
         self.findings: List[dict] = []
+        # PoC 文件名到 ID 的映射，用于完善 findings
+        self.poc_filename_to_id = {}
 
     def _add_log(self, entry: Any):
         """添加一条日志到缓冲区"""
@@ -530,22 +538,28 @@ class AgentOrchestrator:
             
             # [新逻辑] 自动捕获漏洞发现：如果日志消息中包含“发现漏洞!”且来自 Executor，则记录到 findings
             # 这种方式最鲁棒，因为 _direct_tool_call 已经处理了 vulnerable 逻辑
+            # [优化] 直接从日志消息中提取文件名
             msg = entry.get("message", "")
             if "[Executor] PoC 执行完毕: 发现漏洞!" in msg:
-                # 尝试从上下文中获取最近的 PoC 名称
-                # 我们寻找前一条“调用工具”日志
-                poc_name = "未知漏洞"
-                for prev in reversed(self.current_logs[:-1]):
-                    if "调用工具: run_poc" in prev.get("message", ""):
-                        import re
-                        match = re.search(r'poc_name":\s*"([^"]+)"', prev.get("message", ""))
-                        if match:
-                            poc_name = match.group(1)
-                        break
+                import re
+                match = re.search(r'\(文件名:\s*([^)]+)\)', msg)
+                if match:
+                    poc_name = match.group(1).strip()
+                else:
+                    # 兼容性回滚：回溯查找最近的工具调用
+                    poc_name = "未知漏洞"
+                    for prev in reversed(self.current_logs[:-1]):
+                        if "调用工具: run_poc" in prev.get("message", ""):
+                            n_match = re.search(r'poc_name":\s*"([^"]+)"', prev.get("message", ""))
+                            if n_match:
+                                poc_name = n_match.group(1)
+                            break
                 
                 # 查重并添加
                 if not any(f["name"] == poc_name for f in self.findings):
+                    poc_id = self.poc_filename_to_id.get(poc_name) or self.poc_filename_to_id.get(os.path.basename(poc_name))
                     self.findings.append({
+                        "pocId": poc_id,
                         "name": poc_name,
                         "vulnerable": True,
                         "severity": "High", # 默认为高，由后续 Assessment Agent 修正
