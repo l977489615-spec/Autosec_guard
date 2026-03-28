@@ -60,7 +60,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
   const [showAdvanced, setShowAdvanced] = useState(true);
 
   // 可选参数 — 控制 Agent 选择哪类 PoC
-  const [canInterface, setCanInterface] = useState('');
+  const [canInterface, setCanInterface] = useState('PCAN_USBBUS1');
   const [bluetoothMac, setBluetoothMac] = useState('');
   const [wifiInterface, setWifiInterface] = useState('');
   const [rfFrequency, setRfFrequency] = useState('');
@@ -158,7 +158,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
     setTargetIp('');
     setTargetName('IVI System');
     setIsFullMode(true);
-    setCanInterface('');
+    setCanInterface('PCAN_USBBUS1');
     setBluetoothMac('');
     setWifiInterface('');
     setRfFrequency('');
@@ -509,7 +509,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
               <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">CAN 接口</label>
               <input
                 type="text"
-                placeholder="can0 / vcan0"
+                placeholder="PCAN_USBBUS1"
                 value={canInterface}
                 onChange={e => setCanInterface(e.target.value)}
                 className="w-full bg-black/40 border border-cyan-900/40 text-cyan-300 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-cyan-500"

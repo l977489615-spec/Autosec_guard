@@ -7,9 +7,10 @@ import { generateSecurityReport } from '../services/LLMService';
 import PocDetailModal from './PocDetailModal';
 import ManualTestModal from './ManualTestModal';
 import { checkBackendHealth, executePocScript, setBackendUrl, getBackendUrl, listPocs, fingerprintOS, runPocPlugin, saveScanSession } from '../services/api';
-import { Play, RotateCw, FileText, AlertTriangle, ShieldCheck, Wifi, Cable, Bluetooth, Power, Crosshair, List, Server, ArrowRight, Settings, Save, WifiOff, Link, CheckCircle, Radio, Activity, Download, ChevronRight } from 'lucide-react';
+import { Play, RotateCw, FileText, AlertTriangle, ShieldCheck, Wifi, Cable, Bluetooth, Power, Crosshair, List, Server, ArrowRight, Settings, Save, WifiOff, Link, CheckCircle, Radio, Activity, Download, ChevronRight, Bot } from 'lucide-react';
+import AgentScan from './AgentScan';
 
-type ScannerMode = 'SELECTION' | 'GLOBAL' | 'MANUAL';
+type ScannerMode = 'SELECTION' | 'GLOBAL' | 'MANUAL' | 'AGENT';
 
 interface ScannerProps {
   onAddToHistory: (session: ScanSession) => void;
@@ -230,9 +231,9 @@ const Scanner: React.FC<ScannerProps> = ({
         // Append poc metadata so the backend can print it nicely
         params.poc_id = poc.id;
         params.poc_name = poc.name;
-        
+
         const body = JSON.stringify({ filename: poc.pocFile, params, stream: true });
-        
+
         fetch(`${engineUrl}/api/run_poc_stream`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
@@ -248,7 +249,7 @@ const Scanner: React.FC<ScannerProps> = ({
           const decoder = new TextDecoder();
           let buffer = '';
           let finalResult: any = null;
-          
+
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
@@ -264,7 +265,7 @@ const Scanner: React.FC<ScannerProps> = ({
                   } else if (payload.type === 'result') {
                     finalResult = payload;
                   }
-                } catch {}
+                } catch { }
               }
             }
           }
@@ -448,7 +449,7 @@ const Scanner: React.FC<ScannerProps> = ({
         <p className="text-gray-400">Choose the appropriate operational mode for your security assessment.</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-4xl">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 w-full max-w-6xl">
         {/* Global Auto Option */}
         <button
           onClick={() => {
@@ -467,11 +468,34 @@ const Scanner: React.FC<ScannerProps> = ({
           </h3>
           <p className="text-gray-400 text-sm leading-relaxed mb-4">
             Perform a comprehensive batch scan of the entire vehicle ecosystem.
-            Requires local Python execution engine.
           </p>
           <div className="flex gap-2">
             <span className="text-xs bg-cyber-900 border border-cyber-700 px-2 py-1 rounded text-gray-400 font-mono">ALL INTERFACES</span>
-            <span className="text-xs bg-cyber-900 border border-cyber-700 px-2 py-1 rounded text-gray-400 font-mono">REAL EXECUTION</span>
+            <span className="text-xs bg-cyber-900 border border-cyber-700 px-2 py-1 rounded text-gray-400 font-mono">BATCH</span>
+          </div>
+        </button>
+
+        {/* Autonomous Agent Option */}
+        <button
+          onClick={() => {
+            setMode('AGENT');
+            setSession(p => ({ ...p, mode: 'agent' }));
+          }}
+          className="group relative bg-cyber-800 border border-cyber-700 hover:border-emerald-400 p-8 rounded-xl text-left transition-all duration-300 hover:shadow-[0_0_30px_rgba(16,185,129,0.15)]"
+        >
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-teal-500 opacity-0 group-hover:opacity-100 transition-opacity rounded-t-xl" />
+          <div className="mb-6 bg-cyber-900 w-16 h-16 rounded-lg flex items-center justify-center border border-cyber-700 group-hover:border-emerald-400/50 group-hover:scale-110 transition-all">
+            <Bot className="text-emerald-400 w-8 h-8" />
+          </div>
+          <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
+            Autonomous Agent <ArrowRight size={16} className="opacity-0 group-hover:opacity-100 transition-opacity -translate-x-2 group-hover:translate-x-0" />
+          </h3>
+          <p className="text-gray-400 text-sm leading-relaxed mb-4">
+            Multi-agent system for adaptive reconnaissance and intelligent pentesting.
+          </p>
+          <div className="flex gap-2">
+            <span className="text-xs bg-cyber-900 border border-cyber-700 px-2 py-1 rounded text-gray-400 font-mono">ADAPTIVE</span>
+            <span className="text-xs bg-cyber-900 border border-cyber-700 px-2 py-1 rounded text-gray-400 font-mono">AI DRIVEN</span>
           </div>
         </button>
 
@@ -493,11 +517,10 @@ const Scanner: React.FC<ScannerProps> = ({
           </h3>
           <p className="text-gray-400 text-sm leading-relaxed mb-4">
             Select and execute specific POC modules individually.
-            Target parameters are configured per vulnerability test.
           </p>
           <div className="flex gap-2">
-            <span className="text-xs bg-cyber-900 border border-cyber-700 px-2 py-1 rounded text-gray-400 font-mono">SINGLE TARGET</span>
             <span className="text-xs bg-cyber-900 border border-cyber-700 px-2 py-1 rounded text-gray-400 font-mono">CONTROLLED</span>
+            <span className="text-xs bg-cyber-900 border border-cyber-700 px-2 py-1 rounded text-gray-400 font-mono">SINGLE</span>
           </div>
         </button>
       </div>
@@ -527,7 +550,7 @@ const Scanner: React.FC<ScannerProps> = ({
         isOpen={!!manualTestPoc}
         onClose={() => setManualTestPoc(null)}
         // In Manual Mode, we pass empty connection params so user MUST input them
-        globalConnection={mode === 'GLOBAL' ? session.connection : { ip: '', port: '', bluetoothMac: '', canInterface: '', url: '', frequency: '' }}
+        globalConnection={mode === 'GLOBAL' ? session.connection : { ip: '', port: '', bluetoothMac: '', canInterface: 'PCAN_USBBUS1', url: '', frequency: '' }}
       />
 
       {/* Top Bar for Modes */}
@@ -543,8 +566,10 @@ const Scanner: React.FC<ScannerProps> = ({
             ← CHANGE MODE
           </button>
           <div className="flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full ${mode === 'GLOBAL' ? 'bg-cyber-accent' : 'bg-cyber-danger'}`}></span>
-            <span className="text-xs font-mono font-bold text-white uppercase">{mode === 'GLOBAL' ? 'GLOBAL AUTO SCAN' : 'MANUAL DIAGNOSTIC'}</span>
+            <span className={`w-2 h-2 rounded-full ${mode === 'GLOBAL' ? 'bg-cyber-accent' : mode === 'AGENT' ? 'bg-emerald-400' : 'bg-cyber-danger'}`}></span>
+            <span className="text-xs font-mono font-bold text-white uppercase">
+              {mode === 'GLOBAL' ? 'GLOBAL AUTO SCAN' : mode === 'AGENT' ? 'AUTONOMOUS AGENT SCAN' : 'MANUAL DIAGNOSTIC'}
+            </span>
           </div>
         </div>
       )}
@@ -553,6 +578,12 @@ const Scanner: React.FC<ScannerProps> = ({
       <div className={`h-full ${mode !== 'SELECTION' ? 'pt-12' : ''}`}>
 
         {mode === 'SELECTION' && renderSelectionScreen()}
+
+        {mode === 'AGENT' && token && (
+          <div className="h-full flex flex-col">
+            <AgentScan token={token} />
+          </div>
+        )}
 
         {mode === 'GLOBAL' && (
           // Modified grid container to handle scrolling columns correctly
@@ -642,7 +673,7 @@ const Scanner: React.FC<ScannerProps> = ({
                           type="text"
                           value={session.connection.canInterface}
                           onChange={(e) => setSession(p => ({ ...p, connection: { ...p.connection, canInterface: e.target.value } }))}
-                          placeholder="can0"
+                          placeholder="PCAN_USBBUS1"
                           className="w-full mt-1 bg-cyber-900 border border-cyber-600 text-white p-1.5 text-sm rounded font-mono focus:border-cyber-accent outline-none"
                           disabled={session.isConnected}
                         />
@@ -717,89 +748,89 @@ const Scanner: React.FC<ScannerProps> = ({
 
               <div className="flex-1 flex flex-col gap-6 overflow-y-auto pb-12 custom-scrollbar pr-1">
                 <div className="flex flex-col xl:flex-row gap-6 shrink-0 h-fit">
-                {/* Results Column moved to center/right */}
-                {session.status === 'completed' && (
-                  <div className="flex-1 bg-cyber-800 border border-cyber-700 p-6 rounded-lg shadow-lg animate-slide-up">
-                    <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                      <ShieldCheck className="text-cyber-accent" /> Scan Summary
-                    </h3>
-                    <div className="grid grid-cols-2 gap-4 mb-4">
-                      <div className="bg-cyber-900/50 p-3 rounded border border-cyber-700">
-                        <span className="text-[10px] text-gray-500 block uppercase">Threats Detected</span>
-                        <span className="font-mono text-2xl font-bold text-cyber-danger">
-                          {session.results.filter(r => r.vulnerable).length}
-                        </span>
+                  {/* Results Column moved to center/right */}
+                  {session.status === 'completed' && (
+                    <div className="flex-1 bg-cyber-800 border border-cyber-700 p-6 rounded-lg shadow-lg animate-slide-up">
+                      <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                        <ShieldCheck className="text-cyber-accent" /> Scan Summary
+                      </h3>
+                      <div className="grid grid-cols-2 gap-4 mb-4">
+                        <div className="bg-cyber-900/50 p-3 rounded border border-cyber-700">
+                          <span className="text-[10px] text-gray-500 block uppercase">Threats Detected</span>
+                          <span className="font-mono text-2xl font-bold text-cyber-danger">
+                            {session.results.filter(r => r.vulnerable).length}
+                          </span>
+                        </div>
+                        <div className="bg-cyber-900/50 p-3 rounded border border-cyber-700">
+                          <span className="text-[10px] text-gray-500 block uppercase">Risk Factor</span>
+                          <span className="font-mono text-2xl font-bold text-orange-500">
+                            {session.riskScore}%
+                          </span>
+                        </div>
                       </div>
-                      <div className="bg-cyber-900/50 p-3 rounded border border-cyber-700">
-                        <span className="text-[10px] text-gray-500 block uppercase">Risk Factor</span>
-                        <span className="font-mono text-2xl font-bold text-orange-500">
-                          {session.riskScore}%
-                        </span>
+
+                      <button
+                        onClick={handleAiAnalysis}
+                        disabled={isAnalysing}
+                        className="w-full py-3 bg-cyber-accent/10 border border-cyber-accent text-cyber-accent hover:bg-cyber-accent hover:text-black rounded font-bold transition-all flex justify-center items-center gap-2 uppercase tracking-widest text-sm shadow-[0_0_15px_rgba(0,240,255,0.1)]"
+                      >
+                        {isAnalysing ? <RotateCw className="animate-spin" size={16} /> : <FileText size={16} />}
+                        {session.aiReport ? 'Re-Generate AI Intelligence' : 'Generate AI Security Report'}
+                      </button>
+
+                      <div className="mt-4 flex items-center justify-center gap-2 py-2 border-t border-cyber-700/50">
+                        <Save size={12} className="text-cyber-500" />
+                        <span className="text-[10px] font-mono text-gray-500 uppercase tracking-tighter">Session Archive Synchronized</span>
                       </div>
                     </div>
+                  )}
 
-                    <button
-                      onClick={handleAiAnalysis}
-                      disabled={isAnalysing}
-                      className="w-full py-3 bg-cyber-accent/10 border border-cyber-accent text-cyber-accent hover:bg-cyber-accent hover:text-black rounded font-bold transition-all flex justify-center items-center gap-2 uppercase tracking-widest text-sm shadow-[0_0_15px_rgba(0,240,255,0.1)]"
-                    >
-                      {isAnalysing ? <RotateCw className="animate-spin" size={16} /> : <FileText size={16} />}
-                      {session.aiReport ? 'Re-Generate AI Intelligence' : 'Generate AI Security Report'}
-                    </button>
-
-                    <div className="mt-4 flex items-center justify-center gap-2 py-2 border-t border-cyber-700/50">
-                      <Save size={12} className="text-cyber-500" />
-                      <span className="text-[10px] font-mono text-gray-500 uppercase tracking-tighter">Session Archive Synchronized</span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Detected Threats (Brief List) */}
-                {session.status === 'completed' && !session.aiReport && (
-                  <div className="flex-1 bg-cyber-800 border border-cyber-700 rounded-lg p-6 max-h-[300px] overflow-y-auto custom-scrollbar">
-                    <h3 className="text-md font-bold text-white mb-4 flex items-center gap-2">
-                      <AlertTriangle className="text-yellow-500" size={18} /> Found Vectors
-                    </h3>
-                    <div className="space-y-2">
-                      {session.results.filter(r => r.vulnerable).map((res) => {
-                        const poc = POC_DATABASE.find(p => p.id === res.pocId);
-                        return (
-                          <div key={res.pocId} onClick={() => poc && setSelectedResultPoc(poc)} className="bg-cyber-900/80 border-l-2 border-cyber-danger p-2 rounded cursor-pointer hover:bg-cyber-700 transition-colors group">
-                            <div className="flex justify-between items-center">
-                              <span className="text-gray-200 font-bold text-xs truncate">{poc?.name}</span>
-                              <ChevronRight size={12} className="text-gray-600 group-hover:text-cyber-accent transition-colors" />
+                  {/* Detected Threats (Brief List) */}
+                  {session.status === 'completed' && !session.aiReport && (
+                    <div className="flex-1 bg-cyber-800 border border-cyber-700 rounded-lg p-6 max-h-[300px] overflow-y-auto custom-scrollbar">
+                      <h3 className="text-md font-bold text-white mb-4 flex items-center gap-2">
+                        <AlertTriangle className="text-yellow-500" size={18} /> Found Vectors
+                      </h3>
+                      <div className="space-y-2">
+                        {session.results.filter(r => r.vulnerable).map((res) => {
+                          const poc = POC_DATABASE.find(p => p.id === res.pocId);
+                          return (
+                            <div key={res.pocId} onClick={() => poc && setSelectedResultPoc(poc)} className="bg-cyber-900/80 border-l-2 border-cyber-danger p-2 rounded cursor-pointer hover:bg-cyber-700 transition-colors group">
+                              <div className="flex justify-between items-center">
+                                <span className="text-gray-200 font-bold text-xs truncate">{poc?.name}</span>
+                                <ChevronRight size={12} className="text-gray-600 group-hover:text-cyber-accent transition-colors" />
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
-                      {session.results.filter(r => r.vulnerable).length === 0 && (
-                        <div className="text-center text-gray-500 py-4 text-xs font-mono italic">NO THREATS IDENTIFIED</div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {session.aiReport && (
-                <div className="bg-cyber-800 border border-cyber-accent/30 rounded-lg p-6 flex flex-col relative shadow-2xl shrink-0 h-auto min-h-max">
-                  <div className="flex justify-between items-center mb-6 border-b border-cyber-700/50 pb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded bg-cyber-accent/10 flex items-center justify-center border border-cyber-accent/30">
-                        <Activity size={18} className="text-cyber-accent" />
+                          );
+                        })}
+                        {session.results.filter(r => r.vulnerable).length === 0 && (
+                          <div className="text-center text-gray-500 py-4 text-xs font-mono italic">NO THREATS IDENTIFIED</div>
+                        )}
                       </div>
-                      <h4 className="text-sm font-bold text-white tracking-[0.2em] uppercase">Tactical Security Assessment</h4>
                     </div>
-                    <button
-                      onClick={handleDownloadPdf}
-                      className="text-xs flex items-center gap-2 bg-cyber-900 border border-cyber-700 hover:border-cyber-accent text-white px-4 py-2 rounded-lg transition-all shadow-inner"
-                    >
-                      <Download size={14} className="text-cyber-accent" /> EXPORT DECISION PDF
-                    </button>
-                  </div>
-                  <div id="ai-report-content" className="prose prose-invert max-w-none text-sm text-gray-400 font-sans p-6 bg-black/40 rounded-xl border border-cyber-800 break-words h-auto min-h-max pb-12">
-                    <MarkdownRenderer content={session.aiReport} />
-                  </div>
+                  )}
                 </div>
+
+                {session.aiReport && (
+                  <div className="bg-cyber-800 border border-cyber-accent/30 rounded-lg p-6 flex flex-col relative shadow-2xl shrink-0 h-auto min-h-max">
+                    <div className="flex justify-between items-center mb-6 border-b border-cyber-700/50 pb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded bg-cyber-accent/10 flex items-center justify-center border border-cyber-accent/30">
+                          <Activity size={18} className="text-cyber-accent" />
+                        </div>
+                        <h4 className="text-sm font-bold text-white tracking-[0.2em] uppercase">Tactical Security Assessment</h4>
+                      </div>
+                      <button
+                        onClick={handleDownloadPdf}
+                        className="text-xs flex items-center gap-2 bg-cyber-900 border border-cyber-700 hover:border-cyber-accent text-white px-4 py-2 rounded-lg transition-all shadow-inner"
+                      >
+                        <Download size={14} className="text-cyber-accent" /> EXPORT DECISION PDF
+                      </button>
+                    </div>
+                    <div id="ai-report-content" className="prose prose-invert max-w-none text-sm text-gray-400 font-sans p-6 bg-black/40 rounded-xl border border-cyber-800 break-words h-auto min-h-max pb-12">
+                      <MarkdownRenderer content={session.aiReport} />
+                    </div>
+                  </div>
                 )}
               </div>
             </div>

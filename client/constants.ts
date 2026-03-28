@@ -541,13 +541,13 @@ class SOMEIPServiceDiscoveryPlugin(IVIVulnerabilityPlugin):
         codeSnippet: `"""
 PoC Name: CAN Bus Traffic Capture
 CVE: N/A
-Component: CAN Bus (SocketCAN)
+Component: CAN Bus (PCAN)
 Category: Protocol
 Severity: Medium
 CVSS: 5.0
 Description: 捕获CAN总线流量,分析帧ID分布和数据模式。
-Prerequisites: SocketCAN接口(如can0/vcan0), python-can库。
-Usage: python3 22_CAN_Bus_Sniff.py <can_interface>
+Prerequisites: PCAN接口(如PCAN_USBBUS1), python-can库, PCAN驱动。
+Usage: python3 22_CAN_Bus_Sniff.py PCAN_USBBUS1
 """
 import sys
 import time
@@ -566,13 +566,13 @@ from iv_plugin_base import IVIVulnerabilityPlugin
         codeSnippet: `"""
 PoC Name: CAN Message Injection
 CVE: N/A
-Component: CAN Bus (SocketCAN)
+Component: CAN Bus (PCAN)
 Category: Protocol
 Severity: Critical
 CVSS: 9.0
 Description: 向CAN总线注入任意帧,验证是否缺少认证和过滤机制。
-Prerequisites: SocketCAN接口, python-can库, 授权测试环境。
-Usage: python3 23_CAN_Message_Injection.py <can_interface>
+Prerequisites: PCAN接口, python-can库, PCAN驱动, 授权测试环境。
+Usage: python3 23_CAN_Message_Injection.py PCAN_USBBUS1
 """
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
@@ -591,13 +591,13 @@ class CANInjectionPlugin(IVIVulnerabilityPlugin):
         codeSnippet: `"""
 PoC Name: CAN Bus DoS Flood
 CVE: N/A
-Component: CAN Bus
+Component: CAN Bus (PCAN)
 Category: Protocol
 Severity: High
 CVSS: 7.5
 Description: 通过高频发送高优先级CAN帧,测试总线是否存在拒绝服务风险。
-Prerequisites: SocketCAN接口, python-can库, 隔离测试环境。
-Usage: python3 24_CAN_DoS_Flood.py <can_interface>
+Prerequisites: PCAN接口, python-can库, PCAN驱动, 隔离测试环境。
+Usage: python3 24_CAN_DoS_Flood.py PCAN_USBBUS1
 """
 import sys
 import time
@@ -616,13 +616,13 @@ from iv_plugin_base import IVIVulnerabilityPlugin
         codeSnippet: `"""
 PoC Name: CAN Replay Attack
 CVE: N/A
-Component: CAN Bus
+Component: CAN Bus (PCAN)
 Category: Protocol
 Severity: High
 CVSS: 7.0
 Description: 录制CAN总线消息并重放,验证是否缺少序列号/时间戳保护。
-Prerequisites: SocketCAN接口, python-can库。
-Usage: python3 25_CAN_Replay_Attack.py <can_interface>
+Prerequisites: PCAN接口, python-can库, PCAN驱动。
+Usage: python3 25_CAN_Replay_Attack.py PCAN_USBBUS1
 """
 import sys
 import time
@@ -646,8 +646,8 @@ Category: Protocol
 Severity: High
 CVSS: 7.5
 Description: 尝试通过UDS 0x10服务直接进入扩展诊断会话,检测是否缺少访问控制。
-Prerequisites: SocketCAN接口, python-can库。
-Usage: python3 26_UDS_DiagSession_Bypass.py <can_interface>
+Prerequisites: PCAN接口, python-can库, PCAN驱动。
+Usage: python3 26_UDS_DiagSession_Bypass.py PCAN_USBBUS1
 """
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
@@ -696,8 +696,8 @@ Category: Protocol
 Severity: Critical
 CVSS: 8.5
 Description: 尝试UDS 0x23服务读取ECU内存,检测是否存在未授权内存读取。
-Prerequisites: SocketCAN接口, python-can库。
-Usage: python3 28_UDS_ReadMemory.py <can_interface>
+Prerequisites: PCAN接口, python-can库, PCAN驱动。
+Usage: python3 28_UDS_ReadMemory.py PCAN_USBBUS1
 """
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
@@ -721,8 +721,8 @@ Category: Protocol
 Severity: Critical
 CVSS: 8.0
 Description: 尝试UDS 0x31服务执行ECU例程(如擦除内存、重置等),检测访问控制。
-Prerequisites: SocketCAN接口, python-can库。
-Usage: python3 29_UDS_RoutineControl.py <can_interface>
+Prerequisites: PCAN接口, python-can库, PCAN驱动。
+Usage: python3 29_UDS_RoutineControl.py PCAN_USBBUS1
 """
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
@@ -746,8 +746,8 @@ Category: Protocol
 Severity: Medium
 CVSS: 5.0
 Description: 通过CAN总线发送伪造VIN响应,验证OBD-II是否缺少VIN完整性保护。
-Prerequisites: SocketCAN接口, python-can库。
-Usage: python3 30_OBD_VIN_Spoof.py <can_interface>
+Prerequisites: PCAN接口, python-can库, PCAN驱动。
+Usage: python3 30_OBD_VIN_Spoof.py PCAN_USBBUS1
 """
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
@@ -780,7 +780,7 @@ except ImportError:
 
 class UDSECUResetPlugin(IVIVulnerabilityPlugin):
     """
-    UDS ECU Reset 服务（0x11）未授权执行 PoC
+    UDS ECU Reset 服务（0x11）未授权执行 PoC (PCAN_USBBUS1)
 # ... (script truncated for display)`,
     },
 {

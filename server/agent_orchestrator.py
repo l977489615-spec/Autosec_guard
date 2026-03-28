@@ -337,9 +337,13 @@ class QwenAgent:
                         time.sleep(wait)
                     else:
                         # 非限速错误，不重试，直接返回错误摘要
-                        logger.error(f"[{self.agent_name}] API 错误: {err_str[:200]}")
+                        import traceback
+                        full_err = traceback.format_exc()
+                        logger.error(f"[{self.agent_name}] API 错误 ({type(e).__name__}): {err_str[:200]}\n{full_err}")
                         return f"[{self.agent_name}] API 错误: {err_str[:300]}"
             if last_err or not response:
+                full_err = traceback.format_exc() if last_err else "No response"
+                logger.error(f"[{self.agent_name}] 请求失败: {str(last_err)[:200]}\n{full_err}")
                 return f"[{self.agent_name}] 请求失败或配额耗尽，请稍后重试。错误: {str(last_err)[:200]}"
 
             message = response.choices[0].message

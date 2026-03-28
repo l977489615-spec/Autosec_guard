@@ -181,7 +181,7 @@ npm run dev
 2. 填写目标信息（按需填写，未填参数对应漏洞将自动跳过）：
    - **IP Address**: 目标车机 IP 地址
    - **Bluetooth MAC**: 目标蓝牙 MAC 地址
-   - **CAN Interface**: CAN 总线接口名称（如 `can0`）
+   - **CAN Interface**: CAN 总线接口名称（如 `PCAN_USBBUS1`）
    - **Wi-Fi Interface**: 监听网卡名称（如 `wlan0mon`）
    - **RF Frequency**: 射频频率（如 `315.00MHz`）
 3. 点击 **Start Scan**，系统将自动完成：

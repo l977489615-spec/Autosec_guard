@@ -15,7 +15,6 @@ enum View {
   SCANNER = 'scanner',
   DATABASE = 'database',
   HISTORY = 'history',
-  AGENT_SCAN = 'agent_scan',
   PROFILE = 'profile',
   USER_MANAGEMENT = 'user_management'
 }
@@ -67,7 +66,7 @@ const App: React.FC = () => {
       ip: '',
       port: '5555',
       bluetoothMac: '',
-      canInterface: '',
+      canInterface: 'PCAN_USBBUS1',
       url: 'https://',
       frequency: '',
       interface: ''
@@ -136,13 +135,6 @@ const App: React.FC = () => {
             <span className="hidden lg:block ml-3 font-medium">Scan Engine</span>
           </button>
 
-          <button
-            onClick={() => setCurrentView(View.AGENT_SCAN)}
-            className={`w-full flex items-center p-3 rounded-lg transition-colors ${currentView === View.AGENT_SCAN ? 'bg-cyan-900/60 text-cyan-400 border-l-4 border-cyan-400' : 'text-gray-400 hover:bg-cyber-700 hover:text-white'}`}
-          >
-            <Bot size={20} />
-            <span className="hidden lg:block ml-3 font-medium">Agent Scan</span>
-          </button>
 
           <button
             onClick={() => setCurrentView(View.DATABASE)}
@@ -220,7 +212,6 @@ const App: React.FC = () => {
             {currentView === View.SCANNER && 'Vulnerability Scanner'}
             {currentView === View.DATABASE && 'Threat Intelligence Database'}
             {currentView === View.HISTORY && 'Scan Records & Audit'}
-            {currentView === View.AGENT_SCAN && 'Multi-Agent Autonomous Pentest'}
             {currentView === View.PROFILE && 'User Profile & Settings'}
             {currentView === View.USER_MANAGEMENT && 'System Operators'}
           </h1>
@@ -259,10 +250,6 @@ const App: React.FC = () => {
             {currentView === View.DATABASE && <PocDatabase />}
             {currentView === View.HISTORY && <ScanHistory localHistory={scanHistory} currentUser={user} token={token} onUnauthorized={handleUnauthorized} />}
 
-            {/* AgentScan: always mounted to preserve state across navigation */}
-            <div style={{ display: currentView === View.AGENT_SCAN ? 'flex' : 'none' }} className="flex-col h-full">
-              {token && <AgentScan token={token} />}
-            </div>
 
             {currentView === View.PROFILE && (
               <Profile

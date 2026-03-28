@@ -1,13 +1,13 @@
 """
 PoC Name: CAN Bus Traffic Capture
 CVE: N/A
-Component: Canbus Stack
-Category: Canbus
+Component: CAN Bus (PCAN)
+Category: Protocol
 Severity: Medium
 CVSS: 5.0
-Description: 捕获CAN总线流量,分析帧ID分布和数据模式
-Prerequisites: SocketCAN接口(如can0/vcan0), python-can库。
-Usage: python3 22_CAN_Bus_Sniff.py <can_interface>
+Description: 捕获CAN总线流量,分析帧ID分布和数据模式。
+Prerequisites: PCAN接口(如PCAN_USBBUS1), python-can库, PCAN驱动。
+Usage: python3 22_CAN_Bus_Sniff.py PCAN_USBBUS1
 """
 import sys
 import time
@@ -15,16 +15,19 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 
 class CANBusSniffPlugin(IVIVulnerabilityPlugin):
     def check_prerequisites(self):
-        iface = self.params.get("can_interface", "can0")
+        iface = self.params.get("can_interface", "PCAN_USBBUS1")
         self.logger.info(f"使用CAN接口: {iface}")
         return True
 
     def exploit(self):
-        iface = self.params.get("can_interface", "can0")
+        iface = self.params.get("can_interface", "PCAN_USBBUS1")
         self.logger.info(f"开始CAN总线流量捕获 ({iface}), 持续5秒...")
         try:
             import can
-            bus = can.interface.Bus(channel=iface, bustype="socketcan")
+            if "PCAN" in iface:
+                bus = can.interface.Bus(channel=iface, interface="pcan", bitrate=500000)
+            else:
+                bus = can.interface.Bus(channel=iface, bustype="socketcan")
             ids = {}
             start = time.time()
             count = 0
