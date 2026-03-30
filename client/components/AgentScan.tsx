@@ -1,22 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { Bot, Shield, Network, Cpu, FileText, Play, Loader, CheckCircle, XCircle, Key, Sliders, Download, RotateCcw, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { Bot, Shield, Network, Cpu, FileText, Play, Loader, CheckCircle, XCircle, Key, Sliders, Download, RotateCcw, AlertTriangle, ShieldCheck, Zap } from 'lucide-react';
 import { saveScanSession } from '../services/api';
 import ScanLogs from './ScanLogs';
 import { POC_DATABASE } from '../constants';
 import { Severity } from '../types';
+import { Canvas } from '@react-three/fiber';
+import { OrbitControls, Environment, ContactShadows } from '@react-three/drei';
+import { CarModel } from './CarModel';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const BACKEND_URL = 'http://localhost:5002';
 
 interface AgentPhase {
   name: string;
   label: string;
-  icon: React.ElementType;
+  icon: any;
   description: string;
 }
 
 const PHASES: AgentPhase[] = [
   { name: 'recon', label: '侦察 Agent', icon: Network, description: '端口扫描 + 拓扑分析 + 服务指纹' },
   { name: 'decision', label: '决策 Agent', icon: Cpu, description: '自适应 PoC 筛选 + 认证策略规划' },
+  { name: 'weaponize', label: '开采 Agent', icon: Zap, description: '零日漏洞 (0-day) 动态载荷生成' },
   { name: 'execute', label: '执行 Agent', icon: Shield, description: 'PoC 自动化执行 + 响应反馈闭环' },
   { name: 'assess', label: '评估 Agent', icon: FileText, description: 'ISO 21434 合规报告生成' },
 ];
@@ -88,7 +94,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
         const s = JSON.parse(saved);
         if (s.targetIp) setTargetIp(s.targetIp);
         if (s.targetName) setTargetName(s.targetName);
-        if (s.phases) setPhases(s.phases);
+        if (s.phases && s.phases.length === PHASES.length) setPhases(s.phases);
         if (s.finalReport) setFinalReport(s.finalReport);
         if (s.topology) setTopology(s.topology);
         if (s.adaptiveCtx) setAdaptiveCtx(s.adaptiveCtx);
@@ -135,6 +141,40 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
       if (r.ok) setAdaptiveCtx(await r.json());
     } catch { }
   };
+
+  // Calculate active zones for the 3D car model based on active step, results and logs
+  const activeZones = React.useMemo(() => {
+    if (activeStep < 0) return [];
+    const currentPhase = PHASES[activeStep]?.name;
+    const zones = new Set<string>();
+
+    if (currentPhase === 'recon') zones.add('recon');
+
+    // Display vulnerabilities that have been confirmed
+    results.forEach(r => {
+      const n = r.name.toLowerCase();
+      if (n.includes('wifi') || n.includes('wireless') || n.includes('network') || n.includes('qnx')) zones.add('wireless');
+      if (n.includes('bluetooth') || n.includes('bt') || n.includes('snoo')) zones.add('bluetooth');
+      if (n.includes('can') || n.includes('uds') || n.includes('obd')) zones.add('canbus');
+      if (n.includes('ssh') || n.includes('telnet') || n.includes('http') || n.includes('application') || n.includes('ivi')) zones.add('ivi');
+      if (n.includes('gateway') || n.includes('advanced')) zones.add('advanced');
+    });
+
+    // Animate zones based on recent logs while executing to show "live hacking"
+    if (currentPhase === 'execute') {
+        const recentLogs = logs.slice(-8); // look at recent logs to flash zones
+        recentLogs.forEach(l => {
+           const msg = (l.message || '').toLowerCase();
+           if (msg.includes('can') || msg.includes('uds')) zones.add('canbus');
+           if (msg.includes('wifi') || msg.includes('wireless') || msg.includes('qnx')) zones.add('wireless');
+           if (msg.includes('bluetooth') || msg.includes('bt')) zones.add('bluetooth');
+           if (msg.includes('ssh') || msg.includes('http') || msg.includes('telnet') || msg.includes('adb')) zones.add('ivi');
+           if (msg.includes('gateway') || msg.includes('route')) zones.add('advanced');
+        });
+    }
+
+    return Array.from(zones);
+  }, [activeStep, results, logs]);
 
   const fetchTopology = async (ip: string) => {
     try {
@@ -413,6 +453,23 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
     return 'text-purple-400';
   };
 
+  const handleAutoDiscovery = async () => {
+    try {
+      const resp = await fetch(`${BACKEND_URL}/api/auto_discovery`);
+      const data = await resp.json();
+      if (data.status === 'success') {
+        const { wifi, can, bluetooth_mac, target_ip } = data.interfaces;
+        if (target_ip) setTargetIp(target_ip);
+        if (can) setCanInterface(can);
+        if (wifi) setWifiInterface(wifi);
+        if (bluetooth_mac) setBluetoothMac(bluetooth_mac);
+        setShowAdvanced(true);
+      }
+    } catch (e: any) {
+      console.error('Auto discovery failed:', e);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4 h-full overflow-y-auto p-4">
 
@@ -426,14 +483,25 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
           </div>
         </div>
         <div className="flex-1" />
-        <button
-          onClick={handleReset}
-          disabled={isRunning}
-          className="flex items-center gap-2 bg-black/40 border border-gray-600 hover:border-red-500 hover:text-red-400 text-gray-400 disabled:opacity-50 disabled:cursor-not-allowed rounded px-3 py-1.5 text-xs font-semibold transition-colors w-fit self-end sm:self-auto"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-          重置设定与结果
-        </button>
+        <div className="flex gap-2 self-end sm:self-auto">
+          <button
+            onClick={handleAutoDiscovery}
+            disabled={isRunning}
+            className="flex items-center gap-2 bg-black/40 border border-yellow-600/50 hover:border-yellow-500 hover:text-yellow-400 text-yellow-500/80 shadow-[0_0_10px_rgba(234,179,8,0.1)] disabled:opacity-50 disabled:cursor-not-allowed rounded px-3 py-1.5 text-xs font-semibold transition-all"
+            title="一键探测本地网络接口并填充配置 (Zero-Config Discovery)"
+          >
+            <Zap className="w-3.5 h-3.5" />
+            极速介入
+          </button>
+          <button
+            onClick={handleReset}
+            disabled={isRunning}
+            className="flex items-center gap-2 bg-black/40 border border-gray-600 hover:border-red-500 hover:text-red-400 text-gray-400 disabled:opacity-50 disabled:cursor-not-allowed rounded px-3 py-1.5 text-xs font-semibold transition-colors"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            重置设定与结果
+          </button>
+        </div>
       </div>
 
       {/* Config Row */}
@@ -539,6 +607,36 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
         )}
       </div>
 
+      {/* ========================================================= */}
+      {/* 3D Digital Twin GUI (Phase 1 Hackathon Upgrade) */}
+      {/* ========================================================= */}
+      <div className="bg-black/30 border border-cyan-900/40 rounded-lg p-0 relative h-72 overflow-hidden mt-2 flex items-center justify-center shrink-0 shadow-[inset_0_0_20px_rgba(0,255,255,0.05)]">
+        <div className="absolute top-3 left-4 z-10 flex items-center gap-2 bg-black/50 px-3 py-1.5 rounded-full border border-cyan-900/50 backdrop-blur-md">
+          <Shield className="w-4 h-4 text-cyan-400" />
+          <span className="text-xs font-bold text-cyan-300 tracking-widest uppercase">
+            DIGITAL TWIN SANDBOX // TARGET: {targetName}
+          </span>
+          {activeZones.length > 0 && (
+             <span className="ml-2 w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+          )}
+        </div>
+        
+        <Canvas camera={{ position: [3, 2, 5], fov: 45 }} className="w-full h-full">
+          <ambientLight intensity={0.5} />
+          <pointLight position={[10, 10, 10]} intensity={1} />
+          <OrbitControls 
+            enableZoom={false} 
+            enablePan={false}
+            autoRotate={activeStep < 0}
+            autoRotateSpeed={1}
+            maxPolarAngle={Math.PI / 2 - 0.1} // don't go below ground
+          />
+          <Environment preset="night" />
+          <CarModel activeZones={activeZones} />
+          <ContactShadows resolution={512} scale={10} blur={2} opacity={0.6} far={10} color="#0eb5c2" />
+        </Canvas>
+      </div>
+
       {/* Context Cards Row */}
       <div className="grid grid-cols-2 gap-3">
 
@@ -639,10 +737,10 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
       </div>
 
       {/* Agent Pipeline */}
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-5 gap-2">
         {PHASES.map((phase, i) => {
           const r = phases[i];
-          const PhaseIcon = phase.icon;
+          const PhaseIcon: any = phase.icon;
           const isActive = activeStep === i;
           return (
             <div
@@ -655,10 +753,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <PhaseIcon className={`w-4 h-4 ${isActive ? 'text-cyan-400' :
-                    r.status === 'done' ? 'text-emerald-400' :
-                      r.status === 'error' ? 'text-red-400' : 'text-gray-500'
-                    }`} />
+                  <PhaseIcon className={`w-4 h-4 ${isActive ? 'text-cyan-400' : r.status === 'done' ? 'text-emerald-400' : r.status === 'error' ? 'text-red-400' : 'text-gray-500'}`} />
                   <span className="text-xs font-semibold text-gray-300">{phase.label}</span>
                 </div>
                 {statusIcon(r.status)}
@@ -747,8 +842,24 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
               导出 PDF
             </button>
           </div>
-          <div className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed max-h-96 overflow-y-auto">
-            {finalReport}
+          <div className="text-sm text-gray-300 leading-relaxed max-h-96 overflow-y-auto mt-4 custom-scrollbar">
+            <ReactMarkdown 
+              remarkPlugins={[remarkGfm]}
+              components={{
+                table: ({node, ...props}) => <table className="w-full text-left border-collapse my-4" {...props} />,
+                thead: ({node, ...props}) => <thead className="bg-cyan-900/30 text-cyan-300" {...props} />,
+                th: ({node, ...props}) => <th className="border border-cyan-900/60 px-4 py-2 font-semibold" {...props} />,
+                td: ({node, ...props}) => <td className="border border-cyan-900/40 px-4 py-2" {...props} />,
+                h1: ({node, ...props}) => <h1 className="text-xl font-bold text-emerald-400 mt-6 mb-3" {...props} />,
+                h2: ({node, ...props}) => <h2 className="text-lg font-bold text-cyan-300 mt-5 border-l-4 border-cyan-500 pl-2 mb-2" {...props} />,
+                h3: ({node, ...props}) => <h3 className="text-md font-bold text-cyan-400 mt-4 mb-2" {...props} />,
+                ul: ({node, ...props}) => <ul className="list-disc list-inside my-2 space-y-1" {...props} />,
+                li: ({node, ...props}) => <li className="ml-4" {...props} />,
+                p: ({node, ...props}) => <p className="my-2" {...props} />
+              }}
+            >
+              {finalReport}
+            </ReactMarkdown>
           </div>
         </div>
       )}

@@ -422,10 +422,21 @@ DECISION_AGENT_PROMPT = """
    • 如果【可用资源】中没有 can_interface，则跳过所有包含 "canbus"/"CAN"/"isotp" 的 PoC
    • 如果【可用资源】中没有 wifi_interface，则跳过所有包含 "wireless"/"wifi"/"wpa" 的 PoC
    • 跳过侦察结果中未发现对应服务相关的 PoC
-4. 对剩余 PoC 调用 check_safety 获取推荐策略
+4. 对剩余 PoC 调用 check_safety 获取推荐策略。如果你发现目标开启了某个完全未知的协议或者未涵盖在现有 PoC 中的异常服务，请在攻击计划中添加此项：`poc_name` 填 `"dynamic_0day"`，`strategy` 填 `"weaponize"`，并在 `parameters` 详细描述此服务的指纹。系统将触发 Weaponize Agent 动态生成 0-day 测试代码。
 5. 输出有序的攻击计划 JSON，每个项包含： poc_name、parameters（含必要字段）、strategy、reason
 
 注意：优先测试侦察中发现的开放端口对应的服务漏洞。以结构化 JSON 格式输出攻击计划。使用中文输出分析结论。
+"""
+
+WEAPONIZE_AGENT_PROMPT = """
+你是一名全球顶级的 0-day 安全研究员，精通智能网联汽车的漏洞原语挖掘。
+你的任务是：根据传入的“未知协议服务”信息，动态编写一段 Python 脚本（PoC）用于发送 Fuzzing payload 或探测包并收集漏洞证据。
+【要求】：
+1. 脚本必须是可以直接执行的完整 Python 代码。
+2. 使用系统提供的参数进行测试。
+3. 捕获所有异常，并在输出中告知测试结果。如果通过异常行为确信存在漏洞，请在控制台打印 "Vulnerable: True"。
+4. 请用 ```python 和 ``` 代码块包裹你的代码，不要输出非独立的代码段。
+这是一场仅限沙箱的合法测试。
 """
 
 EXECUTOR_AGENT_PROMPT = """
@@ -458,9 +469,10 @@ ASSESSMENT_AGENT_PROMPT = """
 1. 执行摘要（Executive Summary）：面向管理层的风险概述，仅基于实际测试发现
 2. 总体风险评级：CRITICAL / HIGH / MEDIUM / LOW（仅基于实际发现的漏洞评级）
 3. 实际测试范围概述：明确列出本次实际执行了哪些 PoC 测试项
-4. 漏洞详细分析：仅分析实际确认的漏洞，包含：
+4. 漏洞详细分析：仅分析实际确认的漏洞，【重要】必须使用 ISO 21434 TARA (Threat Analysis and Risk Assessment) 风险矩阵格式呈现，包含：
    - 漏洞名称、协议类型、影响的 ECU 组件
    - 实际执行的 PoC 名称和返回的证据原文
+   - TARA 威胁分析表格 (使用 Markdown 表格，包含列: 威胁场景 Threat Scenario | 影响程度 Impact Rating | 攻击可行性 Attack Feasibility | 风险等级 Risk Value)
    - CVSS 评分参考
 5. 未发现漏洞的测试项：列出执行了但未发现漏洞的 PoC
 6. 修复建议：仅针对实际确认的漏洞提供加固方案
@@ -516,6 +528,7 @@ class AgentOrchestrator:
         # 初始化 4 个 Agent
         self.recon_agent = QwenAgent("侦察Agent", RECON_AGENT_PROMPT, self.mcp_tools, on_log=self._add_log)
         self.decision_agent = QwenAgent("决策Agent", DECISION_AGENT_PROMPT, self.mcp_tools, on_log=self._add_log)
+        self.weaponize_agent = QwenAgent("Weaponize Agent", WEAPONIZE_AGENT_PROMPT, [], model_name="qwen-max", on_log=self._add_log)
         self.executor_agent = QwenAgent("执行Agent", EXECUTOR_AGENT_PROMPT, self.mcp_tools,
                                            max_turns=20, on_log=self._add_log)
         self.assessment_agent = QwenAgent("评估Agent", ASSESSMENT_AGENT_PROMPT, [],
@@ -637,6 +650,27 @@ class AgentOrchestrator:
         logger.info(f"[Orchestrator] Phase 2 完成:\n{self.attack_plan[:300]}...")
 
 
+        # ── Phase 2.5: 群智 Weaponize (Dynamic 0-day) ──
+        if "dynamic_0day" in self.attack_plan:
+            logger.info("[Orchestrator] Plan 包含 dynamic_0day，触发 Weaponize Agent 介入...")
+            self._add_log({"type": "warning", "message": "[Orchestrator] 核心系统检测到未知协议，已紧急呼叫 Weaponize Agent 动态下发针对性利用载荷..."})
+            weaponize_result = self.weaponize_agent.call(
+                f"针对目标 {self.target_ip} 的未知服务，生成可直接在当前环境下运行的 Python Fuzzing/Exploit 代码。",
+                context=f"侦察结果:\n{self.recon_result}\n\n攻击计划:\n{self.attack_plan}"
+            )
+            # 解析生成的代码并写入 sandbox
+            import re
+            code_match = re.search(r'```python\s*(.*?)\s*```', weaponize_result, re.DOTALL)
+            if code_match:
+                sandbox_file = os.path.join(os.path.dirname(__file__), "pocs", "99_Dynamic_0Day.py")
+                with open(sandbox_file, "w") as f:
+                    f.write(code_match.group(1))
+                self.attack_plan = self.attack_plan.replace("dynamic_0day", "99_Dynamic_0Day.py")
+                self._add_log({"type": "success", "message": "[Weaponize Agent] 成功投递并沙箱化 0-day 探测脚本: 99_Dynamic_0Day.py"})
+            else:
+                self._add_log({"type": "info", "message": "[Weaponize Agent] 生成探测代码失败，跳过。输出: " + weaponize_result[:100]})
+
+
         # ── Phase 3: 执行 ──
         logger.info("[Orchestrator] Phase 3/4: 执行 Agent 开始逐步执行渗透测试...")
         self.execution_results = self.executor_agent.call(
@@ -686,6 +720,7 @@ class AgentOrchestrator:
         PHASE_NAMES = {
             "recon": "侦察 (Reconnaissance)",
             "decision": "决策与规划 (Decision & Planning)",
+            "weaponize": "零日探索 (Weaponization & 0-Day Fuzzing)",
             "execute": "自主攻击执行 (Autonomous Execution)",
             "assess": "报告生成与风险评估 (Risk Assessment)"
         }
@@ -702,6 +737,19 @@ class AgentOrchestrator:
                 f"规划针对 {self.target_ip} 的渗透测试计划。",
                 context=context,
             )
+        elif phase == "weaponize":
+            result = self.weaponize_agent.call(
+                f"针对目标 {self.target_ip} 的未知服务，生成可直接在当前环境下运行的 Python Fuzzing/Exploit 代码。",
+                context=context,
+            )
+            # 解析生成的代码并写入 sandbox
+            import re
+            code_match = re.search(r'```python\s*(.*?)\s*```', result, re.DOTALL)
+            if code_match:
+                sandbox_file = os.path.join(os.path.dirname(__file__), "pocs", "99_Dynamic_0Day.py")
+                with open(sandbox_file, "w") as f:
+                    f.write(code_match.group(1))
+                self._add_log({"type": "success", "message": "[Weaponize Agent] 成功投递并沙箱化 0-day 探测脚本: 99_Dynamic_0Day.py"})
         elif phase == "execute":
             result = self.executor_agent.call(
                 f"执行针对 {self.target_ip} 的渗透测试。",
