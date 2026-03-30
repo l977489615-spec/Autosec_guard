@@ -1,9 +1,9 @@
 """
 Adaptive Context Engine — AutoSec Guard
 ==========================================
-针对 IVI 系统和静态 CAN 总线台架测试场景的多维自适应上下文引擎。
+针对 IVI 系统和静态 CAN 总线测试场景的多维自适应上下文引擎。
 
-在 IVI 台架测试场景下，物理车速监控意义不大；
+在静态测试场景下，物理车速监控意义不大；
 真正有价值的自适应维度是：
 
 1. 服务指纹自适应 (Service Fingerprint Adaptive Selection)

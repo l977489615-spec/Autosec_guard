@@ -10,11 +10,15 @@ import logging
 import bcrypt
 import jwt
 import datetime
+import socket
+import requests
 from logging.handlers import RotatingFileHandler
 from flask import Flask, request, jsonify
 from flask_cors import CORS, cross_origin
 from flask_sqlalchemy import SQLAlchemy
 from functools import wraps
+from config import get_config, get_runtime_warnings
+from sqlalchemy import create_engine, text
 
 # This server must be running on the device connected to the vehicle (e.g., Raspberry Pi/Laptop)
 # Run with: python3 server.py
@@ -43,6 +47,10 @@ logger.addHandler(console_handler)
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"], "allow_headers": "*"}})  # Allow React Frontend to communicate
 
+CONFIG = get_config()
+RUNTIME_WARNINGS = get_runtime_warnings(CONFIG)
+LEGACY_DB_URI = 'mysql+pymysql://root:1@localhost/autosec_db'
+
 # Path to the Pocs directory
 POCS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'pocs')
 
@@ -51,15 +59,151 @@ POCS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'pocs')
 # ==========================================
 
 # Secret Key for JWT
-app.config['SECRET_KEY'] = 'autosec_super_secret_key_change_in_production'
+app.config['SECRET_KEY'] = CONFIG.secret_key
 
 # Database Configuration (MySQL)
 # Default format: mysql+pymysql://username:password@server/db
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:1@localhost/autosec_db'
+app.config['SQLALCHEMY_DATABASE_URI'] = CONFIG.database_uri
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-from sqlalchemy.dialects.mysql import LONGTEXT
 
 db = SQLAlchemy(app)
+
+
+def _build_security_report_prompt(session: dict, vulnerabilities: list) -> str:
+    report_date = session.get('startTime') or datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    target_name = session.get('targetName') or session.get('connection', {}).get('ip') or 'Unknown Target'
+    details = '\n'.join(
+        f"- [{item.get('severity', 'UNKNOWN')}] {item.get('name', 'Unknown Vulnerability')}: {item.get('details', 'No details')}"
+        for item in vulnerabilities
+    )
+
+    return f"""
+你是一位资深的智能网联汽车安全专家，请使用中文撰写专业、克制、可执行的安全分析报告。
+
+针对目标车辆设备 "{target_name}" 完成了漏洞扫描。
+
+报告日期：{report_date}
+报告撰写人：AutoSec Guard Security Copilot
+
+检测到如下安全问题：
+
+{details}
+
+请输出一份 Markdown 格式的报告，内容包括：
+1. 报告页眉（报告名称、目标、扫描日期、撰写人）。
+2. 整体风险等级评估。
+3. 前 3 个最严重漏洞的技术分析。
+4. 对应的修复或缓解建议。
+5. 面向工程团队的后续加固建议。
+
+要求：
+- 全文必须使用中文。
+- 不要使用占位符。
+- 结论需要明确、审慎，避免夸张表述。
+""".strip()
+
+
+def _generate_ai_report(session: dict) -> str:
+    if not CONFIG.dashscope_api_key:
+        return "AI 报告功能未启用。请在服务端配置 DASHSCOPE_API_KEY 后重试。"
+
+    results = session.get('results', [])
+    vulnerabilities = [item for item in results if item.get('vulnerable')]
+    if not vulnerabilities:
+        return "未检测到任何漏洞，根据当前测试套件评估，系统安全状态良好。"
+
+    prompt = _build_security_report_prompt(session, vulnerabilities)
+    payload = {
+        "model": "qwen-max",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.2,
+    }
+    headers = {
+        "Authorization": f"Bearer {CONFIG.dashscope_api_key}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        response = requests.post(
+            "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=60,
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["choices"][0]["message"]["content"]
+    except Exception as exc:
+        logger.error(f"AI report generation failed: {exc}")
+        return "与千问（Qwen）大模型通信时发生错误，请检查服务端网络连接或 API Key 配置。"
+
+
+def _deserialize_history_row(row: dict) -> dict:
+    results_json = row.get('results_json')
+    logs = row.get('logs')
+
+    try:
+        parsed_results = json.loads(results_json) if results_json else []
+    except Exception:
+        parsed_results = []
+
+    try:
+        parsed_logs = json.loads(logs) if logs else []
+    except Exception:
+        parsed_logs = []
+
+    return {
+        "id": row.get("id"),
+        "user_id": row.get("user_id"),
+        "username": row.get("username") or "Unknown",
+        "session_id": row.get("session_id"),
+        "target_ip": row.get("target_ip"),
+        "target_mac": row.get("target_mac"),
+        "status": row.get("status"),
+        "started_at": row.get("started_at").strftime('%Y-%m-%dT%H:%M:%SZ') if row.get("started_at") else None,
+        "completed_at": row.get("completed_at").strftime('%Y-%m-%dT%H:%M:%SZ') if row.get("completed_at") else None,
+        "risk_score": row.get("risk_score") or 0,
+        "results_json": parsed_results,
+        "logs": parsed_logs,
+    }
+
+
+def _fetch_legacy_history(current_user) -> list:
+    if CONFIG.database_uri == LEGACY_DB_URI:
+        return []
+
+    try:
+        engine = create_engine(LEGACY_DB_URI, pool_pre_ping=True)
+        query = """
+            SELECT
+                s.id,
+                s.user_id,
+                u.username,
+                s.session_id,
+                s.target_ip,
+                s.target_mac,
+                s.status,
+                s.started_at,
+                s.completed_at,
+                s.results_json,
+                s.logs,
+                s.risk_score
+            FROM scan_history s
+            LEFT JOIN users u ON u.id = s.user_id
+        """
+        if current_user.role == 'admin':
+            query += " ORDER BY s.started_at DESC LIMIT 100"
+            params = {}
+        else:
+            query += " WHERE s.user_id = :user_id ORDER BY s.started_at DESC LIMIT 100"
+            params = {"user_id": current_user.id}
+
+        with engine.connect() as conn:
+            rows = conn.execute(text(query), params).mappings().all()
+        return [_deserialize_history_row(dict(row)) for row in rows]
+    except Exception as exc:
+        logger.info(f"Legacy history fallback unavailable: {exc}")
+        return []
 
 # ==========================================
 # Database Models
@@ -91,8 +235,8 @@ class ScanHistory(db.Model):
     status = db.Column(db.String(20), nullable=False) # 'completed', 'failed', 'running'
     started_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
     completed_at = db.Column(db.DateTime, nullable=True)
-    results_json = db.Column(LONGTEXT, nullable=True) # Full JSON data of results
-    logs = db.Column(LONGTEXT, nullable=True) # Dedicated column for logs
+    results_json = db.Column(db.Text, nullable=True) # Full JSON data of results
+    logs = db.Column(db.Text, nullable=True) # Dedicated column for logs
     risk_score = db.Column(db.Integer, default=0)
 
     user = db.relationship('User', backref=db.backref('scans', lazy=True))
@@ -343,7 +487,33 @@ def admin_delete_user(current_user, user_id):
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Check if the execution engine is online."""
-    return jsonify({"status": "online", "system": sys.platform, "pocs_dir": POCS_DIR})
+    return jsonify({
+        "status": "online",
+        "system": sys.platform,
+        "pocs_dir": POCS_DIR,
+        "database": app.config['SQLALCHEMY_DATABASE_URI'].split(':', 1)[0],
+        "ai_reports_enabled": bool(CONFIG.dashscope_api_key),
+        "warnings": RUNTIME_WARNINGS,
+    })
+
+
+@app.route('/api/report/generate', methods=['POST'])
+@token_required
+def generate_report(current_user):
+    """Generate AI security report on the server side to avoid exposing LLM credentials in the browser."""
+    data = request.json or {}
+    session = data.get('session')
+
+    if not session or not isinstance(session, dict):
+        return jsonify({"message": "session payload is required"}), 400
+
+    logger.info(f"AI report requested by {current_user.username} for {session.get('targetName') or 'Unknown Target'}")
+    report = _generate_ai_report(session)
+    return jsonify({
+        "report": report,
+        "provider": "Qwen",
+        "generated_at": datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+    })
 
 @app.route('/api/auto_discovery', methods=['GET'])
 @cross_origin()
@@ -890,8 +1060,17 @@ def get_history(current_user):
     else:
         # User sees only their own history
         scans = ScanHistory.query.filter_by(user_id=current_user.id).order_by(ScanHistory.started_at.desc()).limit(100).all()
-    
-    return jsonify({"history": [scan.to_dict() for scan in scans]})
+
+    history = [scan.to_dict() for scan in scans]
+    source = 'primary'
+
+    if not history:
+        legacy_history = _fetch_legacy_history(current_user)
+        if legacy_history:
+            history = legacy_history
+            source = 'legacy'
+
+    return jsonify({"history": history, "source": source})
 
 @app.route('/api/execute', methods=['POST'])
 def execute_script():
@@ -1105,8 +1284,14 @@ def agent_scan(current_user):
 
 
 if __name__ == '__main__':
-    logger.info(f"AutoSec Execution Engine starting on port 5002...")
+    logger.info(f"AutoSec Execution Engine starting on port {CONFIG.flask_port}...")
     logger.info(f"PoCs directory: {POCS_DIR}")
+    for warning in RUNTIME_WARNINGS:
+        logger.warning(warning)
+
+    with app.app_context():
+        db.create_all()
+        logger.info("Database schema checked.")
 
     # ── 初始化自适应上下文引擎（Patent-1: Adaptive Context for IVI Lab）──
     try:
@@ -1133,4 +1318,4 @@ if __name__ == '__main__':
     # Disable flask default click logger to favor our custom logger
     log = logging.getLogger('werkzeug')
     log.setLevel(logging.ERROR)
-    app.run(host='0.0.0.0', port=5002, debug=True, use_reloader=False)
+    app.run(host=CONFIG.flask_host, port=CONFIG.flask_port, debug=CONFIG.flask_debug, use_reloader=False)

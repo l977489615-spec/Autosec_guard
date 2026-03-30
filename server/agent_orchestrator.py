@@ -42,43 +42,23 @@ import logging
 import asyncio
 import requests
 from typing import Any, Dict, List, Optional
+from config import get_config
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s][%(levelname)s] %(message)s')
 
+CONFIG = get_config()
+
 # MCP Server 地址
-MCP_SERVER = os.environ.get("MCP_SERVER", "http://localhost:5003")
-DASHSCOPE_API_KEY = os.environ.get("DASHSCOPE_API_KEY") or os.environ.get("API_KEY")
-
-# 如果环境变量未设置，自动从 client/.env.local 加载（无需手动 export）
-if not DASHSCOPE_API_KEY:
-    _env_candidates = [
-        os.path.join(os.path.dirname(__file__), "..", "client", ".env.local"),
-        os.path.join(os.path.dirname(__file__), "..", ".env.local"),
-        os.path.join(os.path.dirname(__file__), ".env"),
-    ]
-    for _env_path in _env_candidates:
-        _env_path = os.path.abspath(_env_path)
-        if os.path.exists(_env_path):
-            with open(_env_path) as _f:
-                for _line in _f:
-                    _line = _line.strip()
-                    if _line.startswith("DASHSCOPE_API_KEY=") and not _line.startswith("#"):
-                        DASHSCOPE_API_KEY = _line.split("=", 1)[1].strip().strip('"').strip("'")
-                        os.environ["DASHSCOPE_API_KEY"] = DASHSCOPE_API_KEY
-                        logger.info(f"[Orchestrator] DASHSCOPE_API_KEY 已从 {_env_path} 自动加载")
-                        break
-            if DASHSCOPE_API_KEY:
-                break
-
-
+MCP_SERVER = CONFIG.mcp_server
+DASHSCOPE_API_KEY = CONFIG.dashscope_api_key
 
 # ──────────────────────────────────────────────
 # MCP Tool Caller — 供 Agent 调用
 # ──────────────────────────────────────────────
 
 # 主 AutoSec API 地址（供 run_poc / list_pocs 调用）
-AUTOSEC_API = os.environ.get("AUTOSEC_API", "http://localhost:5002")
+AUTOSEC_API = CONFIG.autosec_api
 
 
 def _direct_tool_call(tool_name: str, params: dict, on_log: Optional[callable] = None) -> dict:
