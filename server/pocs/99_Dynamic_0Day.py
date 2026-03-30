@@ -1,40 +1,47 @@
 import socket
-import random
-import string
 import sys
+import time
 
-def generate_random_string(length=10):
-    """生成指定长度的随机字符串"""
-    return ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(length))
-
-def fuzz(target_ip, port, timeout=5):
-    """对指定端口进行模糊测试"""
+def send_fuzz(target_ip, port, payload):
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(timeout)
+            s.settimeout(5)
             s.connect((target_ip, port))
-            print(f"Connected to {target_ip}:{port}")
-            
-            # 发送多条随机消息
-            for i in range(100):  # 可以调整尝试次数
-                payload = generate_random_string(random.randint(10, 100))  # 随机长度的消息
-                print(f"Sending payload: {payload}")
-                s.sendall(payload.encode())
-                
-                # 尝试接收响应
-                response = s.recv(1024).decode()
-                if "error" in response.lower() or "exception" in response.lower():
-                    print("Vulnerable: True")
-                    break
-                else:
-                    print(f"Received: {response}")
-
+            print(f"Sending payload: {payload}")
+            s.sendall(payload)
+            response = s.recv(1024)
+            if response:
+                print(f"Received: {response}")
+            else:
+                print("No response from the server.")
     except Exception as e:
         print(f"An error occurred: {e}")
-        if "refused" not in str(e).lower():  # 如果不是连接被拒绝，则认为可能存在漏洞
-            print("Vulnerable: True")
+        # 如果遇到异常行为，认为可能存在漏洞
+        print("Vulnerable: True")
+        return True
+    return False
+
+def main():
+    target_ip = "172.16.64.129"
+    port = int(input("Enter the port number to fuzz: "))
+    
+    # 定义一些基本的模糊测试字符串
+    payloads = [
+        b"A" * 100,  # 长度为100的A字符
+        b"\x00" * 100,  # NULL字节
+        b"%" * 100,  # 百分号
+        b".." * 100,  # 目录遍历
+        b"HTTP/1.1 GET / HTTP/1.1\r\nHost: vulnerable.com\r\n\r\n",  # 基本HTTP请求
+        b"GET / HTTP/1.1\r\nHost: vulnerable.com\r\n\r\n",  # 另一种格式的HTTP请求
+        b"() { :;}; echo Vulnerable to Shellshock",  # Shellshock PoC
+    ]
+    
+    for payload in payloads:
+        print("\n" + "-"*50)
+        print(f"Testing with payload: {payload}")
+        if send_fuzz(target_ip, port, payload):
+            break  # 如果发现漏洞，则停止进一步测试
+        time.sleep(1)  # 等待一小段时间以避免过于频繁地发送请求
 
 if __name__ == "__main__":
-    target_ip = "172.16.64.129"
-    port = 24  # 假设我们要测试的未知服务端口号
-    fuzz(target_ip, port)
+    main()

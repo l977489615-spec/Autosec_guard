@@ -38,6 +38,7 @@ Multi-Agent Orchestrator — AutoSec Guard
 import os
 import json
 import time
+import datetime
 import logging
 import asyncio
 import requests
@@ -467,6 +468,7 @@ ASSESSMENT_AGENT_PROMPT = """
 """
 
 
+
 # ──────────────────────────────────────────────
 # 主协作编排器
 # ──────────────────────────────────────────────
@@ -524,6 +526,31 @@ class AgentOrchestrator:
         self.findings: List[dict] = []
         # PoC 文件名到 ID 的映射，用于完善 findings
         self.poc_filename_to_id = {}
+
+    def _build_assessment_call(self, context: str = "") -> Dict[str, str]:
+        """为评估 Agent 统一构造报告元数据，禁止模型自行编造日期或团队。"""
+        report_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        target_name = self.target_name or self.target_ip or "Unknown Target"
+
+        prompt = (
+            f"基于对智能网联汽车目标 '{target_name}' ({self.target_ip}) 的完整渗透测试结果，"
+            "生成符合 ISO 21434 / UN R155 要求的专业安全评估报告。"
+            f"【当前时间】{report_date}。"
+            f"报告中的评估日期必须写 {report_date}，评估团队必须写 BIOS团队。"
+        )
+
+        context_prefix = (
+            f"【当前时间】{report_date}\n"
+            f"【评估日期】{report_date}\n"
+            f"【评估团队】BIOS团队\n"
+            f"【评估目标】{target_name}\n"
+            f"【目标IP】{self.target_ip}\n\n"
+        )
+
+        return {
+            "prompt": prompt,
+            "context": f"{context_prefix}{context or ''}",
+        }
 
     def _add_log(self, entry: Any):
         """添加一条日志到缓冲区"""
@@ -662,19 +689,16 @@ class AgentOrchestrator:
 
         # ── Phase 4: 安全评估报告 ──
         logger.info("[Orchestrator] Phase 4/4: 评估 Agent 生成安全评估报告...")
-        from datetime import datetime as _dt
-        _now_str = _dt.now().strftime("%Y年%m月%d日 %H:%M:%S")
-        self.final_report = self.assessment_agent.call(
-            f"基于对智能网联汽车目标 '{self.target_name}'({self.target_ip}) 的完整渗透测试结果，"
-            f"生成符合 ISO 21434 / UN R155 要求的专业安全评估报告。"
-            f"【当前时间】{_now_str}。报告中的评估日期必须写 {_now_str}，评估团队必须写 BIOS团队。",
+        assessment_input = self._build_assessment_call(
             context=(
-                f"【当前时间】{_now_str}\n"
-                f"【评估团队】BIOS团队\n\n"
                 f"侦察结果:\n{self.recon_result}\n\n"
                 f"攻击计划:\n{self.attack_plan}\n\n"
                 f"执行结果:\n{self.execution_results}"
-            ),
+            )
+        )
+        self.final_report = self.assessment_agent.call(
+            assessment_input["prompt"],
+            context=assessment_input["context"],
         )
         logger.info("[Orchestrator] Phase 4 完成，报告已生成。")
 
@@ -736,9 +760,10 @@ class AgentOrchestrator:
                 context=context,
             )
         elif phase == "assess":
+            assessment_input = self._build_assessment_call(context=context)
             result = self.assessment_agent.call(
-                f"生成目标 {self.target_ip} 的安全评估报告。",
-                context=context,
+                assessment_input["prompt"],
+                context=assessment_input["context"],
             )
         else:
             raise ValueError(f"Unknown phase: {phase}")

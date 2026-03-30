@@ -1299,6 +1299,9 @@ def agent_scan(current_user):
 
     logger.info(f"Agent scan started by {current_user.username}: {target_name} ({target_ip})")
 
+    def _error_payload(message: str, code: str, status: int = 500):
+        return jsonify({"error": message, "error_code": code}), status
+
     try:
         from agent_orchestrator import AgentOrchestrator
         orch = AgentOrchestrator(
@@ -1327,10 +1330,22 @@ def agent_scan(current_user):
             return jsonify(report)
 
     except ImportError as e:
-        return jsonify({"error": f"Agent module not available: {e}"}), 500
+        return _error_payload(f"Agent module not available: {e}", "AGENT_MODULE_UNAVAILABLE")
+    except RuntimeError as e:
+        message = str(e)
+        if "DASHSCOPE_API_KEY" in message:
+            return _error_payload(message, "MODEL_API_KEY_MISSING")
+        if "MCP" in message:
+            return _error_payload(message, "MCP_UNAVAILABLE")
+        return _error_payload(message, "AGENT_RUNTIME_ERROR")
     except Exception as e:
         logger.error(f"Agent scan error: {e}")
-        return jsonify({"error": str(e)}), 500
+        message = str(e)
+        if "DASHSCOPE_API_KEY" in message:
+            return _error_payload(message, "MODEL_API_KEY_MISSING")
+        if "MCP" in message or "AutoSec API" in message:
+            return _error_payload(message, "MCP_UNAVAILABLE")
+        return _error_payload(message, "AGENT_SCAN_FAILED")
 
 
 if __name__ == '__main__':
