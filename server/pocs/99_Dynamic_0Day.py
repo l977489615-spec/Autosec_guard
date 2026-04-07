@@ -1,47 +1,43 @@
 import socket
 import sys
-import time
 
-def send_fuzz(target_ip, port, payload):
+def fuzz_target(target_ip, target_port, payload):
     try:
+        # 创建一个TCP/IP套接字
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(5)
-            s.connect((target_ip, port))
-            print(f"Sending payload: {payload}")
+            s.settimeout(5)  # 设置超时时间
+            s.connect((target_ip, target_port))
+            
+            # 发送payload
             s.sendall(payload)
+            
+            # 接收响应
             response = s.recv(1024)
-            if response:
-                print(f"Received: {response}")
-            else:
-                print("No response from the server.")
+            print(f"Received: {response}")
+            
+    except socket.timeout:
+        print("Connection timed out.")
+    except ConnectionRefusedError:
+        print("Connection was refused. Ensure the target service is running and accessible.")
     except Exception as e:
-        print(f"An error occurred: {e}")
-        # 如果遇到异常行为，认为可能存在漏洞
+        print(f"An unexpected error occurred: {e}")
         print("Vulnerable: True")
+        return False
+    else:
+        print("No exception caught, but check the application for unusual behavior or errors.")
         return True
-    return False
-
-def main():
-    target_ip = "172.16.64.129"
-    port = int(input("Enter the port number to fuzz: "))
-    
-    # 定义一些基本的模糊测试字符串
-    payloads = [
-        b"A" * 100,  # 长度为100的A字符
-        b"\x00" * 100,  # NULL字节
-        b"%" * 100,  # 百分号
-        b".." * 100,  # 目录遍历
-        b"HTTP/1.1 GET / HTTP/1.1\r\nHost: vulnerable.com\r\n\r\n",  # 基本HTTP请求
-        b"GET / HTTP/1.1\r\nHost: vulnerable.com\r\n\r\n",  # 另一种格式的HTTP请求
-        b"() { :;}; echo Vulnerable to Shellshock",  # Shellshock PoC
-    ]
-    
-    for payload in payloads:
-        print("\n" + "-"*50)
-        print(f"Testing with payload: {payload}")
-        if send_fuzz(target_ip, port, payload):
-            break  # 如果发现漏洞，则停止进一步测试
-        time.sleep(1)  # 等待一小段时间以避免过于频繁地发送请求
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) != 4:
+        print("Usage: python3 fuzz_unknown_service.py <target_ip> <target_port> <payload>")
+        sys.exit(1)
+
+    target_ip = sys.argv[1]
+    target_port = int(sys.argv[2])
+    payload = bytes.fromhex(sys.argv[3])  # 假设payload是以十六进制形式给出
+
+    print(f"[*] Fuzzing {target_ip}:{target_port} with payload: {sys.argv[3]}")
+    
+    result = fuzz_target(target_ip, target_port, payload)
+    if not result:
+        print("Potential vulnerability detected, further investigation recommended.")

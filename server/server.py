@@ -171,6 +171,9 @@ def _deserialize_history_row(row: dict) -> dict:
         "risk_score": row.get("risk_score") or 0,
         "results_json": parsed_results,
         "logs": parsed_logs,
+        "findings": parsed_results.get("findings", []) if isinstance(parsed_results, dict) else [],
+        "phase_records": parsed_results.get("phase_records", []) if isinstance(parsed_results, dict) else [],
+        "structured": parsed_results.get("structured", {}) if isinstance(parsed_results, dict) else {},
     }
 
 
@@ -248,6 +251,7 @@ class ScanHistory(db.Model):
     user = db.relationship('User', backref=db.backref('scans', lazy=True))
 
     def to_dict(self):
+        payload = json.loads(self.results_json) if self.results_json else {}
         return {
             "id": self.id,
             "user_id": self.user_id,
@@ -259,8 +263,39 @@ class ScanHistory(db.Model):
             "started_at": self.started_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.started_at else None,
             "completed_at": self.completed_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.completed_at else None,
             "risk_score": self.risk_score,
-            "results_json": json.loads(self.results_json) if self.results_json else [],
-            "logs": json.loads(self.logs) if self.logs else []
+            "results_json": payload,
+            "logs": json.loads(self.logs) if self.logs else [],
+            "findings": payload.get("findings", []) if isinstance(payload, dict) else [],
+            "phase_records": payload.get("phase_records", []) if isinstance(payload, dict) else [],
+            "structured": payload.get("structured", {}) if isinstance(payload, dict) else {},
+        }
+
+class SupervisorMetricSnapshot(db.Model):
+    __tablename__ = 'supervisor_metric_snapshots'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    session_id = db.Column(db.String(100), nullable=False, index=True)
+    target_ip = db.Column(db.String(50), nullable=True)
+    model_profile = db.Column(db.String(120), nullable=True)
+    metrics_json = db.Column(db.Text, nullable=False)
+    adjustments_json = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, index=True)
+
+    user = db.relationship('User', backref=db.backref('supervisor_snapshots', lazy=True))
+
+    def to_dict(self):
+        metrics = json.loads(self.metrics_json) if self.metrics_json else {}
+        adjustments = json.loads(self.adjustments_json) if self.adjustments_json else []
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "username": self.user.username if self.user else "Unknown",
+            "session_id": self.session_id,
+            "target_ip": self.target_ip,
+            "model_profile": self.model_profile,
+            "metrics": metrics,
+            "adjustments": adjustments,
+            "created_at": self.created_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.created_at else None,
         }
 
 # ==========================================
@@ -525,6 +560,32 @@ def generate_report(current_user):
 def _get_session_payload(data: dict) -> dict:
     session = data.get('session')
     return session if isinstance(session, dict) else data
+
+
+def _build_history_results_payload(data: dict) -> dict:
+    return {
+        "targetName": data.get('targetName', 'Unknown Target'),
+        "results": data.get('results', []),
+        "aiReport": data.get('aiReport'),
+        "connection": data.get('connection', {}),
+        "mode": data.get("mode", "batch"),
+        "assessment": data.get('assessment', {}),
+        "findings": data.get('findings', []),
+        "phase_records": data.get('phase_records', []),
+        "structured": data.get('structured', {}),
+    }
+
+def _build_supervisor_model_profile(structured: dict) -> str:
+    if not isinstance(structured, dict):
+        return "unknown"
+    planner = structured.get("planner", {}) if isinstance(structured.get("planner", {}), dict) else {}
+    supervisor = structured.get("supervisor", {}) if isinstance(structured.get("supervisor", {}), dict) else {}
+    events = supervisor.get("events", []) if isinstance(supervisor.get("events", []), list) else []
+    if events:
+        return "planner+supervisor"
+    if planner.get("steps"):
+        return "planner"
+    return "baseline"
 
 
 @app.route('/api/attack-graph/generate', methods=['POST'])
@@ -1052,21 +1113,28 @@ def save_session(current_user):
     ai_report = data.get('aiReport')
     connection = data.get('connection', {})
     assessment = data.get('assessment', {})
+    findings = data.get('findings', [])
+    phase_records = data.get('phase_records', [])
+    structured = data.get('structured', {})
+    supervisor = structured.get('supervisor', {}) if isinstance(structured, dict) else {}
+    results_payload = _build_history_results_payload({
+        **data,
+        "aiReport": ai_report,
+        "connection": connection,
+        "assessment": assessment,
+        "findings": findings,
+        "phase_records": phase_records,
+        "structured": structured,
+    })
     
     # Check if a history record already exists
     history = ScanHistory.query.filter_by(session_id=session_id, user_id=current_user.id).first()
+    supervisor_snapshot = SupervisorMetricSnapshot.query.filter_by(session_id=session_id, user_id=current_user.id).first()
     
     try:
         if history:
             # Update existing record
-            history.results_json = json.dumps({
-                "targetName": target_name,
-                "results": results,
-                "aiReport": ai_report,
-                "connection": connection,
-                "mode": data.get("mode", "batch"),
-                "assessment": assessment,
-            })
+            history.results_json = json.dumps(results_payload)
             history.logs = json.dumps(logs)
             history.completed_at = datetime.datetime.utcnow()
             history.risk_score = risk_score
@@ -1079,18 +1147,32 @@ def save_session(current_user):
                 target_mac=connection.get('bluetoothMac') or connection.get('canInterface'),
                 status='completed',
                 completed_at=datetime.datetime.utcnow(),
-                results_json=json.dumps({
-                    "targetName": target_name,
-                    "results": results,
-                    "aiReport": ai_report,
-                    "connection": connection,
-                    "mode": data.get("mode", "batch"),
-                    "assessment": assessment,
-                }),
+                results_json=json.dumps(results_payload),
                 logs=json.dumps(logs), # Added logs here
                 risk_score=risk_score
             )
             db.session.add(history)
+
+        if supervisor:
+            metrics_payload = supervisor.get("metrics", {}) if isinstance(supervisor, dict) else {}
+            adjustments_payload = supervisor.get("adjustments", []) if isinstance(supervisor, dict) else []
+            model_profile = _build_supervisor_model_profile(structured)
+            if supervisor_snapshot:
+                supervisor_snapshot.target_ip = connection.get('ip')
+                supervisor_snapshot.model_profile = model_profile
+                supervisor_snapshot.metrics_json = json.dumps(metrics_payload)
+                supervisor_snapshot.adjustments_json = json.dumps(adjustments_payload)
+                supervisor_snapshot.created_at = datetime.datetime.utcnow()
+            else:
+                supervisor_snapshot = SupervisorMetricSnapshot(
+                    user_id=current_user.id,
+                    session_id=session_id,
+                    target_ip=connection.get('ip'),
+                    model_profile=model_profile,
+                    metrics_json=json.dumps(metrics_payload),
+                    adjustments_json=json.dumps(adjustments_payload),
+                )
+                db.session.add(supervisor_snapshot)
             
         db.session.commit()
         logger.info(f"Session {session_id} saved/updated to history for user {current_user.username}")
@@ -1121,6 +1203,40 @@ def get_history(current_user):
             source = 'legacy'
 
     return jsonify({"history": history, "source": source})
+
+@app.route('/api/supervisor-metrics', methods=['GET'])
+@token_required
+def get_supervisor_metrics(current_user):
+    """Get time-series supervisor metrics snapshots for trend analysis."""
+    try:
+        limit = request.args.get('limit', 20, type=int)
+        if current_user.role == 'admin':
+            rows = SupervisorMetricSnapshot.query.order_by(SupervisorMetricSnapshot.created_at.desc()).limit(limit).all()
+        else:
+            rows = SupervisorMetricSnapshot.query.filter_by(user_id=current_user.id).order_by(SupervisorMetricSnapshot.created_at.desc()).limit(limit).all()
+
+        snapshots = [row.to_dict() for row in rows]
+        aggregate = {
+            "total_sessions": len(snapshots),
+            "total_events": sum((snap.get("metrics", {}) or {}).get("total_events", 0) for snap in snapshots),
+            "repeat_tool_calls": sum((snap.get("metrics", {}) or {}).get("repeat_tool_calls", 0) for snap in snapshots),
+            "no_progress_events": sum((snap.get("metrics", {}) or {}).get("no_progress_events", 0) for snap in snapshots),
+            "cascading_error_events": sum((snap.get("metrics", {}) or {}).get("cascading_error_events", 0) for snap in snapshots),
+            "planner_fallbacks": sum((snap.get("metrics", {}) or {}).get("planner_fallbacks", 0) for snap in snapshots),
+            "deduplicated_steps": sum((snap.get("metrics", {}) or {}).get("deduplicated_steps", 0) for snap in snapshots),
+            "pruned_steps": sum((snap.get("metrics", {}) or {}).get("pruned_steps", 0) for snap in snapshots),
+            "execution_errors": sum((snap.get("metrics", {}) or {}).get("execution_errors", 0) for snap in snapshots),
+            "confirmed_findings": sum((snap.get("metrics", {}) or {}).get("confirmed_findings", 0) for snap in snapshots),
+            "skipped_plan_steps": sum((snap.get("metrics", {}) or {}).get("skipped_plan_steps", 0) for snap in snapshots),
+        }
+        return jsonify({
+            "snapshots": snapshots,
+            "aggregate": aggregate,
+            "source": "supervisor_metric_snapshots",
+        })
+    except Exception as e:
+        logger.error(f"Failed to fetch supervisor metrics: {e}")
+        return jsonify({"message": str(e)}), 500
 
 @app.route('/api/execute', methods=['POST'])
 def execute_script():
@@ -1288,6 +1404,8 @@ def agent_scan(current_user):
     target_ip = data.get('target_ip')
     target_name = data.get('target_name', 'Vehicle Target')
     phase = data.get('phase')  # 可指定单独执行某个 phase
+    resume_from = data.get('resume_from')
+    state = data.get('state') or {}
     context = data.get('context', '')
     # 可选资源参数（用于 Agent 智能过滤 PoC）
     can_interface  = data.get('can_interface', '')
@@ -1312,6 +1430,11 @@ def agent_scan(current_user):
             wifi_interface=wifi_interface,
         )
 
+        if resume_from:
+            orch.hydrate_state(state)
+            report = orch.run_from_phase(resume_from)
+            logger.info(f"Agent scan resumed for {target_ip} from {resume_from} in {report['duration_seconds']}s")
+            return jsonify(report)
 
         if phase:
             # 单 Phase 模式（用于步进式调试）
@@ -1320,8 +1443,10 @@ def agent_scan(current_user):
                 "phase": phase,
                 "target_ip": target_ip,
                 "result": res_data["result"],
+                "structured_result": res_data.get("structured_result", {}),
                 "logs": res_data.get("logs", []),
-                "findings": res_data.get("findings", [])
+                "findings": res_data.get("findings", []),
+                "phase_records": res_data.get("phase_records", []),
             })
         else:
             # 全量 4-Agent 协作模式

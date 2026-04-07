@@ -47,6 +47,141 @@ export interface ScanResult {
   details: string;
   detectedAt: string;
   elapsedSeconds?: number;
+  name?: string;
+  severity?: string;
+  description?: string;
+}
+
+export interface AttackGraphNode {
+  id: string;
+  type: 'entry' | 'vulnerability' | 'capability' | 'impact';
+  label: string;
+  severity: string;
+  domain: string;
+  evidence?: string;
+}
+
+export interface AttackGraphEdge {
+  source: string;
+  target: string;
+  relation: string;
+}
+
+export interface AttackPath {
+  id: string;
+  title: string;
+  riskScore: number;
+  physicalImpact: string;
+  nodes: string[];
+}
+
+export interface AttackGraph {
+  nodes: AttackGraphNode[];
+  edges: AttackGraphEdge[];
+  paths: AttackPath[];
+  summary?: string;
+}
+
+export interface PhysicalImpactAssessment {
+  operationalContext: string;
+  safetyLevel: string;
+  impactDomains: string[];
+  likelyEffects: string[];
+  justification: string;
+}
+
+export interface RemediationAction {
+  id: string;
+  title: string;
+  description: string;
+  cost: 'low' | 'medium' | 'high';
+  estimatedRiskReduction: number;
+  affectsNodes: string[];
+}
+
+export interface RemediationPlan {
+  beforeScore: number;
+  afterScore: number;
+  blockedPaths: string[];
+  actions: RemediationAction[];
+}
+
+export interface StructuredAssessmentReport {
+  summary: {
+    targetName: string;
+    riskScore: number;
+    attackPathCount: number;
+    physicalImpact: string;
+  };
+  findings: Array<{
+    name: string;
+    severity: string;
+    evidence: string;
+    domain: string;
+  }>;
+  attackPaths: AttackPath[];
+  physicalImpact: PhysicalImpactAssessment;
+  remediationPlan: RemediationPlan;
+}
+
+export interface AssessmentArtifacts {
+  attackGraph?: AttackGraph;
+  physicalImpact?: PhysicalImpactAssessment;
+  remediationPlan?: RemediationPlan;
+  structuredReport?: StructuredAssessmentReport;
+}
+
+export interface PhaseRecord {
+  phase: string;
+  status: string;
+  attempt?: number;
+  timestamp?: string;
+  raw_output?: string;
+  structured_output?: Record<string, any>;
+  error?: string;
+  history?: Array<{
+    status: string;
+    attempt?: number;
+    timestamp?: string;
+    error?: string;
+  }>;
+}
+
+export interface PlannerStep {
+  step: number;
+  title: string;
+  objective: string;
+  success_criteria: string;
+  depends_on?: number[];
+}
+
+export interface SupervisorEvent {
+  scope: string;
+  severity: string;
+  message: string;
+  phase?: string;
+  timestamp?: string;
+}
+
+export interface SupervisorMetrics {
+  total_events: number;
+  repeat_tool_calls: number;
+  no_progress_events: number;
+  cascading_error_events: number;
+  planner_fallbacks: number;
+  deduplicated_steps: number;
+  pruned_steps: number;
+  execution_errors: number;
+  confirmed_findings: number;
+  skipped_plan_steps: number;
+}
+
+export interface SupervisorAdjustment {
+  type: string;
+  message: string;
+  affected_steps?: number[];
+  affected_pocs?: string[];
+  timestamp?: string;
 }
 
 export interface ConnectionParams {
@@ -73,4 +208,8 @@ export interface ScanSession {
   riskScore: number;
   aiReport?: string | null;
   username?: string;
+  assessment?: AssessmentArtifacts;
+  findings?: ScanResult[];
+  phase_records?: PhaseRecord[];
+  structured?: Record<string, any>;
 }

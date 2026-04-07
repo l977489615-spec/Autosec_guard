@@ -1,14 +1,40 @@
 // Service to communicate with the local Python execution engine
 
+const BACKEND_URL_STORAGE_KEY = 'autosec_backend_url';
+const DEFAULT_BACKEND_URL = 'http://localhost:5002';
+
+const resolveInitialBackendUrl = () => {
+  if (typeof window === 'undefined') {
+    return DEFAULT_BACKEND_URL;
+  }
+
+  const stored = window.localStorage.getItem(BACKEND_URL_STORAGE_KEY);
+  return stored ? stored.replace(/\/$/, '') : DEFAULT_BACKEND_URL;
+};
+
 // Default to localhost, but mutable via UI configuration
-let backendUrl = "http://localhost:5002";
+let backendUrl = resolveInitialBackendUrl();
 
 export const setBackendUrl = (url: string) => {
   // Remove trailing slash if present
   backendUrl = url.replace(/\/$/, "");
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(BACKEND_URL_STORAGE_KEY, backendUrl);
+  }
 };
 
 export const getBackendUrl = () => backendUrl;
+
+export interface BackendHealthStatus {
+  ok: boolean;
+  url: string;
+  status?: string;
+  system?: string;
+  database?: string;
+  ai_reports_enabled?: boolean;
+  warnings?: string[];
+  error?: string;
+}
 
 export interface ExecutionResult {
   success: boolean;
@@ -20,6 +46,11 @@ export interface ExecutionResult {
 }
 
 export const checkBackendHealth = async (): Promise<boolean> => {
+  const health = await getBackendHealth();
+  return health.ok;
+};
+
+export const getBackendHealth = async (): Promise<BackendHealthStatus> => {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5002);
@@ -32,10 +63,26 @@ export const checkBackendHealth = async (): Promise<boolean> => {
       mode: 'cors'
     });
     clearTimeout(timeoutId);
-    return res.status === 200;
+    if (!res.ok) {
+      return {
+        ok: false,
+        url: backendUrl,
+        error: `Server returned ${res.status}`,
+      };
+    }
+    const data = await res.json();
+    return {
+      ok: true,
+      url: backendUrl,
+      ...data,
+    };
   } catch (e) {
     console.error("[API] Health Check Failed:", e);
-    return false;
+    return {
+      ok: false,
+      url: backendUrl,
+      error: e instanceof Error ? e.message : 'Unknown network error',
+    };
   }
 };
 
@@ -148,4 +195,70 @@ export const saveScanSession = async (session: any, token: string | null) => {
     console.error('Failed to save session:', error);
     return { error: 'Connection failed' };
   }
+};
+
+export const generateSecurityReport = async (session: any, token: string | null) => {
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${backendUrl}/api/report/generate`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ session }),
+      mode: 'cors',
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.message || `Server returned ${res.status}`);
+    }
+
+    return data.report as string;
+  } catch (error: any) {
+    console.error('Failed to generate AI report:', error);
+    return 'AI 报告生成失败，请检查后端服务状态和服务端模型配置。';
+  }
+};
+
+const postAssessment = async (path: string, session: any, token: string | null) => {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${backendUrl}${path}`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ session }),
+    mode: 'cors',
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.message || `Server returned ${res.status}`);
+  }
+  return data;
+};
+
+export const generateAttackGraph = async (session: any, token: string | null) => {
+  return postAssessment('/api/attack-graph/generate', session, token);
+};
+
+export const assessPhysicalImpact = async (session: any, token: string | null) => {
+  return postAssessment('/api/physical-impact/assess', session, token);
+};
+
+export const simulateRemediation = async (session: any, token: string | null) => {
+  return postAssessment('/api/remediation/simulate', session, token);
+};
+
+export const generateStructuredReport = async (session: any, token: string | null) => {
+  return postAssessment('/api/report/structured', session, token);
 };

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Shield, Lock, User, Terminal, ArrowRight, Zap } from 'lucide-react';
+import { getBackendUrl } from '../services/api';
 
 interface AuthPageProps {
 	onLogin: (token: string, user: any) => void;
@@ -18,7 +19,8 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
 		setLoading(true);
 
 		const endpoint = isLogin ? '/api/login' : '/api/register';
-		const url = `http://localhost:5002${endpoint}`; // Fallback to localhost if backend URL not set dynamically yet
+		const backendUrl = getBackendUrl();
+		const url = `${backendUrl}${endpoint}`;
 
 		try {
 			const response = await fetch(url, {
@@ -43,7 +45,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
 				setError('Registration successful. Please log in.'); // Using error state for success message temporarily
 			}
 		} catch (err: any) {
-			setError(err.message);
+			setError(err.message || `Failed to reach backend at ${backendUrl}`);
 		} finally {
 			setLoading(false);
 		}

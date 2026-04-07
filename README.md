@@ -5,7 +5,7 @@
 
 <p>
   <img src="https://img.shields.io/badge/版本-v3.0.0-blue?style=flat-square" />
-  <img src="https://img.shields.io/badge/PoC%20模块-67-green?style=flat-square" />
+  <img src="https://img.shields.io/badge/PoC%20模块-70-green?style=flat-square" />
   <img src="https://img.shields.io/badge/攻击面类别-6-orange?style=flat-square" />
   <img src="https://img.shields.io/badge/AI%20报告-Qwen%20千问-purple?style=flat-square" />
   <img src="https://img.shields.io/badge/license-MIT-brightgreen?style=flat-square" />
@@ -13,7 +13,7 @@
 </p>
 
 **智驭安盾（SmartDrive Shield）** 是一款面向智能网联车辆（ICV）的自动化安全漏洞验证平台。  
-集成了 **67 个真实 PoC 验证模块**，覆盖侦察信息收集、网络服务、CAN 总线、无线射频、应用系统及高级攻击等 6 大攻击维度，  
+集成了 **70 个真实 PoC 验证模块**，覆盖侦察信息收集、网络服务、CAN 总线、无线射频、应用系统及高级攻击等 6 大攻击维度，  
 并具备**目标系统智能指纹识别**、**MCP 多智能体自主渗透策略**与 **AI 驱动（基于阿里千问 Qwen 大模型）中文安全报告生成**能力。
 
 </div>
@@ -58,7 +58,7 @@
   <img src="assets/poc_database.png" width="90%" alt="PoC Database" />
 </div>
 
-> 67 个 PoC 插件全览，支持按 CVE 编号、名称搜索和分类筛选。每个漏洞均附带完整的利用脚本原型。
+> 70 个 PoC 插件全览，支持按 CVE 编号、名称搜索和分类筛选。每个漏洞均附带完整的利用脚本原型。
 
 ---
 
@@ -76,10 +76,10 @@
 
 | 特性 | 描述 |
 |------|------|
-| 🎯 **67 个真实 PoC 模块** | 全部使用原生 Python 库（`scapy`、`socket`、`subprocess`、`python-can`）进行真实网络交互 |
+| 🎯 **70 个真实 PoC 模块** | 全部使用原生 Python 库（`scapy`、`socket`、`subprocess`、`python-can`）进行真实网络交互 |
 | 🧠 **智能目标指纹识别** | 扫描前自动探测目标操作系统（QNX / Android / Linux），跳过不适用的漏洞项 |
 | 🔒 **安全的 PoC 检测模式** | 所有检测仅发送 1~3 个验证探测包，谨防目标系统崩溃或失能 |
-| 🤖 **AI 中文安全报告** | 接入阿里千问（DashScope Qwen）大模型 API，自动生成中文专业安全评估报告，含风险等级、漏洞分析与修复建议 |
+| 🤖 **AI 中文安全报告** | 由后端代理接入阿里千问（DashScope Qwen）大模型 API，避免在前端暴露密钥，并自动生成中文专业安全评估报告 |
 | 🕵️ **多 Agent 自主渗透** | 全新基于 MCP 协议与 OpenAI Function Calling 标准构建的四阶段特化 Agent（侦察、决策、执行、评估），全自动完成台架渗透 |
 | 📄 **PDF 报告导出** | 支持将原生的 Markdown 分析日志、执行信息一键高质量导出排版精美的 PDF 报告文件，便于存档与汇报 |
 | 🌐 **全栈攻击面覆盖** | 涵盖侦察、网络服务、CAN 总线、无线射频、应用系统、高级攻击 6 大维度 |
@@ -97,9 +97,9 @@
 | **CAN 总线 / 诊断协议** | `canbus/` | 10 | 20–29 | CAN 总线嗅探、消息注入、DoS 洪泛、重放攻击、UDS 诊断会话绕过、UDS 安全访问暴力破解、UDS 内存读取、UDS 例程控制、OBD VIN 欺骗、**UDS ECUReset 未授权（0x11）** |
 | **无线通信攻击** | `wireless/` | 18 | 30–47 | QNX Qnet 文件读取、Wi-Fi Deauth/Evil Twin/KRACK/TI 芯片溢出/未授权控制、ConnMan DHCP 溢出、Broadcom WME 溢出、蓝牙 HFP AT 溢出/BLUFFS 密钥降级/PerfektBlue/HFP UAF/按键注入/BlueBorne/BleedingTooth、**BlueFrag L2CAP DoS（CVE-2020-0022）**、**WiFi SSID 克隆自动连接** |
 | **应用系统漏洞** | `application/` | 12 | 48–59 | AirPlay AirBorne UAF、IVI USB SQLi、CarPlay 栈溢出、HiQnet TCP/UDP 溢出、WebView 文件外泄、文件名命令注入、USB 路径注入、IVI 开发者模式绕过、无线认证绕过、**RTSP CarPlay DoS（CVE-2023-28898）**、**UPnP AVTransport 媒体注入 DoS** |
-| **高级攻击 / 固件安全** | `advanced/` | 8 | 60–67 | OTA MITM 拦截、RF 钥匙扰频重放（CVE-2022-27254）、GPS 信号欺骗、TPMS 信号欺骗、V2X BSM 幽灵车注入、固件更新 TOCTOU 竞态、QNX 无签名固件加载、USB 未签名更新包 |
+| **高级攻击 / 固件安全** | `advanced/` | 8 | 60–80 | OTA MITM 拦截、RF 钥匙扰频重放（CVE-2022-27254）、GPS 信号欺骗、TPMS 信号欺骗、V2X BSM 幽灵车注入、固件更新 TOCTOU 竞态、QNX 无签名固件加载、USB 未签名更新包 |
 
-**合计：67 个 PoC 模块**
+**合计：70 个 PoC 模块**
 
 ---
 
@@ -111,9 +111,9 @@
 │         Dashboard · Scanner · PoC Database · Scan History        │
 │              Profile · UserManagement · AuthPage                 │
 ├────────────────────────┬─────────────────────────────────────────┤
-│    Qwen AI Service     │           Flask 后端 API                 │
-│     LLMService.ts      │           server.py (:5002)             │
-│      (中文报告生成)      │                                         │
+│ React Report Client    │           Flask 后端 API                 │
+│    (触发报告生成)        │           server.py (:5002)             │
+│                        │      /api/report/generate                │
 │                        │  /api/health        /api/list_pocs      │
 │                        │  /api/run_poc       /api/execute        │
 │                        │  /api/fingerprint   /api/save_session   │
@@ -122,7 +122,7 @@
 ├────────────────────────┴─────────────────────────────────────────┤
 │                     MySQL 扫描历史数据库                            │
 ├──────────────────────────────────────────────────────────────────┤
-│                   Pocs/ (67 个 Python 插件)                        │
+│                   Pocs/ (70 个 Python 插件)                        │
 │  reconnaissance · network · canbus · wireless · application · advanced │
 │       scapy · python-can · AF_BLUETOOTH · raw socket · ...       │
 └──────────────────────────────────────────────────────────────────┘
@@ -151,15 +151,16 @@ cd AutoSec_Guard
 cd client
 npm install
 
-# 3. 配置 Qwen API Key（用于多智能体驱动及 AI 中文报告生成）
-echo "DASHSCOPE_API_KEY=your_dashscope_api_key_here" > .env.local
+# 3. 配置服务端环境变量（用于 JWT、数据库和 Qwen 能力）
+cp .env.example .env
+# 按需编辑 .env 中的 AUTOSEC_SECRET_KEY / AUTOSEC_DB_URI / DASHSCOPE_API_KEY
 
 # 4. 安装后端 Python 依赖
 cd ../server
 pip install -r requirements.txt
 
-# 5. 配置 MySQL 数据库（默认连接: root:1@localhost/autosec_db）
-#    可在 server.py 中修改 SQLALCHEMY_DATABASE_URI
+# 5. 可选：如果使用 MySQL，请在 .env 中设置 AUTOSEC_DB_URI
+#    未设置时默认使用 server/autosec.db(SQLite)
 
 # 6. 启动后端引擎（新终端）
 python3 server.py
@@ -187,7 +188,7 @@ npm run dev
 3. 点击 **Start Scan**，系统将自动完成：
    - 🔍 **OS 指纹识别**（探测 QNX / Android / Linux）
    - ⚡ **智能跳过**不适用的漏洞
-   - 🧪 **逐项执行** PoC 验证（共 67 项）
+   - 🧪 **逐项执行** PoC 验证（共 70 项）
    - 🤖 **生成 AI 中文安全报告**
 
 ### Manual Diagnostic（手动诊断）
@@ -220,11 +221,11 @@ AutoSec_Guard/
 │   │   └── ScanLogs.tsx         #     实时扫描日志组件
 │   ├── services/                #   服务层
 │   │   ├── api.ts               #     后端 REST API 通信接口
-│   │   └── LLMService.ts     #     Qwen AI 中文报告与大模型接口
+│   │   └── LLMService.ts     #     后端 AI 报告接口封装
 │   ├── App.tsx                  #   主应用与路由（侧边栏导航）
 │   ├── index.tsx                #   React 渲染入口
 │   ├── index.html               #   HTML 模板（浏览器标题：智驭安盾）
-│   ├── constants.ts             #   67 个 PoC 元数据定义
+│   ├── constants.ts             #   70 个 PoC 元数据定义
 │   ├── types.ts                 #   TypeScript 类型定义
 │   ├── metadata.json            #   应用元数据（中文名称与描述）
 │   ├── package.json             #   前端依赖清单
@@ -233,7 +234,7 @@ AutoSec_Guard/
 │   ├── server.py                #   Flask API 服务器（端口 5002）
 │   ├── requirements.txt         #   Python 依赖清单
 │   ├── logs/                    #   运行日志（RotatingFileHandler）
-│   └── pocs/                    #   67 个 PoC Python 验证脚本
+│   └── pocs/                    #   70 个 PoC Python 验证脚本
 │       ├── iv_plugin_base.py    #     插件基类（IVIVulnerabilityPlugin）
 │       ├── reconnaissance/      #     侦察与信息收集 (01–08)
 │       ├── network/             #     网络服务漏洞 (09–18)

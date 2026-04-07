@@ -351,7 +351,7 @@ const Scanner: React.FC<ScannerProps> = ({
 
   const handleAiAnalysis = async () => {
     setIsAnalysing(true);
-    const report = await generateSecurityReport(session);
+    const report = await generateSecurityReport(session, token);
     setSession(prev => {
       const updated = { ...prev, aiReport: report };
       // Sync to DB when report is generated
@@ -550,7 +550,7 @@ const Scanner: React.FC<ScannerProps> = ({
         isOpen={!!manualTestPoc}
         onClose={() => setManualTestPoc(null)}
         // In Manual Mode, we pass empty connection params so user MUST input them
-        globalConnection={mode === 'GLOBAL' ? session.connection : { ip: '', port: '', bluetoothMac: '', canInterface: 'PCAN_USBBUS1', url: '', frequency: '' }}
+        globalConnection={mode === 'GLOBAL' ? session.connection : { ip: '', port: '', bluetoothMac: '', canInterface: 'PCAN_USBBUS1', url: '', frequency: '', interface: '' }}
       />
 
       {/* Top Bar for Modes */}
@@ -581,7 +581,7 @@ const Scanner: React.FC<ScannerProps> = ({
 
         {mode === 'AGENT' && token && (
           <div className="h-full flex flex-col">
-            <AgentScan token={token} />
+            <AgentScan token={token} onSessionComplete={onAddToHistory} engineUrl={engineUrl} />
           </div>
         )}
 
