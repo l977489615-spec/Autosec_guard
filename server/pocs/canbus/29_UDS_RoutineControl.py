@@ -12,6 +12,15 @@ Usage: python3 29_UDS_RoutineControl.py PCAN_USBBUS1
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
 class UDSRoutineControlPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "UDS RoutineControl"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "can"
+    meta_target_os = ["all"]
+    meta_required_params = ["can_interface"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self): return True
     def exploit(self):
         iface = self.params.get("can_interface", "PCAN_USBBUS1")
@@ -52,5 +61,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 29_UDS_RoutineControl.py <can_interface>")
         sys.exit(1)
-    plugin = UDSRoutineControlPlugin({"target_ip": "N/A", "can_interface": iface})
+    plugin = UDSRoutineControlPlugin({"target_ip": "N/A", "can_interface": sys.argv[1]})
     plugin.run_verify()

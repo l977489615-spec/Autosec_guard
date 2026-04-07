@@ -1,269 +1,665 @@
 <div align="center">
 
 # 🛡️ 智驭安盾
-### SmartDrive Shield — 智能网联汽车漏洞扫描平台
+### SmartDrive Shield — 智能网联汽车漏洞扫描与安全评估平台
 
 <p>
-  <img src="https://img.shields.io/badge/版本-v3.0.0-blue?style=flat-square" />
-  <img src="https://img.shields.io/badge/PoC%20模块-70-green?style=flat-square" />
+  <img src="https://img.shields.io/badge/版本-Current-blue?style=flat-square" />
+  <img src="https://img.shields.io/badge/静态%20PoC-70-green?style=flat-square" />
   <img src="https://img.shields.io/badge/攻击面类别-6-orange?style=flat-square" />
-  <img src="https://img.shields.io/badge/AI%20报告-Qwen%20千问-purple?style=flat-square" />
+  <img src="https://img.shields.io/badge/Agent%20Workflow-MCP%20%2B%20Qwen-purple?style=flat-square" />
+  <img src="https://img.shields.io/badge/database-SQLite-informational?style=flat-square" />
   <img src="https://img.shields.io/badge/license-MIT-brightgreen?style=flat-square" />
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey?style=flat-square" />
 </p>
 
-**智驭安盾（SmartDrive Shield）** 是一款面向智能网联车辆（ICV）的自动化安全漏洞验证平台。  
-集成了 **70 个真实 PoC 验证模块**，覆盖侦察信息收集、网络服务、CAN 总线、无线射频、应用系统及高级攻击等 6 大攻击维度，  
-并具备**目标系统智能指纹识别**、**MCP 多智能体自主渗透策略**与 **AI 驱动（基于阿里千问 Qwen 大模型）中文安全报告生成**能力。
+**智驭安盾（SmartDrive Shield）** 是一个面向智能网联汽车（ICV）的漏洞验证、攻击面分析与结构化安全评估平台。  
+它集成了 PoC 执行、风险控制、结果留痕、历史审计、Agent 协作扫描与边缘节点调度能力，适用于教学研究、实验室台架验证和授权安全测试场景。
 
 </div>
 
 ---
 
-## 📸 系统截图
+## 📚 目录
 
-### 🏠 Dashboard — 态势总览
+- [项目简介](#项目简介)
+- [功能概览](#功能概览)
+- [系统截图](#系统截图)
+- [快速开始](#快速开始)
+- [运行环境](#运行环境)
+- [配置说明](#配置说明)
+- [启动方式](#启动方式)
+- [使用说明](#使用说明)
+- [Edge Control 与边缘节点](#edge-control-与边缘节点)
+- [常用 API](#常用-api)
+- [项目目录结构](#项目目录结构)
+- [常见问题](#常见问题)
+- [免责声明](#免责声明)
+- [License](#license)
+
+---
+
+## 🚗 项目简介
+
+智驭安盾用于帮助研究人员、安全工程师和实验室用户完成智能网联汽车相关目标的漏洞验证与安全评估。平台提供：
+
+- Web 控制台
+- 本地 PoC 执行引擎
+- 结构化安全评估能力
+- 历史会话与审计记录
+- 基于 MCP 的 Agent 扫描链路
+- 面向本地硬件环境的边缘节点调度能力
+
+平台支持从单个 PoC 调试，到批量扫描、结构化报告生成，再到带有边缘能力匹配的执行任务编排。
+
+---
+
+## ✨ 功能概览
+
+### 1. 漏洞验证能力
+
+当前仓库包含多类 ICV 相关 PoC，覆盖以下方向：
+
+- Reconnaissance：目标发现、端口与服务探测
+- Network：ADB、SSH、Telnet、MQTT、RTSP、SOME/IP 等
+- CAN / Diagnostics：CAN 注入、重放、UDS、OBD 诊断
+- Wireless：Wi-Fi、Bluetooth、BLE、QNX Qnet 等
+- Application：AirPlay、CarPlay、USB、WebView、HiQnet 等
+- Advanced：OTA、GPS、TPMS、V2X、固件更新等
+
+### 2. 三种主要使用模式
+
+- **Global Auto Scan**
+  - 根据输入参数自动筛选适用 PoC 并批量执行
+- **Manual Diagnostic**
+  - 针对单个 PoC 做定向验证、复测与调试
+- **Agent Scan**
+  - 基于 MCP + LLM 的多阶段自主扫描模式
+
+### 3. 风险控制与结果沉淀
+
+平台支持：
+
+- PoC 沙箱执行
+- 高风险 PoC 审批拦截
+- 扫描日志与结果留痕
+- 历史会话保存
+- 攻击路径、物理影响、缓解建议等结构化评估
+- Benchmark 回归评分
+
+---
+
+## 🖼️ 系统截图
+
+### Dashboard — 态势总览
 
 <div align="center">
-  <img src="assets/dashboard.png" width="90%" alt="Dashboard" />
+  <img src="assets/dashboard.png" width="92%" alt="Dashboard" />
 </div>
 
-> 展示漏洞覆盖统计、严重程度分布、模块分类概览及系统在线状态。
-
----
-
-### 🔍 Scan Engine — 扫描引擎
+### Scan Engine — 扫描引擎
 
 <div align="center">
-  <img src="assets/scan_engine.png" width="90%" alt="Scan Engine" />
+  <img src="assets/scan_engine.png" width="92%" alt="Scan Engine" />
 </div>
 
-> 提供 **Global Auto Scan**（全局自动扫描）和 **Manual Diagnostic**（手动诊断）两种操作模式。
-
----
-
-### 🤖 Agent Scan - 多Agent自主渗透测试
+### Agent Scan — 多 Agent 自主扫描
 
 <div align="center">
-  <img src="assets/agent_scan.png" width="90%" alt="Agent Scan" />
+  <img src="assets/agent_scan.png" width="92%" alt="Agent Scan" />
 </div>
 
-> 提供 **Agent Scan**（多Agent自主渗透测试）。
-
----
-
-### 📦 PoC Database — 漏洞知识库
+### PoC Database — 漏洞知识库
 
 <div align="center">
-  <img src="assets/poc_database.png" width="90%" alt="PoC Database" />
+  <img src="assets/poc_database.png" width="92%" alt="PoC Database" />
 </div>
 
-> 70 个 PoC 插件全览，支持按 CVE 编号、名称搜索和分类筛选。每个漏洞均附带完整的利用脚本原型。
-
----
-
-### 📋 Scan History — 扫描记录与审计
+### Scan History — 扫描记录与审计
 
 <div align="center">
-  <img src="assets/scan_history.png" width="90%" alt="Scan History" />
+  <img src="assets/scan_history.png" width="92%" alt="Scan History" />
 </div>
 
-> 记录每次扫描的详细日志，支持 AI 分析报告存储与 PDF 导出，便于安全审计与复测回溯。
-
 ---
 
-## ✨ 核心特性
+## ⚡ 快速开始
 
-| 特性 | 描述 |
-|------|------|
-| 🎯 **70 个真实 PoC 模块** | 全部使用原生 Python 库（`scapy`、`socket`、`subprocess`、`python-can`）进行真实网络交互 |
-| 🧠 **智能目标指纹识别** | 扫描前自动探测目标操作系统（QNX / Android / Linux），跳过不适用的漏洞项 |
-| 🔒 **安全的 PoC 检测模式** | 所有检测仅发送 1~3 个验证探测包，谨防目标系统崩溃或失能 |
-| 🤖 **AI 中文安全报告** | 由后端代理接入阿里千问（DashScope Qwen）大模型 API，避免在前端暴露密钥，并自动生成中文专业安全评估报告 |
-| 🕵️ **多 Agent 自主渗透** | 全新基于 MCP 协议与 OpenAI Function Calling 标准构建的四阶段特化 Agent（侦察、决策、执行、评估），全自动完成台架渗透 |
-| 📄 **PDF 报告导出** | 支持将原生的 Markdown 分析日志、执行信息一键高质量导出排版精美的 PDF 报告文件，便于存档与汇报 |
-| 🌐 **全栈攻击面覆盖** | 涵盖侦察、网络服务、CAN 总线、无线射频、应用系统、高级攻击 6 大维度 |
-| ⚙️ **灵活参数化输入** | 按需输入 IP、蓝牙 MAC、CAN 接口、Wi-Fi 接口等，仅扫描与输入参数相关的漏洞 |
-| 👥 **多用户 RBAC 权限管理** | 支持管理员/普通用户角色，管理员可查看全局扫描历史及管理账户 |
-
----
-
-## 🗂️ 漏洞覆盖矩阵
-
-| 类别 | 目录 | 数量 | 模块编号 | 涵盖方向 |
-|------|------|:----:|----------|----------|
-| **侦察 / 信息收集** | `reconnaissance/` | 8 | 01–08 | ICMP 存活探测、TCP 端口扫描、mDNS/UPnP 服务发现、SNMP 信息泄露、蓝牙 SDP 枚举、T-Box 端口探测、HTTP 服务指纹 |
-| **网络服务漏洞** | `network/` | 11 | 09–19 | ADB 调试端口、SSH 弱口令/硬编码凭证、Telnet 未授权、FTP 匿名访问、MQTT 未授权、D-Bus 匿名鉴权、RTSP 日志泄露、DLNA 未授权控制、HTTPS 证书无验证、**SOME/IP 服务发现信息泄露** |
-| **CAN 总线 / 诊断协议** | `canbus/` | 10 | 20–29 | CAN 总线嗅探、消息注入、DoS 洪泛、重放攻击、UDS 诊断会话绕过、UDS 安全访问暴力破解、UDS 内存读取、UDS 例程控制、OBD VIN 欺骗、**UDS ECUReset 未授权（0x11）** |
-| **无线通信攻击** | `wireless/` | 18 | 30–47 | QNX Qnet 文件读取、Wi-Fi Deauth/Evil Twin/KRACK/TI 芯片溢出/未授权控制、ConnMan DHCP 溢出、Broadcom WME 溢出、蓝牙 HFP AT 溢出/BLUFFS 密钥降级/PerfektBlue/HFP UAF/按键注入/BlueBorne/BleedingTooth、**BlueFrag L2CAP DoS（CVE-2020-0022）**、**WiFi SSID 克隆自动连接** |
-| **应用系统漏洞** | `application/` | 12 | 48–59 | AirPlay AirBorne UAF、IVI USB SQLi、CarPlay 栈溢出、HiQnet TCP/UDP 溢出、WebView 文件外泄、文件名命令注入、USB 路径注入、IVI 开发者模式绕过、无线认证绕过、**RTSP CarPlay DoS（CVE-2023-28898）**、**UPnP AVTransport 媒体注入 DoS** |
-| **高级攻击 / 固件安全** | `advanced/` | 8 | 60–80 | OTA MITM 拦截、RF 钥匙扰频重放（CVE-2022-27254）、GPS 信号欺骗、TPMS 信号欺骗、V2X BSM 幽灵车注入、固件更新 TOCTOU 竞态、QNX 无签名固件加载、USB 未签名更新包 |
-
-**合计：70 个 PoC 模块**
-
----
-
-## 🏗️ 技术架构
-
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                        React 前端 (TypeScript + Vite)             │
-│         Dashboard · Scanner · PoC Database · Scan History        │
-│              Profile · UserManagement · AuthPage                 │
-├────────────────────────┬─────────────────────────────────────────┤
-│ React Report Client    │           Flask 后端 API                 │
-│    (触发报告生成)        │           server.py (:5002)             │
-│                        │      /api/report/generate                │
-│                        │  /api/health        /api/list_pocs      │
-│                        │  /api/run_poc       /api/execute        │
-│                        │  /api/fingerprint   /api/save_session   │
-│                        │  /api/history       /api/login          │
-│                        │  /api/register      /api/admin/*        │
-├────────────────────────┴─────────────────────────────────────────┤
-│                     MySQL 扫描历史数据库                            │
-├──────────────────────────────────────────────────────────────────┤
-│                   Pocs/ (70 个 Python 插件)                        │
-│  reconnaissance · network · canbus · wireless · application · advanced │
-│       scapy · python-can · AF_BLUETOOTH · raw socket · ...       │
-└──────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 🚀 快速开始
-
-### 环境要求
-
-- **Node.js** ≥ 18
-- **Python** ≥ 3.8
-- **MySQL** ≥ 5.7（用于扫描历史存储）
-- **pip 依赖**: `flask`, `flask-cors`, `flask-sqlalchemy`, `pymysql`, `bcrypt`, `pyjwt`, `scapy`, `python-can`
-- **系统工具**（可选）: `nmap`, `aircrack-ng`, `hackrf_transfer`, `bluez`
-
-### 安装与运行
+### 最短启动路径
 
 ```bash
-# 1. 克隆项目
-git clone https://github.com/Hecker986/AutoSec_Guard.git
-cd AutoSec_Guard
-
-# 2. 安装前端依赖
+# 1. 安装前端依赖
 cd client
 npm install
 
-# 3. 配置服务端环境变量（用于 JWT、数据库和 Qwen 能力）
-cp .env.example .env
-# 按需编辑 .env 中的 AUTOSEC_SECRET_KEY / AUTOSEC_DB_URI / DASHSCOPE_API_KEY
-
-# 4. 安装后端 Python 依赖
+# 2. 安装后端依赖
 cd ../server
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 
-# 5. 可选：如果使用 MySQL，请在 .env 中设置 AUTOSEC_DB_URI
-#    未设置时默认使用 server/autosec.db(SQLite)
-
-# 6. 启动后端引擎（新终端）
+# 3. 启动后端
 python3 server.py
 
-# 7. 启动前端（新终端）
+# 4. 启动前端
 cd ../client
 npm run dev
 ```
 
-启动后访问 **http://localhost:3000** 即可使用。首个注册用户自动获得管理员权限。
+启动完成后访问：
+
+- 前端：`http://localhost:3000`
+- 后端健康检查：`http://localhost:5002/api/health`
+
+### Agent 模式额外要求
+
+如果需要使用 `Agent Scan`，还需要启动 MCP Server，并配置模型密钥：
+
+```bash
+cd server
+source .venv/bin/activate
+python3 mcp_server.py
+```
+
+并在环境变量中设置：
+
+```env
+DASHSCOPE_API_KEY=your_api_key
+```
 
 ---
 
-## 📖 使用指南
+## 🧰 运行环境
 
-### Global Auto Scan（全局自动扫描）
+### 基础要求
 
-1. 进入 **扫描引擎** → 选择 **Global Auto Scan**
-2. 填写目标信息（按需填写，未填参数对应漏洞将自动跳过）：
-   - **IP Address**: 目标车机 IP 地址
-   - **Bluetooth MAC**: 目标蓝牙 MAC 地址
-   - **CAN Interface**: CAN 总线接口名称（如 `PCAN_USBBUS1`）
-   - **Wi-Fi Interface**: 监听网卡名称（如 `wlan0mon`）
-   - **RF Frequency**: 射频频率（如 `315.00MHz`）
-3. 点击 **Start Scan**，系统将自动完成：
-   - 🔍 **OS 指纹识别**（探测 QNX / Android / Linux）
-   - ⚡ **智能跳过**不适用的漏洞
-   - 🧪 **逐项执行** PoC 验证（共 70 项）
-   - 🤖 **生成 AI 中文安全报告**
+- Node.js 18+
+- Python 3.10+（建议）
+- Linux 或 macOS
 
-### Manual Diagnostic（手动诊断）
+### Python 依赖
 
-选择特定漏洞进行单项测试，可查看完整的 PoC 脚本源码、自定义参数后独立执行，并查看实时输出日志。
+见 `server/requirements.txt`，核心依赖包括：
 
-### 扫描历史与报告导出
+- `flask`
+- `flask-cors`
+- `flask-sqlalchemy`
+- `scapy`
+- `python-can`
+- `paramiko`
+- `bcrypt`
+- `PyJWT`
+- `requests`
+- `pymysql`
 
-- 每次完成的扫描自动保存至数据库（含 AI 报告）
-- 在 **扫描记录** 页面可查看历史、重放结果
-- 支持将扫描报告 **导出为 PDF** 文件
+说明：
+
+- 默认数据库为 SQLite
+- 保留 `pymysql` 用于兼容旧数据迁移或历史 fallback 场景
+
+### 可选外部能力
+
+以下能力按需启用：
+
+- AI 报告 / Agent 模式：需要 `DASHSCOPE_API_KEY`
+- CAN / Bluetooth / Wi-Fi / SDR 相关 PoC：需要本地硬件、驱动与系统权限
+- 边缘执行能力：需要至少一个可注册的 edge agent
 
 ---
 
-## 📂 项目结构
+## ⚙️ 配置说明
 
+项目通过 `server/config.py` 自动加载以下环境文件：
+
+- 项目根目录 `.env`
+- 项目根目录 `.env.local`
+- `server/.env`
+- `server/.env.local`
+
+常用环境变量如下：
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `AUTOSEC_SECRET_KEY` | 自动生成 | JWT 签名密钥 |
+| `AUTOSEC_DB_URI` | 本地 SQLite | 数据库连接串 |
+| `DASHSCOPE_API_KEY` | 空 | Qwen 接口密钥 |
+| `AUTOSEC_API` | `http://localhost:5002` | 主 Flask API 地址 |
+| `MCP_SERVER` | `http://localhost:5003` | MCP 服务地址 |
+| `AUTOSEC_EDGE_ENROLLMENT_TOKEN` | 空 | 边缘节点注册口令 |
+| `AUTOSEC_HOST` | `0.0.0.0` | Flask 监听地址 |
+| `AUTOSEC_PORT` | `5002` | Flask 端口 |
+| `AUTOSEC_DEBUG` | `false` | Flask debug 开关 |
+
+### 推荐的本地开发配置示例
+
+```env
+AUTOSEC_SECRET_KEY=replace-with-a-long-random-string
+AUTOSEC_DB_URI=sqlite:///server/autosec.db
+AUTOSEC_API=http://localhost:5002
+MCP_SERVER=http://localhost:5003
+AUTOSEC_EDGE_ENROLLMENT_TOKEN=autosec-edge-dev-token
+AUTOSEC_PORT=5002
+AUTOSEC_DEBUG=false
 ```
-AutoSec_Guard/
-├── client/                      ← 前端应用 (React + TypeScript + Vite)
-│   ├── components/              #   页面组件
-│   │   ├── Scanner.tsx          #     扫描引擎主界面（全局扫描 + 手动诊断）
-│   │   ├── Dashboard.tsx        #     数据仪表盘（统计与可视化）
-│   │   ├── PocDatabase.tsx      #     漏洞知识库（搜索/筛选/查看）
-│   │   ├── ScanHistory.tsx      #     扫描历史记录与 PDF 导出
-│   │   ├── ManualTestModal.tsx  #     手动诊断弹窗
-│   │   ├── PocDetailModal.tsx   #     PoC 详情弹窗
-│   │   ├── AuthPage.tsx         #     用户认证页面（登录/注册）
-│   │   ├── Profile.tsx          #     用户个人资料
-│   │   ├── UserManagement.tsx   #     管理员用户管理
-│   │   └── ScanLogs.tsx         #     实时扫描日志组件
-│   ├── services/                #   服务层
-│   │   ├── api.ts               #     后端 REST API 通信接口
-│   │   └── LLMService.ts     #     后端 AI 报告接口封装
-│   ├── App.tsx                  #   主应用与路由（侧边栏导航）
-│   ├── index.tsx                #   React 渲染入口
-│   ├── index.html               #   HTML 模板（浏览器标题：智驭安盾）
-│   ├── constants.ts             #   70 个 PoC 元数据定义
-│   ├── types.ts                 #   TypeScript 类型定义
-│   ├── metadata.json            #   应用元数据（中文名称与描述）
-│   ├── package.json             #   前端依赖清单
-│   └── vite.config.ts           #   Vite 构建配置
-├── server/                      ← 后端引擎 (Python + Flask)
-│   ├── server.py                #   Flask API 服务器（端口 5002）
-│   ├── requirements.txt         #   Python 依赖清单
-│   ├── logs/                    #   运行日志（RotatingFileHandler）
-│   └── pocs/                    #   70 个 PoC Python 验证脚本
-│       ├── iv_plugin_base.py    #     插件基类（IVIVulnerabilityPlugin）
-│       ├── reconnaissance/      #     侦察与信息收集 (01–08)
-│       ├── network/             #     网络服务漏洞 (09–18)
-│       ├── canbus/              #     CAN 总线与诊断协议 (19–27)
-│       ├── wireless/            #     无线通信攻击 (28–43)
-│       ├── application/         #     应用系统漏洞 (44–53)
-│       └── advanced/            #     高级攻击与固件安全 (54–61)
-├── assets/                      ← 截图与媒体资源
-├── README.md
-├── .gitignore
-└── LICENSE
+
+如需启用 AI 报告与 Agent 模式，再补充：
+
+```env
+DASHSCOPE_API_KEY=your_dashscope_key
 ```
+
+---
+
+## 🚀 启动方式
+
+### 1. 启动基础扫描模式
+
+适用于：
+
+- PoC 列表浏览
+- 手动单项验证
+- 批量扫描
+- 历史记录与结构化评估
+
+```bash
+# 终端 1：启动 Flask API
+cd server
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python3 server.py
+
+# 终端 2：启动前端
+cd client
+npm install
+npm run dev
+```
+
+### 2. 启动 Agent 模式
+
+适用于需要多阶段自主扫描的场景：
+
+```bash
+# 终端 1：Flask API
+cd server
+source .venv/bin/activate
+python3 server.py
+
+# 终端 2：MCP Server
+cd server
+source .venv/bin/activate
+python3 mcp_server.py
+
+# 终端 3：前端
+cd client
+npm run dev
+```
+
+如果没有配置 `DASHSCOPE_API_KEY`，Agent 模式与 AI 报告会不可用，但基础扫描仍可正常使用。
+
+---
+
+## 📖 使用说明
+
+### 1. 登录与账号
+
+- 首次注册的用户会自动成为管理员
+- 普通用户默认只能查看自己的扫描历史
+- 管理员可管理用户与全局历史
+
+### 2. Global Auto Scan
+
+适合批量筛选并执行适用 PoC。
+
+推荐填写：
+
+- `IP Address`
+- `Bluetooth MAC`
+- `CAN Interface`
+- `Wi-Fi Interface`
+- `RF Frequency`
+
+系统会自动：
+
+1. 检查后端状态
+2. 进行目标 OS 指纹识别
+3. 根据参数和 PoC 元数据筛选可执行项
+4. 执行 PoC 并实时回显日志
+5. 汇总风险与结构化评估结果
+6. 保存会话到历史记录
+
+### 3. Manual Diagnostic
+
+适合单个 PoC 的调试与复测。
+
+你可以：
+
+- 查看 PoC 源码
+- 手动输入参数
+- 直接发起 PoC 验证
+- 查看日志、证据、错误和结果
+
+如果目标 PoC 被识别为高风险，系统会阻止执行并返回审批提示。
+
+### 4. Agent Scan
+
+适合目标较复杂、需要先侦察再规划与执行的场景。
+
+建议至少提供：
+
+- `target_ip`
+- 可选的 `can_interface`
+- 可选的 `bluetooth_mac`
+- 可选的 `wifi_interface`
+
+支持：
+
+- 单阶段调试
+- 全流程运行
+- 从指定阶段恢复继续
+- 持久化 `phase_records`、`findings` 和结构化状态
+
+---
+
+## 🌐 Edge Control 与边缘节点
+
+### 为什么需要边缘节点
+
+如果系统运行在云端或普通开发主机上，后端默认无法直接访问下列本地能力：
+
+- USB 挂载
+- PCAN / SocketCAN
+- 本地蓝牙适配器
+- Monitor 模式 Wi-Fi 网卡
+- HackRF / SDR
+- 仅内网可达的车机或测试目标
+
+这类能力适合通过 **Edge Agent** 提供。  
+Edge Agent 运行在本地 Linux 主机、实验设备或工控机上，负责：
+
+- 探测本地硬件能力
+- 注册到控制面
+- 接收边缘执行任务
+- 本地执行 PoC
+- 回传日志与结构化结果
+
+### Edge Agent 注册步骤
+
+#### 1. 配置 `.env`
+
+在项目根目录准备以下配置：
+
+```env
+AUTOSEC_HOST=0.0.0.0
+AUTOSEC_PORT=5002
+AUTOSEC_API=http://localhost:5002
+AUTOSEC_EDGE_ENROLLMENT_TOKEN=autosec-edge-dev-token
+AUTOSEC_DB_URI=sqlite:///server/autosec.db
+```
+
+其中 `AUTOSEC_EDGE_ENROLLMENT_TOKEN` 用于边缘节点注册，如果为空，`/api/edge/register` 不会开放注册。
+
+#### 2. 启动后端
+
+```bash
+cd server
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python3 server.py
+```
+
+#### 3. 注册边缘节点
+
+```bash
+cd server
+source .venv/bin/activate
+python3 edge_agent.py --edge-api http://localhost:5002 --register --display-name "Local Edge Node" --site-name "Lab"
+```
+
+注册成功后，会生成：
+
+```text
+server/.edge-agent-state.json
+```
+
+其中包含：
+
+- `agent_id`
+- `edge_token`
+- `site_name`
+
+#### 4. 启动心跳与任务轮询
+
+```bash
+cd server
+source .venv/bin/activate
+python3 edge_agent.py --edge-api http://localhost:5002
+```
+
+如需仅测试一次，可执行：
+
+```bash
+python3 edge_agent.py --edge-api http://localhost:5002 --once
+```
+
+#### 5. 在前端验证
+
+进入 `Edge Control` 页面后，正常情况下可以看到：
+
+- “已注册边缘节点”表格中出现该节点
+- “指定边缘节点”下拉框中出现该节点
+- 点击“推荐节点”后出现能力匹配结果
+
+### 边缘任务下发示例
+
+#### 查询推荐边缘节点
+
+```bash
+curl -X POST http://localhost:5002/api/edge/recommendations \
+  -H "Authorization: Bearer <user-jwt>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "filename": "canbus/23_CAN_Message_Injection.py",
+    "params": {
+      "can_interface": "can0",
+      "arbitration_id": "0x123",
+      "data": "11223344"
+    }
+  }'
+```
+
+#### 创建边缘任务
+
+```bash
+curl -X POST http://localhost:5002/api/edge/tasks \
+  -H "Authorization: Bearer <user-jwt>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "filename": "canbus/23_CAN_Message_Injection.py",
+    "params": {
+      "can_interface": "can0",
+      "arbitration_id": "0x123",
+      "data": "11223344"
+    }
+  }'
+```
+
+#### 查看边缘节点与任务
+
+```bash
+curl -H "Authorization: Bearer <admin-jwt>" http://localhost:5002/api/edge/agents
+curl -H "Authorization: Bearer <user-jwt>" http://localhost:5002/api/edge/tasks
+```
+
+---
+
+## 🔌 常用 API
+
+### 基础接口
+
+- `GET /api/health`
+- `GET /api/list_pocs`
+- `GET /api/poc-registry`
+- `POST /api/fingerprint`
+- `POST /api/run_poc`
+- `POST /api/run_poc_stream`
+- `POST /api/execute`
+
+### 评估接口
+
+- `POST /api/report/generate`
+- `POST /api/attack-graph/generate`
+- `POST /api/physical-impact/assess`
+- `POST /api/remediation/simulate`
+- `POST /api/report/structured`
+
+### 历史与证据接口
+
+- `POST /api/save_session`
+- `GET /api/history`
+- `DELETE /api/history/<id>`
+- `POST /api/history/delete-batch`
+- `GET /api/session-artifacts/<session_id>`
+- `GET /api/supervisor-metrics`
+
+### Agent 与上下文接口
+
+- `POST /api/topology`
+- `POST /api/adaptive-context`
+- `POST /api/agent-scan`
+
+### Edge 接口
+
+- `POST /api/edge/register`
+- `POST /api/edge/heartbeat`
+- `GET /api/edge/agents`
+- `POST /api/edge/recommendations`
+- `GET /api/edge/tasks`
+- `POST /api/edge/tasks`
+- `GET /api/edge/tasks/next`
+- `POST /api/edge/tasks/<task_id>/result`
+
+---
+
+## 🗂️ 项目目录结构
+
+```text
+.
+├── client/
+│   ├── components/
+│   ├── services/
+│   ├── constants.ts
+│   └── vite.config.ts
+├── server/
+│   ├── server.py
+│   ├── config.py
+│   ├── poc_worker.py
+│   ├── sandbox_runner.py
+│   ├── assessment_engine.py
+│   ├── agent_orchestrator.py
+│   ├── mcp_server.py
+│   ├── edge_agent.py
+│   ├── edge_capability_probe.py
+│   ├── topology_scanner.py
+│   ├── physical_safety_monitor.py
+│   ├── benchmark_suite.py
+│   ├── run_benchmark_suite.py
+│   ├── benchmarks/
+│   └── pocs/
+├── assets/
+└── README.md
+```
+
+---
+
+## ❓ 常见问题
+
+### 1. 后端健康检查正常，但 Edge 注册返回 404
+
+说明当前 `5002` 端口上的 Flask 进程并不是包含 edge 路由的最新后端进程。  
+建议停止已有进程后，重新使用当前项目目录中的：
+
+```bash
+python3 server/server.py
+```
+
+重新启动后再测试：
+
+```bash
+curl -i -X POST http://localhost:5002/api/edge/register
+```
+
+### 2. Edge 注册时报 `SSL: WRONG_VERSION_NUMBER`
+
+通常是因为把本地 Flask HTTP 服务误写成了 HTTPS 地址。  
+本地开发应使用：
+
+```text
+http://localhost:5002
+```
+
+而不是：
+
+```text
+https://localhost:5002
+```
+
+可以显式指定：
+
+```bash
+python3 server/edge_agent.py --edge-api http://localhost:5002 --register --display-name "Local Edge Node"
+```
+
+### 3. Edge Control 页面里没有可选节点
+
+请检查：
+
+- 是否成功执行过 `edge_agent.py --register`
+- `server/.edge-agent-state.json` 是否已生成
+- `python3 edge_agent.py --edge-api http://localhost:5002` 是否正在运行
+- 边缘节点是否因长时间未 heartbeat 被标记为 `offline`
+
+### 4. Agent Scan 不可用
+
+请确认：
+
+- 已启动 `server/mcp_server.py`
+- 已配置 `DASHSCOPE_API_KEY`
+- 模型接口网络连通正常
+
+### 5. 某些 PoC 无法直接运行
+
+部分 PoC 依赖：
+
+- 特定网络接口
+- 蓝牙设备
+- CAN 适配器
+- Wi-Fi Monitor 模式
+- SDR 工具
+- 目标环境权限
+
+这类 PoC 更适合在具备本地硬件能力的边缘节点上执行。
 
 ---
 
 ## ⚠️ 免责声明
 
-> **本工具仅供授权的安全研究、学术用途和漏洞验证使用。**  
-> 在对任何车辆或系统进行测试前，请务必获取合法授权。  
-> 未经授权的使用可能违反相关法律法规。开发者不对任何非法使用承担责任。
+本项目仅可用于：
+
+- 经授权的安全测试
+- 实验室台架验证
+- 教学、研究、演示与方法评估
+
+禁止将其用于未授权目标、生产车辆或任何违反法律法规的场景。  
+高风险 PoC 即使在实验环境中也应在审批、隔离和回滚预案完备的前提下执行。
 
 ---
 
-## 📜 License
+## 📄 License
 
 本项目基于 [MIT License](LICENSE) 开源发布。
 
----
-
 <div align="center">
-  <sub>智驭安盾 · SmartDrive Shield · Built for ICV Security Research</sub>
+  智驭安盾 · SmartDrive Shield · Built for ICV Security Research
 </div>

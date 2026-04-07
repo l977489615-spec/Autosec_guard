@@ -1,22 +1,30 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { POC, ConnectionParams, ParamType } from '../types';
-import { X, Play, Terminal, AlertTriangle, ShieldCheck, ServerCrash, RotateCw, WifiOff } from 'lucide-react';
-import { executePocScript, checkBackendHealth, getBackendUrl, runPocPlugin } from '../services/api';
+import { X, Play, Terminal, AlertTriangle, ShieldCheck, ServerCrash, RotateCw, WifiOff, Cpu, Send } from 'lucide-react';
+import { checkBackendHealth, createEdgeTask, getBackendUrl, getEdgeAgents, getEdgeRecommendations, runPocPlugin } from '../services/api';
 
 interface ManualTestModalProps {
   poc: POC | null;
   isOpen: boolean;
   onClose: () => void;
   globalConnection: ConnectionParams;
+  token: string | null;
 }
 
-const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose, globalConnection }) => {
+const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose, globalConnection, token }) => {
   const [localParams, setLocalParams] = useState<Partial<ConnectionParams>>({});
   const [isRunning, setIsRunning] = useState(false);
   const [consoleOutput, setConsoleOutput] = useState<string[]>([]);
   const [testResult, setTestResult] = useState<'idle' | 'success' | 'fail' | 'error'>('idle');
   const [backendOnline, setBackendOnline] = useState<boolean>(false);
+  const [executionPlane, setExecutionPlane] = useState<'cloud' | 'edge'>('cloud');
+  const [edgeAgents, setEdgeAgents] = useState<any[]>([]);
+  const [edgeRecommendations, setEdgeRecommendations] = useState<any[]>([]);
+  const [selectedEdgeAgent, setSelectedEdgeAgent] = useState<string>('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const supportedPlanes = poc?.supportedExecutionPlanes || ['cloud', 'edge'];
+  const cloudAllowed = supportedPlanes.includes('cloud');
+  const edgeAllowed = supportedPlanes.includes('edge');
 
   useEffect(() => {
     // Reset state when modal opens
@@ -34,6 +42,9 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
       setConsoleOutput([]);
       setTestResult('idle');
       setIsRunning(false);
+      setExecutionPlane(poc.recommendedExecutionPlane || (poc.executionRequirements?.requires_edge ? 'edge' : 'cloud'));
+      setSelectedEdgeAgent('');
+      setEdgeRecommendations([]);
 
       // Check if backend is alive
       const currentUrl = getBackendUrl();
@@ -46,8 +57,14 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
         ]);
         else setConsoleOutput([`[+] Execution Engine Online (${currentUrl})`]);
       });
+
+      if (token) {
+        getEdgeAgents(token)
+          .then((data) => setEdgeAgents(data.agents || []))
+          .catch(() => setEdgeAgents([]));
+      }
     }
-  }, [isOpen, poc, globalConnection]);
+  }, [isOpen, poc, globalConnection, token]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -56,6 +73,31 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
   }, [consoleOutput]);
 
   if (!isOpen || !poc) return null;
+
+  const buildEdgeParams = () => {
+    const next: Record<string, any> = {};
+    if (localParams.ip) next.target_ip = localParams.ip;
+    if (localParams.port) next.port = localParams.port;
+    if (localParams.bluetoothMac) next.bluetooth_mac = localParams.bluetoothMac;
+    if (localParams.canInterface) next.can_interface = localParams.canInterface;
+    if (localParams.url) next.url = localParams.url;
+    if (localParams.frequency) next.rf_frequency = localParams.frequency;
+    if (localParams.interface) next.interface = localParams.interface;
+    return next;
+  };
+
+  const handleRecommendEdge = async () => {
+    if (!token || !poc?.pocFile) return;
+    try {
+      const data = await getEdgeRecommendations(poc.pocFile, buildEdgeParams(), token);
+      setEdgeRecommendations(data.recommendations || []);
+      const best = (data.recommendations || []).find((item: any) => item.matches);
+      setSelectedEdgeAgent(best?.agent?.agent_id || '');
+      setConsoleOutput((prev) => [...prev, `[+] Edge recommendations loaded for ${poc.name}`]);
+    } catch (e: any) {
+      setConsoleOutput((prev) => [...prev, `[-] Edge recommendation failed: ${e?.message || e}`]);
+    }
+  };
 
   const handleRun = async () => {
     if (!backendOnline) {
@@ -77,11 +119,58 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
 
     setIsRunning(true);
     setTestResult('idle');
-    setConsoleOutput(p => [...p, `[*] Initiating remote execution for ${poc.name}...`]);
+    setConsoleOutput(p => [...p, `[*] Initiating ${executionPlane === 'cloud' ? 'cloud' : 'edge'} execution for ${poc.name}...`]);
 
     try {
-      // CALL REAL API via Plugin Loader
-      const result = await runPocPlugin(poc.pocFile, localParams as any);
+      if (executionPlane === 'edge') {
+        if (!token) {
+          throw new Error('JWT token missing for edge task creation.');
+        }
+        const payload: any = {
+          filename: poc.pocFile,
+          params: buildEdgeParams(),
+          sync: true,
+        };
+        if (selectedEdgeAgent) {
+          payload.agent_id = selectedEdgeAgent;
+        }
+        const taskResp = await createEdgeTask(payload, token);
+        setConsoleOutput((p) => [
+          ...p,
+          `[+] Edge task: ${taskResp.task?.task_id}`,
+          `[+] Agent: ${taskResp.selected_agent?.display_name || taskResp.task?.edge_agent_id || 'auto'}`,
+        ]);
+
+        const syncResult = taskResp.sync_result;
+        if (syncResult) {
+          // Display logs from actual execution
+          if (Array.isArray(syncResult.logs)) {
+            syncResult.logs.forEach((l: string) => setConsoleOutput(p => [...p, l]));
+          }
+          if (Array.isArray(syncResult.errors) && syncResult.errors.length > 0) {
+            syncResult.errors.forEach((e: string) => setConsoleOutput(p => [...p, `[E] ${e}`]));
+          }
+
+          if (syncResult.vulnerable) {
+            setTestResult('fail');
+            setConsoleOutput(p => [...p, `[!] STATUS: Vulnerability Confirmed. Evidence: ${syncResult.evidence || 'N/A'}`]);
+          } else if (syncResult.success) {
+            setTestResult('success');
+            setConsoleOutput(p => [...p, `[*] STATUS: Clean. (${syncResult.elapsed_seconds || 0}s)`]);
+          } else {
+            setTestResult('error');
+            setConsoleOutput(p => [...p, `[-] Execution failed: ${syncResult.error || 'unknown error'}`]);
+          }
+        } else {
+          // Fallback: async mode (no sync_result returned)
+          setConsoleOutput(p => [...p, `[*] Task queued (async). Check Edge Control panel for results.`]);
+          setTestResult('idle');
+        }
+        setIsRunning(false);
+        return;
+      }
+
+      const result = await runPocPlugin(poc.pocFile, localParams as any, token);
 
       // Process Result
       if (result.success) {
@@ -135,6 +224,31 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
               </div>
             )}
 
+            <div>
+              <label className="text-gray-400 text-xs block mb-1">Execution Plane</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => cloudAllowed && setExecutionPlane('cloud')}
+                  disabled={!cloudAllowed}
+                  className={`px-3 py-2 text-xs rounded border ${executionPlane === 'cloud' ? 'border-cyber-accent text-cyber-accent bg-cyber-accent/10' : 'border-cyber-700 text-gray-400 bg-cyber-900'}`}
+                >
+                  <span className="inline-flex items-center gap-1"><Play size={12} /> Cloud</span>
+                </button>
+                <button
+                  onClick={() => edgeAllowed && setExecutionPlane('edge')}
+                  disabled={!edgeAllowed}
+                  className={`px-3 py-2 text-xs rounded border ${executionPlane === 'edge' ? 'border-emerald-400 text-emerald-300 bg-emerald-500/10' : 'border-cyber-700 text-gray-400 bg-cyber-900'}`}
+                >
+                  <span className="inline-flex items-center gap-1"><Cpu size={12} /> Edge</span>
+                </button>
+              </div>
+              {poc.executionRequirements?.requires_edge && (
+                <p className="text-[10px] text-amber-300 mt-2">
+                  This PoC requires local capabilities: {poc.executionRequirements.required_capabilities.join(', ')}.
+                </p>
+              )}
+            </div>
+
             <h3 className="text-cyber-400 text-xs uppercase font-bold mb-2">Configuration</h3>
             {poc.requiredParams.map(param => (
               <div key={param}>
@@ -151,6 +265,38 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
                 />
               </div>
             ))}
+            {executionPlane === 'edge' && (
+              <div className="space-y-2 pt-2 border-t border-cyber-700">
+                <button
+                  onClick={handleRecommendEdge}
+                  disabled={!token}
+                  className="w-full py-2 flex items-center justify-center gap-2 rounded text-xs font-bold border border-emerald-500/40 text-emerald-300 bg-emerald-500/10 disabled:opacity-50"
+                >
+                  <Send size={12} />
+                  推荐边缘节点
+                </button>
+                <select
+                  value={selectedEdgeAgent}
+                  onChange={(e) => setSelectedEdgeAgent(e.target.value)}
+                  className="w-full bg-cyber-900 border border-cyber-700 text-white p-2 text-xs rounded focus:border-cyber-accent outline-none"
+                >
+                  <option value="">自动选择匹配节点</option>
+                  {edgeRecommendations.length === 0 && edgeAgents.length === 0 && (
+                    <option value="" disabled>暂无已注册边缘节点</option>
+                  )}
+                  {edgeRecommendations.map((item) => (
+                    <option key={item.agent.agent_id} value={item.agent.agent_id}>
+                      {item.agent.display_name} [{item.agent.status}]
+                    </option>
+                  ))}
+                  {edgeRecommendations.length === 0 && edgeAgents.map((agent) => (
+                    <option key={agent.agent_id} value={agent.agent_id}>
+                      {agent.display_name} [{agent.status}]
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="pt-4">
               <button
                 onClick={handleRun}
@@ -159,7 +305,7 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
                   }`}
               >
                 {isRunning ? <RotateCw className="animate-spin" size={14} /> : <Play size={14} />}
-                {isRunning ? 'EXECUTING ON DEVICE...' : 'RUN REAL EXPLOIT'}
+                {isRunning ? 'EXECUTING...' : executionPlane === 'cloud' ? 'RUN IN CLOUD' : 'RUN ON EDGE'}
               </button>
             </div>
           </div>

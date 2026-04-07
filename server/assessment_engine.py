@@ -202,7 +202,8 @@ def build_structured_report(session: dict) -> dict:
     graph = generate_attack_graph(session)
     physical = assess_physical_impact(session)
     remediation = simulate_remediation(session, graph)
-    findings = [f for f in session.get("results", []) if f.get("vulnerable")]
+    # Using the new findings array if available, fallback to results
+    findings = session.get("findings", []) or [f for f in session.get("results", []) if f.get("vulnerable")]
 
     return {
         "summary": {

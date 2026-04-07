@@ -12,6 +12,15 @@ Usage: python3 26_UDS_DiagSession_Bypass.py PCAN_USBBUS1
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
 class UDSDiagSessionPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "UDS Diagnostic Session Bypass"
+    meta_cve_id = "N/A"
+    meta_severity = "High"
+    meta_protocol = "can"
+    meta_target_os = ["all"]
+    meta_required_params = ["can_interface"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self): return True
     def exploit(self):
         iface = self.params.get("can_interface", "PCAN_USBBUS1")
@@ -53,5 +62,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 26_UDS_DiagSession_Bypass.py <can_interface>")
         sys.exit(1)
-    plugin = UDSDiagSessionPlugin({"target_ip": "N/A", "can_interface": iface})
+    plugin = UDSDiagSessionPlugin({"target_ip": "N/A", "can_interface": sys.argv[1]})
     plugin.run_verify()

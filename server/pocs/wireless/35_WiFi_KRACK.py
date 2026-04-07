@@ -15,6 +15,15 @@ import subprocess
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class WiFiKRACKPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "WiFi KRACK"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "rf"
+    meta_target_os = ["all"]
+    meta_required_params = ["interface"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         self.interface = self.params.get("interface", "")
         if not self.interface:
@@ -83,5 +92,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 35_WiFi_KRACK.py <interface>")
         sys.exit(1)
-    plugin = WiFiKRACKPlugin({"interface": iface})
+    plugin = WiFiKRACKPlugin({"interface": sys.argv[1]})
     plugin.run_verify()

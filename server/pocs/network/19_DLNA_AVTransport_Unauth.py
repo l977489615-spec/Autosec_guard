@@ -25,6 +25,15 @@ class DLNAAVTransportPlugin(IVIVulnerabilityPlugin):
     利用 SSDP 发现 AVTransport 服务，并尝试发送投屏指令，
     检测目标是否允许未经授权的多媒体控制。
     """
+    meta_poc_name = "DLNA AVTransport Unauth"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "tcp"
+    meta_target_os = ["all"]
+    meta_required_params = ["target_ip"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     
     def __init__(self, target_config, logger=None):
         super().__init__(target_config, logger)
@@ -206,5 +215,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 19_DLNA_AVTransport_Unauth.py <target_ip>")
         sys.exit(1)
-    plugin = DLNAAVTransportPlugin(config)
+    plugin = DLNAAVTransportPlugin({"target_ip": sys.argv[1]})
     plugin.run_verify()

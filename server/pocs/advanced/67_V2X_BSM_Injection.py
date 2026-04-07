@@ -15,6 +15,15 @@ import socket
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class V2XBSMInjectionPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "V2X BSM Injection"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "rf"
+    meta_target_os = ["all"]
+    meta_required_params = ["target_ip"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         self.bind_ip = self.params.get("target_ip", "255.255.255.255")
         if self.bind_ip == "N/A":
@@ -67,13 +76,13 @@ class V2XBSMInjectionPlugin(IVIVulnerabilityPlugin):
             
             return {
                 "status": "success",
-                "vulnerable": True,
-                "details": "High-frequency BSM injection completed. Requires manual verification of target AEB/FCW behavior."
+                "vulnerable": False,
+                "details": "BSM 注入已完成，需人工确认目标是否错误触发 FCW/AEB 后才能判定漏洞存在。"
             }
 
         except Exception as e:
             self.logger.error(f"V2X 报文播发异常 (UDP Socket 错误): {e}")
-            return {"status": "error", "details": str(e)}
+            return {"status": "error", "vulnerable": False, "details": str(e)}
         finally:
              sock.close()
 
@@ -81,5 +90,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 66_V2X_BSM_Injection.py <target_ip_or_broadcast>")
         sys.exit(1)
-    plugin = V2XBSMInjectionPlugin({"target_ip": ip})
+    plugin = V2XBSMInjectionPlugin({"target_ip": sys.argv[1]})
     plugin.run_verify()

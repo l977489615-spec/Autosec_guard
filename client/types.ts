@@ -30,6 +30,14 @@ export interface POC {
   codeSnippet: string; // The static display version
   requiredParams: ParamType[];
   pocFile?: string; // Reference to the actual Python file in Pocs/
+  supportedExecutionPlanes?: ('cloud' | 'edge')[];
+  recommendedExecutionPlane?: 'cloud' | 'edge';
+  executionRequirements?: {
+    required_capabilities: string[];
+    requires_edge: boolean;
+    cloud_only: boolean;
+  };
+  manualConfirmationRequired?: boolean;
   // Function to generate the actual executable script based on user input
   scriptGenerator?: (params: Record<string, string>) => string;
   targetOS?: ('qnx' | 'android' | 'linux' | 'all')[]; // Used for intelligent OS skipping
@@ -184,6 +192,21 @@ export interface SupervisorAdjustment {
   timestamp?: string;
 }
 
+export interface ExecutionArtifactRecord {
+  id: number;
+  user_id: number;
+  username?: string;
+  session_id: string;
+  trace_id?: string;
+  artifact_type: string;
+  poc_filename?: string;
+  poc_name?: string;
+  target_ip?: string;
+  target_mac?: string;
+  payload: Record<string, any>;
+  created_at?: string;
+}
+
 export interface ConnectionParams {
   ip: string;
   port: string;
@@ -195,7 +218,8 @@ export interface ConnectionParams {
 }
 
 export interface ScanSession {
-  id: string;
+  id: string; // Frontend/Session ID
+  dbId?: number; // Backend Database ID
   targetName: string;
   connection: ConnectionParams;
   isConnected: boolean;
@@ -212,4 +236,58 @@ export interface ScanSession {
   findings?: ScanResult[];
   phase_records?: PhaseRecord[];
   structured?: Record<string, any>;
+}
+
+export interface EdgeCapabilityFlags {
+  usb: boolean;
+  can: boolean;
+  wifi: boolean;
+  bluetooth: boolean;
+  sdr: boolean;
+  lsusb: boolean;
+  iw: boolean;
+  ip: boolean;
+  bluetoothctl: boolean;
+  hackrf: boolean;
+}
+
+export interface EdgeAgentRecord {
+  agent_id: string;
+  display_name: string;
+  site_name?: string;
+  status: string;
+  capabilities: Record<string, any>;
+  capability_flags?: EdgeCapabilityFlags;
+  metadata?: Record<string, any>;
+  last_seen_at?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface EdgeTaskRecord {
+  task_id: string;
+  edge_agent_id?: string;
+  requested_by_user_id?: number;
+  session_id?: string;
+  trace_id?: string;
+  poc_filename: string;
+  params: Record<string, any>;
+  status: string;
+  result?: Record<string, any> | null;
+  created_at?: string;
+  updated_at?: string;
+  started_at?: string;
+  completed_at?: string;
+}
+
+export interface EdgeRequirementSummary {
+  required_capabilities: string[];
+  requires_edge: boolean;
+  cloud_only: boolean;
+}
+
+export interface EdgeRecommendationItem {
+  agent: EdgeAgentRecord;
+  matches: boolean;
+  missing_capabilities: string[];
 }

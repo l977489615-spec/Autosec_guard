@@ -14,6 +14,15 @@ import time
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class WiFiDeauthPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "WiFi Deauth"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "rf"
+    meta_target_os = ["all"]
+    meta_required_params = ["interface"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         try:
             import scapy.all as scapy
@@ -59,8 +68,8 @@ class WiFiDeauthPlugin(IVIVulnerabilityPlugin):
             
             return {
                 "status": "success",
-                "vulnerable": True,
-                "details": "Successfully injected 802.11 Deauth frames. Check target connectivity."
+                "vulnerable": False,
+                "details": "Deauth 帧已发送，需人工确认目标链路是否实际断开后再判定漏洞存在。"
             }
 
         except Exception as e:
@@ -74,5 +83,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 33_WiFi_Deauth.py <interface> [target_bssid] [client_mac]")
         sys.exit(1)
-    plugin = WiFiDeauthPlugin({"interface": iface})
+    plugin = WiFiDeauthPlugin({"interface": sys.argv[1]})
     plugin.run_verify()

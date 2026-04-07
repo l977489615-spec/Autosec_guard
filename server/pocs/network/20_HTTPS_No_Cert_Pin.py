@@ -17,6 +17,15 @@ import _thread
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class CertPinningPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "HTTPS No Cert Pin"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "tcp"
+    meta_target_os = ["all"]
+    meta_required_params = ["target_ip"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         # target_ip 在这个上下文中，代表我们绑定的监听IP (也可以是 0.0.0.0)
         self.bind_ip = self.params.get("target_ip", "0.0.0.0")
@@ -116,5 +125,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 20_HTTPS_No_Cert_Pin.py <local_bind_ip>")
         sys.exit(1)
-    plugin = CertPinningPlugin({"target_ip": ip})
+    plugin = CertPinningPlugin({"target_ip": sys.argv[1]})
     plugin.run_verify()

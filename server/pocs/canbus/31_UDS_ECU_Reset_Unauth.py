@@ -50,6 +50,14 @@ class UDSECUResetPlugin(IVIVulnerabilityPlugin):
     安全性: HardReset 会造成 ECU 短暂重启，测试前请确认已获得授权环境。
              SoftReset（01h）影响更小，默认优先测试 SoftReset。
     """
+    meta_poc_name = "UDS ECU Reset Unauthenticated"
+    meta_cve_id = "N/A"
+    meta_severity = "High"
+    meta_protocol = "can"
+    meta_target_os = ["all"]
+    meta_required_params = ["can_interface"]
+    is_disruptive = True
+    meta_destructive_level = "Restart"
 
     # UDS 功能寻址广播 ID（所有 ECU 均监听）
     UDS_FUNCTIONAL_REQ = 0x7DF
@@ -279,8 +287,9 @@ class UDSECUResetPlugin(IVIVulnerabilityPlugin):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("Usage: python3 31_UDS_ECU_Reset_Unauth.py <args>")
+    if len(sys.argv) < 2:
+        print("Usage: python3 31_UDS_ECU_Reset_Unauth.py <can_interface>")
         sys.exit(1)
-    plugin = UDSECUResetPlugin(config)
+    config = {"can_interface": sys.argv[1]}
+    plugin = UDSECUResetPlugin({"target_ip": "N/A", "can_interface": sys.argv[1]})
     plugin.run_verify()

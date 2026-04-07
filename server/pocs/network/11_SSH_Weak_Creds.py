@@ -16,6 +16,15 @@ import os
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class SSHWeakCredsPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "SSH Weak Creds"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "tcp"
+    meta_target_os = ["all"]
+    meta_required_params = ["target_ip"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         if not self.target_ip:
             raise RuntimeError("需要指定目标IP地址。")

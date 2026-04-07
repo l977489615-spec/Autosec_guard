@@ -17,6 +17,15 @@ import threading
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class FwUpdateToctouPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "FW Update TOCTOU"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "rf"
+    meta_target_os = ["all"]
+    meta_required_params = ["target_dir"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         self.watch_dir = self.params.get("target_dir", "/tmp/ivi_update_mnt")
         return True
@@ -79,13 +88,13 @@ class FwUpdateToctouPlugin(IVIVulnerabilityPlugin):
         
         return {
             "status": "success",
-            "vulnerable": True, # 因为这是主动发起的替换探测，只能由审计员核实
-            "details": f"Performed {self.swaps} swaps. Watch OEM installer behavior."
+            "vulnerable": False,
+            "details": f"已执行 {self.swaps} 次竞态替换，需结合目标更新进程是否错误刷入恶意载荷再确认漏洞。"
         }
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 67_FW_Update_TOCTOU.py <target_update_dir>")
         sys.exit(1)
-    plugin = FwUpdateToctouPlugin({"target_dir": target})
+    plugin = FwUpdateToctouPlugin({"target_dir": sys.argv[1]})
     plugin.run_verify()

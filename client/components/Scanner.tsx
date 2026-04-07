@@ -6,7 +6,7 @@ import ScanLogs from './ScanLogs';
 import { generateSecurityReport } from '../services/LLMService';
 import PocDetailModal from './PocDetailModal';
 import ManualTestModal from './ManualTestModal';
-import { checkBackendHealth, executePocScript, setBackendUrl, getBackendUrl, listPocs, fingerprintOS, runPocPlugin, saveScanSession } from '../services/api';
+import { checkBackendHealth, executePocScript, setBackendUrl, getBackendUrl, listPocs, fingerprintOS, runPocPlugin, saveScanSession, createEdgeTask } from '../services/api';
 import { Play, RotateCw, FileText, AlertTriangle, ShieldCheck, Wifi, Cable, Bluetooth, Power, Crosshair, List, Server, ArrowRight, Settings, Save, WifiOff, Link, CheckCircle, Radio, Activity, Download, ChevronRight, Bot } from 'lucide-react';
 import AgentScan from './AgentScan';
 
@@ -73,6 +73,7 @@ const Scanner: React.FC<ScannerProps> = ({
 
   // Contents of PoC scripts fetched from backend
   const [pocContents, setPocContents] = useState<Record<string, string>>({});
+  const [pocRuntimeMetadata, setPocRuntimeMetadata] = useState<Record<string, Partial<POC>>>({});
 
   // State for Manual Mode
   const [manualTestPoc, setManualTestPoc] = useState<POC | null>(null);
@@ -97,13 +98,23 @@ const Scanner: React.FC<ScannerProps> = ({
     const data = await listPocs();
     if (data && data.pocs) {
       const contentsMap: Record<string, string> = {};
+      const metadataMap: Record<string, Partial<POC>> = {};
       data.pocs.forEach((p: any) => {
         const matchingDbPoc = POC_DATABASE.find(db => db.pocFile === p.filename);
         if (matchingDbPoc && p.content) {
           contentsMap[matchingDbPoc.id] = p.content;
         }
+        if (matchingDbPoc) {
+          metadataMap[matchingDbPoc.id] = {
+            supportedExecutionPlanes: p.supported_execution_planes || ['cloud', 'edge'],
+            recommendedExecutionPlane: p.recommended_execution_plane || 'cloud',
+            executionRequirements: p.execution_requirements,
+            manualConfirmationRequired: Boolean(p.manual_confirmation_required),
+          };
+        }
       });
       setPocContents(contentsMap);
+      setPocRuntimeMetadata(metadataMap);
     }
   };
 
@@ -220,6 +231,56 @@ const Scanner: React.FC<ScannerProps> = ({
       addLog(`${progress} ${poc.id}: ${poc.name} — Executing...`, 'info');
 
       const startTime = Date.now();
+      const runtimeMeta = pocRuntimeMetadata[poc.id] || {};
+      const supportedPlanes = runtimeMeta.supportedExecutionPlanes || ['cloud', 'edge'];
+      const recommendedPlane = runtimeMeta.recommendedExecutionPlane || 'cloud';
+      if (recommendedPlane === 'edge' && supportedPlanes.includes('edge')) {
+        if (!token) {
+          addLog(`${progress} ! ${poc.name} → Edge-only PoC requires authenticated session for task dispatch.`, 'warning');
+          errorCount++;
+          results.push({
+            pocId: poc.id,
+            vulnerable: false,
+            details: 'Edge-only PoC could not be queued because no JWT token was available.',
+            detectedAt: new Date().toISOString(),
+            elapsedSeconds: 0,
+          });
+          continue;
+        }
+
+        try {
+          const edgeParams: Record<string, any> = {};
+          if (session.connection.ip) edgeParams.target_ip = session.connection.ip;
+          if (session.connection.port) edgeParams.port = session.connection.port;
+          if (session.connection.bluetoothMac) edgeParams.bluetooth_mac = session.connection.bluetoothMac;
+          if (session.connection.canInterface) edgeParams.can_interface = session.connection.canInterface;
+          if (session.connection.interface) edgeParams.interface = session.connection.interface;
+          if (session.connection.frequency) edgeParams.rf_frequency = session.connection.frequency;
+          if (session.connection.url) edgeParams.url = session.connection.url;
+          const queued = await createEdgeTask({ filename: poc.pocFile!, params: edgeParams }, token);
+          const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+          addLog(`${progress} ⇢ ${poc.name} → Queued on edge agent ${queued.selected_agent?.display_name || queued.task?.edge_agent_id || 'auto'} (${elapsed}s)`, 'success');
+          results.push({
+            pocId: poc.id,
+            vulnerable: false,
+            details: `Queued for edge execution on ${queued.selected_agent?.display_name || queued.task?.edge_agent_id || 'auto'} (${queued.task?.task_id || 'task pending'}).`,
+            detectedAt: new Date().toISOString(),
+            elapsedSeconds: parseFloat(elapsed),
+          });
+        } catch (edgeError: any) {
+          const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+          addLog(`${progress} ! ${poc.name} → Edge queue failed (${elapsed}s): ${edgeError?.message || edgeError}`, 'warning');
+          errorCount++;
+          results.push({
+            pocId: poc.id,
+            vulnerable: false,
+            details: `Edge queue error: ${edgeError?.message || edgeError}`,
+            detectedAt: new Date().toISOString(),
+            elapsedSeconds: parseFloat(elapsed),
+          });
+        }
+        continue;
+      }
 
       // Execute Real via the Plugin Loader (Handles parameters and subdirectories natively)
       // 使用 SSE 实时流式传输执行日志，每一行日志实时显示在 System Console 中
@@ -531,14 +592,14 @@ const Scanner: React.FC<ScannerProps> = ({
     <div className="h-full relative overflow-hidden">
       {/* Detail Modal for Result Inspection */}
       <PocDetailModal
-        poc={selectedResultPoc ? { ...selectedResultPoc, codeSnippet: pocContents[selectedResultPoc.id] || selectedResultPoc.codeSnippet } : null}
+        poc={selectedResultPoc ? { ...selectedResultPoc, ...pocRuntimeMetadata[selectedResultPoc.id], codeSnippet: pocContents[selectedResultPoc.id] || selectedResultPoc.codeSnippet } : null}
         isOpen={!!selectedResultPoc}
         onClose={() => setSelectedResultPoc(null)}
       />
 
       {/* Detail Modal for Manual Mode Pre-flight Check */}
       <PocDetailModal
-        poc={manualDetailPoc ? { ...manualDetailPoc, codeSnippet: pocContents[manualDetailPoc.id] || manualDetailPoc.codeSnippet } : null}
+        poc={manualDetailPoc ? { ...manualDetailPoc, ...pocRuntimeMetadata[manualDetailPoc.id], codeSnippet: pocContents[manualDetailPoc.id] || manualDetailPoc.codeSnippet } : null}
         isOpen={!!manualDetailPoc}
         onClose={() => setManualDetailPoc(null)}
         onRunTest={handleLaunchManualTest} // This enables the "Configure & Attack" button
@@ -546,11 +607,12 @@ const Scanner: React.FC<ScannerProps> = ({
 
       {/* Execution Modal */}
       <ManualTestModal
-        poc={manualTestPoc ? { ...manualTestPoc, codeSnippet: pocContents[manualTestPoc.id] || manualTestPoc.codeSnippet } : null}
+        poc={manualTestPoc ? { ...manualTestPoc, ...pocRuntimeMetadata[manualTestPoc.id], codeSnippet: pocContents[manualTestPoc.id] || manualTestPoc.codeSnippet } : null}
         isOpen={!!manualTestPoc}
         onClose={() => setManualTestPoc(null)}
         // In Manual Mode, we pass empty connection params so user MUST input them
         globalConnection={mode === 'GLOBAL' ? session.connection : { ip: '', port: '', bluetoothMac: '', canInterface: 'PCAN_USBBUS1', url: '', frequency: '', interface: '' }}
+        token={token}
       />
 
       {/* Top Bar for Modes */}

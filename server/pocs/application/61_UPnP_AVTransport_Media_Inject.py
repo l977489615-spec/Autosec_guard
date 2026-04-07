@@ -37,6 +37,15 @@ class UPnPAVTransportMediaInjectPlugin(IVIVulnerabilityPlugin):
     - 本地启动临时 HTTP 服务验证目标是否主动回连（证明执行了播放）
     - 更精确地判断漏洞是否可利用
     """
+    meta_poc_name = "UPnP AVTransport Media Inject"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "unknown"
+    meta_target_os = ["all"]
+    meta_required_params = ["target_ip"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
 
     SERVICE_TYPE = "urn:schemas-upnp-org:service:AVTransport:1"
     CALLBACK_PORT = 18999  # 本地临时服务监听端口
@@ -279,5 +288,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 61_UPnP_AVTransport_Media_Inject.py <args>")
         sys.exit(1)
-    plugin = UPnPAVTransportMediaInjectPlugin(config)
+    plugin = UPnPAVTransportMediaInjectPlugin({"target_ip": sys.argv[1]})
     plugin.run_verify()

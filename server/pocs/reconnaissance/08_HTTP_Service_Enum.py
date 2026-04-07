@@ -14,6 +14,15 @@ import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class HTTPServiceEnumPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "HTTP Service Enum"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "unknown"
+    meta_target_os = ["all"]
+    meta_required_params = ["target_ip"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     PORTS = [80, 443, 8080, 8443, 8888, 3000, 4040, 9090]
 
     def check_prerequisites(self):

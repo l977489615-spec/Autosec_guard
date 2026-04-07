@@ -14,6 +14,15 @@ import time
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class BroadcomWMEPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "Broadcom WME Overflow"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "rf"
+    meta_target_os = ["all"]
+    meta_required_params = ["interface"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         try:
             import scapy.all as scapy
@@ -82,5 +91,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 38_Broadcom_WME_Overflow.py <interface>")
         sys.exit(1)
-    plugin = BroadcomWMEPlugin({"interface": iface})
+    plugin = BroadcomWMEPlugin({"interface": sys.argv[1]})
     plugin.run_verify()

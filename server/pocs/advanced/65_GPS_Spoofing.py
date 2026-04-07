@@ -16,7 +16,17 @@ import shutil
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class GPSSpoofingPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "GPS Spoofing"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "rf"
+    meta_target_os = ["all"]
+    meta_required_params = ["frequency"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
+        self.frequency = str(self.params.get("frequency", "")).strip()
         # 1. 检查是否存在hackrf工具
         if not shutil.which("hackrf_transfer"):
             self.logger.error("未找到 hackrf_transfer 工具。请先安装 HackRF 软件包 (如 sudo apt-get install hackrf)。")
@@ -45,6 +55,7 @@ class GPSSpoofingPlugin(IVIVulnerabilityPlugin):
             self.logger.warning(">>> 示例：gps-sdr-sim -e brdc3540.14n -l 39.9042,116.4074,100 -b 8")
             return {
                 "status": "error",
+                "vulnerable": False,
                 "details": f"Missing payload baseband file: {bin_file}"
             }
             
@@ -84,6 +95,7 @@ class GPSSpoofingPlugin(IVIVulnerabilityPlugin):
                     }
                 return {
                     "status": "error",
+                    "vulnerable": False,
                     "details": "HackRF transmission process failed to start."
                 }
                 
@@ -105,14 +117,15 @@ class GPSSpoofingPlugin(IVIVulnerabilityPlugin):
             
             return {
                 "status": "success",
-                "vulnerable": True,
-                "details": "Transmitted spoofed GPS signal locally using SDR. Manual visual verification on target IVI needed."
+                "vulnerable": False,
+                "details": "已发射伪造 GPS 信号，需结合目标导航/ADAS 偏移现象人工确认是否可被欺骗。"
             }
                 
         except Exception as e:
             self.logger.error(f"Execution Error: {str(e)}")
             return {
                 "status": "error",
+                "vulnerable": False,
                 "details": str(e)
             }
 
@@ -120,5 +133,8 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 64_GPS_Spoofing.py")
         sys.exit(1)
-    plugin = GPSSpoofingPlugin()
+    params = {"target_ip": "N/A"}
+    if len(sys.argv) >= 2:
+        params["frequency"] = sys.argv[1]
+    plugin = GPSSpoofingPlugin(params)
     plugin.run_verify()

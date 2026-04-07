@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { ScanSession, POC, PhaseRecord, PlannerStep, SupervisorAdjustment, SupervisorEvent, SupervisorMetrics } from '../types';
-import { Clock, AlertTriangle, CheckCircle, FileText, ChevronRight, X, List, Shield, Download } from 'lucide-react';
+import { ScanSession, POC, PhaseRecord, PlannerStep, SupervisorAdjustment, SupervisorEvent, SupervisorMetrics, ExecutionArtifactRecord } from '../types';
+import { Clock, AlertTriangle, CheckCircle, FileText, ChevronRight, X, List, Shield, Download, Trash2, Square, CheckSquare } from 'lucide-react';
 import ScanLogs from './ScanLogs';
 import { POC_DATABASE } from '../constants';
 import PocDetailModal from './PocDetailModal';
@@ -21,64 +21,68 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
     const [selectedResultPoc, setSelectedResultPoc] = useState<POC | null>(null);
     const [dbHistory, setDbHistory] = useState<ScanSession[]>([]);
     const [supervisorSnapshots, setSupervisorSnapshots] = useState<any[]>([]);
+    const [sessionArtifacts, setSessionArtifacts] = useState<ExecutionArtifactRecord[]>([]);
     const [loading, setLoading] = useState(true);
+    const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+    const [isDeleting, setIsDeleting] = useState(false);
 
-    React.useEffect(() => {
-        const fetchHistory = async () => {
-            if (!token) return;
-            try {
-                const res = await fetch(`${getBackendUrl()}/api/history`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (res.status === 401 || res.status === 403) {
-                    onUnauthorized?.();
-                    return;
-                }
-                if (res.ok) {
-                    const data = await res.json();
-                    // Map backend format to frontend ScanSession format
-                    const mappedHistory: ScanSession[] = data.history.map((h: any) => {
-                        const parsedJson = h.results_json || [];
-                        const isWrapper = !!parsedJson.results && Array.isArray(parsedJson.results);
-                        const finalResults = isWrapper ? parsedJson.results : (Array.isArray(parsedJson) ? parsedJson : []);
-
-                        return {
-                            id: h.session_id || `hist-${h.id}`,
-                            targetName: isWrapper && parsedJson.targetName ? parsedJson.targetName : (h.target_ip || 'Unknown Target'),
-                            connection: isWrapper && parsedJson.connection ? parsedJson.connection : { ip: h.target_ip, bluetoothMac: h.target_mac, port: '', canInterface: '', url: '', frequency: '', interface: '' },
-                            startTime: h.started_at,
-                            endTime: h.completed_at,
-                            status: 'completed',
-                            isConnected: true,
-                            results: finalResults,
-                            // Prioritize the new dedicated 'logs' column, fallback to the old results_json bundle
-                            logs: (h.logs && Array.isArray(h.logs) && h.logs.length > 0)
-                                ? h.logs
-                                : (isWrapper && parsedJson.logs && parsedJson.logs.length > 0
-                                    ? parsedJson.logs
-                                    : [{
-                                        timestamp: h.started_at ? new Date(h.started_at).toLocaleTimeString() : "N/A",
-                                        type: 'warning',
-                                        message: 'Logs were not saved for this historical record (pre-update). Full log persistence is now active for new scans.'
-                                    }]),
-                            aiReport: isWrapper ? parsedJson.aiReport : null,
-                            riskScore: h.risk_score,
-                            username: h.username,
-                            mode: isWrapper && parsedJson.mode ? parsedJson.mode : 'batch',
-                            assessment: isWrapper ? parsedJson.assessment : undefined,
-                            findings: h.findings || (isWrapper ? parsedJson.findings : []),
-                            phase_records: h.phase_records || (isWrapper ? parsedJson.phase_records : []),
-                            structured: h.structured || (isWrapper ? parsedJson.structured : {}),
-                        };
-                    });
-                    setDbHistory(mappedHistory);
-                }
-            } catch (err) {
-                console.error("Failed to fetch history:", err);
-            } finally {
-                setLoading(false);
+    const fetchHistory = async () => {
+        if (!token) return;
+        try {
+            const res = await fetch(`${getBackendUrl()}/api/history`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.status === 401 || res.status === 403) {
+                onUnauthorized?.();
+                return;
             }
-        };
+            if (res.ok) {
+                const data = await res.json();
+                // Map backend format to frontend ScanSession format
+                const mappedHistory: ScanSession[] = data.history.map((h: any) => {
+                    const parsedJson = h.results_json || [];
+                    const isWrapper = !!parsedJson.results && Array.isArray(parsedJson.results);
+                    const finalResults = isWrapper ? parsedJson.results : (Array.isArray(parsedJson) ? parsedJson : []);
+
+                    return {
+                        id: h.session_id || `hist-${h.id}`,
+                        dbId: h.id, // Keep the actual database ID for deletion
+                        targetName: isWrapper && parsedJson.targetName ? parsedJson.targetName : (h.target_ip || 'Unknown Target'),
+                        connection: isWrapper && parsedJson.connection ? parsedJson.connection : { ip: h.target_ip, bluetoothMac: h.target_mac, port: '', canInterface: '', url: '', frequency: '', interface: '' },
+                        startTime: h.started_at,
+                        endTime: h.completed_at,
+                        status: 'completed',
+                        isConnected: true,
+                        results: finalResults,
+                        // Prioritize the new dedicated 'logs' column, fallback to the old results_json bundle
+                        logs: (h.logs && Array.isArray(h.logs) && h.logs.length > 0)
+                            ? h.logs
+                            : (isWrapper && parsedJson.logs && parsedJson.logs.length > 0
+                                ? parsedJson.logs
+                                : [{
+                                    timestamp: h.started_at ? new Date(h.started_at).toLocaleTimeString() : "N/A",
+                                    type: 'warning',
+                                    message: 'Logs were not saved for this historical record (pre-update). Full log persistence is now active for new scans.'
+                                }]),
+                        aiReport: isWrapper ? parsedJson.aiReport : null,
+                        riskScore: h.risk_score,
+                        username: h.username,
+                        mode: isWrapper && parsedJson.mode ? parsedJson.mode : 'batch',
+                        assessment: isWrapper ? parsedJson.assessment : undefined,
+                        findings: h.findings || (isWrapper ? parsedJson.findings : []),
+                        phase_records: h.phase_records || (isWrapper ? parsedJson.phase_records : []),
+                        structured: h.structured || (isWrapper ? parsedJson.structured : {}),
+                    };
+                });
+                setDbHistory(mappedHistory);
+            }
+        } catch (err) {
+            console.error("Failed to fetch history:", err);
+        } finally {
+            setLoading(false);
+        }
+    };
+    React.useEffect(() => {
         fetchHistory();
     }, [token]);
 
@@ -103,6 +107,31 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
         };
         fetchSupervisorMetrics();
     }, [token, onUnauthorized]);
+
+    React.useEffect(() => {
+        const fetchArtifacts = async () => {
+            if (!token || !selectedSession?.id) {
+                setSessionArtifacts([]);
+                return;
+            }
+            try {
+                const res = await fetch(`${getBackendUrl()}/api/session-artifacts/${selectedSession.id}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.status === 401 || res.status === 403) {
+                    onUnauthorized?.();
+                    return;
+                }
+                if (res.ok) {
+                    const data = await res.json();
+                    setSessionArtifacts(Array.isArray(data.artifacts) ? data.artifacts : []);
+                }
+            } catch (err) {
+                console.error("Failed to fetch session artifacts:", err);
+            }
+        };
+        fetchArtifacts();
+    }, [selectedSession?.id, token, onUnauthorized]);
 
     const displayHistory = React.useMemo(() => {
         const source = dbHistory.length > 0 ? dbHistory : localHistory;
@@ -139,6 +168,83 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
         anchor.download = 'autosec-supervisor-metrics.json';
         anchor.click();
         URL.revokeObjectURL(url);
+    };
+
+    const handleDelete = async (e: React.MouseEvent, dbId?: number) => {
+        e.stopPropagation();
+        if (dbId === undefined || dbId === null || !token) return;
+        if (!window.confirm('Are you sure you want to delete this scan record?')) return;
+
+        try {
+            setIsDeleting(true);
+            const res = await fetch(`${getBackendUrl()}/api/history/${dbId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                fetchHistory();
+                setSelectedIds(prev => {
+                    const next = new Set(prev);
+                    next.delete(dbId);
+                    return next;
+                });
+            } else {
+                const data = await res.json();
+                alert(data.message || 'Failed to delete record');
+            }
+        } catch (err) {
+            console.error("Delete failed:", err);
+        } finally {
+            setIsDeleting(false);
+        }
+    };
+
+    const handleDeleteBatch = async () => {
+        if (selectedIds.size === 0 || !token) return;
+        if (!window.confirm(`Are you sure you want to delete ${selectedIds.size} records?`)) return;
+
+        try {
+            setIsDeleting(true);
+            const res = await fetch(`${getBackendUrl()}/api/history/delete-batch`, {
+                method: 'POST',
+                headers: { 
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ ids: Array.from(selectedIds) })
+            });
+            if (res.ok) {
+                fetchHistory();
+                setSelectedIds(new Set());
+            } else {
+                const data = await res.json();
+                alert(data.message || 'Batch delete failed');
+            }
+        } catch (err) {
+            console.error("Batch delete failed:", err);
+        } finally {
+            setIsDeleting(false);
+        }
+    };
+
+    const toggleSelect = (e: React.MouseEvent, dbId?: number) => {
+        e.stopPropagation();
+        if (dbId === undefined || dbId === null) return;
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(dbId)) next.delete(dbId);
+            else next.add(dbId);
+            return next;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedIds.size === displayHistory.filter(s => s.dbId).length) {
+            setSelectedIds(new Set());
+        } else {
+            const allDbIds = displayHistory.map(s => s.dbId).filter((id): id is number => !!id);
+            setSelectedIds(new Set(allDbIds));
+        }
     };
 
     const exportToPdf = (session: ScanSession) => {
@@ -218,6 +324,11 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
         const supervisorEvents: SupervisorEvent[] = Array.isArray(selectedSession.structured?.supervisor?.events) ? selectedSession.structured?.supervisor?.events : [];
         const supervisorMetrics = (selectedSession.structured?.supervisor?.metrics || {}) as Partial<SupervisorMetrics>;
         const supervisorAdjustments: SupervisorAdjustment[] = Array.isArray(selectedSession.structured?.supervisor?.adjustments) ? selectedSession.structured?.supervisor?.adjustments : [];
+        const artifactSummary = sessionArtifacts.reduce<Record<string, number>>((acc, artifact) => {
+            const key = artifact.artifact_type || 'unknown';
+            acc[key] = (acc[key] || 0) + 1;
+            return acc;
+        }, {});
 
         return (
             <div className="p-6 h-full flex flex-col relative">
@@ -313,8 +424,8 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                             </div>
                         )}
 
-                        <div className="bg-cyber-800 border border-cyber-accent/30 rounded-lg p-4 flex-1 min-h-0 overflow-y-auto">
-                            <div className="flex justify-between items-center mb-3 sticky top-0 bg-cyber-800 pb-2 z-10">
+                        <div className="bg-cyber-800 border border-cyber-accent/30 rounded-lg flex-1 min-h-0 overflow-y-auto relative">
+                            <div className="flex justify-between items-center sticky top-0 bg-cyber-800 p-4 z-20 border-b border-cyber-700/50">
                                 <h3 className="text-sm font-bold text-cyber-accent flex items-center gap-2">
                                     <FileText size={14} /> AI Analysis Report
                                 </h3>
@@ -327,25 +438,27 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                                     </button>
                                 )}
                             </div>
-                            {selectedSession.aiReport ? (
-                                <div className="prose prose-invert max-w-none text-xs text-gray-300 font-sans whitespace-pre-line leading-relaxed">
-                                    {selectedSession.aiReport}
-                                </div>
-                            ) : (
-                                <div className="text-center text-gray-600 text-sm italic py-10">
-                                    No AI Report was generated for this session.
-                                </div>
-                            )}
+                            <div className="p-4 pt-1">
+                                {selectedSession.aiReport ? (
+                                    <div className="prose prose-invert max-w-none text-xs text-gray-300 font-sans whitespace-pre-line leading-relaxed">
+                                        {selectedSession.aiReport}
+                                    </div>
+                                ) : (
+                                    <div className="text-center text-gray-600 text-sm italic py-10">
+                                        No AI Report was generated for this session.
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
 
-                    <div className="lg:col-span-2 flex flex-col gap-6 h-full overflow-hidden">
+                    <div className="lg:col-span-2 flex flex-col gap-6 h-full overflow-y-auto pb-10 pr-2">
                         <div className="h-96 shrink-0">
                             <ScanLogs logs={selectedSession.logs} />
                         </div>
 
-                        <div className="bg-cyber-800 border border-cyber-700 rounded-lg p-4 overflow-y-auto">
-                            <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2 sticky top-0 bg-cyber-800 pb-2">
+                        <div className="bg-cyber-800 border border-cyber-700 rounded-lg p-4 shrink-0">
+                            <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
                                 <AlertTriangle size={14} className="text-yellow-500" />
                                 Vulnerabilities ({vulnCount})
                             </h3>
@@ -371,12 +484,12 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                         </div>
 
                         {selectedSession.mode === 'agent' && phaseRecords.length > 0 && (
-                            <div className="bg-cyber-800 border border-cyber-700 rounded-lg p-4 overflow-y-auto">
-                                <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2 sticky top-0 bg-cyber-800 pb-2">
+                            <div className="bg-cyber-800 border border-cyber-700 rounded-lg shrink-0 overflow-y-auto max-h-96 relative">
+                                <h3 className="text-sm font-bold text-white sticky top-0 bg-cyber-800 p-4 border-b border-cyber-700/50 z-20 flex items-center gap-2">
                                     <List size={14} className="text-cyan-400" />
                                     Agent Phase Replay
                                 </h3>
-                                <div className="space-y-2">
+                                <div className="space-y-2 p-4 pt-1">
                                     {phaseRecords.map((record: PhaseRecord) => (
                                         <div key={record.phase} className="bg-cyber-900 border border-cyber-700 rounded p-3">
                                             <div className="flex items-center justify-between gap-3 mb-2">
@@ -411,8 +524,8 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                         )}
 
                         {selectedSession.mode === 'agent' && findings.length > 0 && (
-                            <div className="bg-cyber-800 border border-cyber-700 rounded-lg p-4 overflow-y-auto">
-                                <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2 sticky top-0 bg-cyber-800 pb-2">
+                            <div className="bg-cyber-800 border border-cyber-700 rounded-lg p-4 shrink-0">
+                                <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
                                     <Shield size={14} className="text-emerald-400" />
                                     Structured Findings
                                 </h3>
@@ -445,8 +558,8 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
 
                         {selectedSession.mode === 'agent' && (plannerSteps.length > 0 || supervisorEvents.length > 0) && (
                             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                                <div className="bg-cyber-800 border border-cyber-700 rounded-lg p-4 overflow-y-auto">
-                                    <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2 sticky top-0 bg-cyber-800 pb-2">
+                                <div className="bg-cyber-800 border border-cyber-700 rounded-lg p-4 shrink-0">
+                                    <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
                                         <List size={14} className="text-cyan-400" />
                                         Planner Blueprint
                                     </h3>
@@ -485,8 +598,8 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                                     )}
                                 </div>
 
-                                <div className="bg-cyber-800 border border-cyber-700 rounded-lg p-4 overflow-y-auto">
-                                    <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2 sticky top-0 bg-cyber-800 pb-2">
+                                <div className="bg-cyber-800 border border-cyber-700 rounded-lg p-4 shrink-0">
+                                    <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
                                         <AlertTriangle size={14} className="text-amber-400" />
                                         Supervisor Events
                                     </h3>
@@ -556,6 +669,39 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                             </div>
                         )}
 
+                        {selectedSession.mode === 'agent' && sessionArtifacts.length > 0 && (
+                            <div className="bg-cyber-800 border border-cyber-700 rounded-lg p-4 shrink-0">
+                                <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                                    <FileText size={14} className="text-cyan-400" />
+                                    Session Artifacts
+                                </h3>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
+                                    {Object.entries(artifactSummary).map(([type, count]) => (
+                                        <div key={type} className="bg-cyber-900 border border-cyber-700 rounded p-2">
+                                            <div className="text-[10px] text-gray-500 uppercase">{type}</div>
+                                            <div className="text-lg font-mono text-cyan-300">{count}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                                    {sessionArtifacts.slice().reverse().map((artifact) => (
+                                        <div key={artifact.id} className="bg-cyber-900 border border-cyber-700 rounded p-3">
+                                            <div className="flex items-center justify-between gap-3">
+                                                <div className="text-sm font-semibold text-white">{artifact.artifact_type}</div>
+                                                <div className="text-[10px] text-gray-500 font-mono">{artifact.created_at || 'N/A'}</div>
+                                            </div>
+                                            <div className="text-xs text-gray-300 mt-1">
+                                                {artifact.poc_name || artifact.poc_filename || 'session artifact'}
+                                            </div>
+                                            {artifact.trace_id ? (
+                                                <div className="text-[10px] text-gray-500 font-mono mt-1">trace: {artifact.trace_id}</div>
+                                            ) : null}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
                         {selectedSession.assessment?.attackGraph && (
                             <AttackGraph
                                 graph={selectedSession.assessment.attackGraph}
@@ -601,7 +747,35 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                     <p className="text-sm">Run a Global Auto Scan to save records here.</p>
                 </div>
             ) : (
-                <div className="grid grid-cols-1 gap-4 overflow-y-auto">
+                <div className="flex-1 flex flex-col min-h-0">
+                    <div className="flex items-center justify-between mb-2 px-2">
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={toggleSelectAll}
+                                className="text-gray-500 hover:text-white flex items-center gap-1.5 text-xs transition-colors"
+                            >
+                                {selectedIds.size > 0 && selectedIds.size === displayHistory.filter(s => s.dbId).length ? (
+                                    <CheckSquare size={14} className="text-cyber-accent" />
+                                ) : (
+                                    <Square size={14} />
+                                )}
+                                {selectedIds.size > 0 ? `Deselect All (${selectedIds.size})` : 'Select All'}
+                            </button>
+                            
+                            {selectedIds.size > 0 && (
+                                <button
+                                    onClick={handleDeleteBatch}
+                                    disabled={isDeleting}
+                                    className="text-red-400 hover:text-red-300 font-bold text-xs flex items-center gap-1 bg-red-900/20 px-2 py-1 rounded border border-red-900/50 transition-all disabled:opacity-50"
+                                >
+                                    <Trash2 size={13} />
+                                    Delete Selected
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 overflow-y-auto pr-2 custom-scrollbar">
                     {supervisorTrend.snapshots.length > 0 && (
                         <div className="bg-cyber-800 border border-cyber-700 rounded-lg p-4">
                             <div className="flex items-center justify-between mb-4">
@@ -650,10 +824,16 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                         <div
                             key={session.id}
                             onClick={() => setSelectedSession(session)}
-                            className="bg-cyber-800 border border-cyber-700 p-5 rounded-lg hover:border-cyber-500 cursor-pointer transition-all flex justify-between items-center group relative overflow-hidden"
+                            className={`bg-cyber-800 border ${selectedIds.has(session.dbId!) ? 'border-cyber-accent/50 bg-cyber-accent/5' : 'border-cyber-700'} p-5 rounded-lg hover:border-cyber-500 cursor-pointer transition-all flex justify-between items-center group relative overflow-hidden`}
                         >
 
                             <div className="flex items-center gap-4">
+                                <button
+                                    onClick={(e) => toggleSelect(e, session.dbId)}
+                                    className={`w-5 h-5 shrink-0 flex items-center justify-center rounded border ${selectedIds.has(session.dbId!) ? 'border-cyber-accent bg-cyber-accent/20 text-cyber-accent' : 'border-cyber-700 text-gray-600'} hover:border-cyber-accent transition-colors`}
+                                >
+                                    {selectedIds.has(session.dbId!) && <CheckSquare size={14} />}
+                                </button>
                                 <div className={`w-10 h-10 shrink-0 rounded-full flex items-center justify-center ${session.results.filter(r => r.vulnerable).length > 0 ? 'bg-red-900/20 text-red-500' : 'bg-green-900/20 text-green-500'}`}>
                                     {session.results.filter(r => r.vulnerable).length > 0 ? <AlertTriangle size={20} /> : <Shield size={20} />}
                                 </div>
@@ -678,21 +858,33 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-8">
-                                <div className="text-right">
-                                    <div className="text-xs text-gray-500 uppercase">Risk Score</div>
-                                    <div className={`font-bold font-mono ${session.riskScore > 50 ? 'text-cyber-danger' : 'text-cyber-success'}`}>{session.riskScore}</div>
+                                <div className="flex items-center gap-3">
+                                    <div className="flex items-center gap-8">
+                                        <div className="text-right">
+                                            <div className="text-xs text-gray-500 uppercase">Risk Score</div>
+                                            <div className={`font-bold font-mono ${session.riskScore > 50 ? 'text-cyber-danger' : 'text-cyber-success'}`}>{session.riskScore}</div>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="text-xs text-gray-500 uppercase">Vulns</div>
+                                            <div className="font-bold font-mono text-white">{session.results.filter(r => r.vulnerable).length}</div>
+                                        </div>
+                                        <ChevronRight className="text-gray-600 group-hover:text-white transition-colors" />
+                                    </div>
+                                    
+                                    <button
+                                        onClick={(e) => handleDelete(e, session.dbId)}
+                                        disabled={isDeleting}
+                                        className="p-2 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all ml-2"
+                                        title="Delete Record"
+                                    >
+                                        <Trash2 size={18} />
+                                    </button>
                                 </div>
-                                <div className="text-right">
-                                    <div className="text-xs text-gray-500 uppercase">Vulns</div>
-                                    <div className="font-bold font-mono text-white">{session.results.filter(r => r.vulnerable).length}</div>
-                                </div>
-                                <ChevronRight className="text-gray-600 group-hover:text-white transition-colors" />
-                            </div>
                         </div>
                     ))}
                 </div>
-            )}
+            </div>
+        )}
         </div>
     );
 };

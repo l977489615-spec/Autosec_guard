@@ -14,6 +14,15 @@ import os
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class FilenameCmdInjectPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "Filename Command Injection"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "unknown"
+    meta_target_os = ["all"]
+    meta_required_params = ["usb_mount_point"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         return True
 
@@ -52,8 +61,8 @@ class FilenameCmdInjectPlugin(IVIVulnerabilityPlugin):
             
             return {
                 "status": "success",
-                "vulnerable": True,
-                "details": f"Generated malicious payload file at {payload_dir}/. Ready for USB transfer."
+                "vulnerable": False,
+                "details": f"已生成恶意文件名样本 {full_path}，需在目标车机实际索引后再确认是否可命令注入。"
             }
             
         except Exception as e:
@@ -61,8 +70,5 @@ class FilenameCmdInjectPlugin(IVIVulnerabilityPlugin):
             return {"status": "error", "details": str(e)}
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python3 56_Filename_Command_Injection.py")
-        sys.exit(1)
-    plugin = FilenameCmdInjectPlugin()
+    plugin = FilenameCmdInjectPlugin({})
     plugin.run_verify()

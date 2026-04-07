@@ -21,7 +21,6 @@ __pycache__/
 *.egg
 venv/
 .venv/
-.env*
 
 # Editor directories and files
 .vscode/*

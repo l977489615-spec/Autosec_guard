@@ -15,6 +15,15 @@ import shutil
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class UsbPathTraversalPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "USB Path Injection"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "unknown"
+    meta_target_os = ["all"]
+    meta_required_params = ["usb_mount_point"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         return True
 
@@ -53,8 +62,8 @@ class UsbPathTraversalPlugin(IVIVulnerabilityPlugin):
             
             return {
                 "status": "success",
-                "vulnerable": True,
-                "details": f"Generated malicious ZIP Slip payload at {zip_path}. Awaiting manual testing."
+                "vulnerable": False,
+                "details": f"已生成 ZIP Slip 样本 {zip_path}，需在目标车机真实解包流程中验证是否发生路径逃逸。"
             }
 
         except Exception as e:
@@ -62,8 +71,5 @@ class UsbPathTraversalPlugin(IVIVulnerabilityPlugin):
             return {"status": "error", "details": str(e)}
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python3 57_USB_Path_Injection.py")
-        sys.exit(1)
-    plugin = UsbPathTraversalPlugin()
+    plugin = UsbPathTraversalPlugin({})
     plugin.run_verify()

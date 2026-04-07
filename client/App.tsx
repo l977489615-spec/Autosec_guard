@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { LayoutDashboard, Radio, Database, Shield, Github, History, User, AlertTriangle, ServerCrash } from 'lucide-react';
+import { LayoutDashboard, Radio, Database, Shield, Github, History, User, AlertTriangle, ServerCrash, Cpu } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Scanner from './components/Scanner';
 import PocDatabase from './components/PocDatabase';
@@ -8,6 +8,7 @@ import AuthPage from './components/AuthPage';
 import Profile from './components/Profile';
 import UserManagement from './components/UserManagement';
 import AgentScan from './components/AgentScan';
+import EdgeManager from './components/EdgeManager';
 import { ScanSession } from './types';
 import { getBackendHealth, getBackendUrl } from './services/api';
 
@@ -16,6 +17,7 @@ enum View {
   SCANNER = 'scanner',
   DATABASE = 'database',
   HISTORY = 'history',
+  EDGE = 'edge',
   PROFILE = 'profile',
   USER_MANAGEMENT = 'user_management'
 }
@@ -171,10 +173,8 @@ const App: React.FC = () => {
     };
 
     refreshHealth();
-    const timer = window.setInterval(refreshHealth, 10000);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
     };
   }, [engineUrl]);
 
@@ -223,6 +223,14 @@ const App: React.FC = () => {
           >
             <History size={20} />
             <span className="hidden lg:block ml-3 font-medium">Scan History</span>
+          </button>
+
+          <button
+            onClick={() => setCurrentView(View.EDGE)}
+            className={`w-full flex items-center p-3 rounded-lg transition-colors ${currentView === View.EDGE ? 'bg-cyber-700 text-cyber-accent border-l-4 border-cyber-accent' : 'text-gray-400 hover:bg-cyber-700 hover:text-white'}`}
+          >
+            <Cpu size={20} />
+            <span className="hidden lg:block ml-3 font-medium">Edge Control</span>
           </button>
 
 
@@ -285,6 +293,7 @@ const App: React.FC = () => {
             {currentView === View.SCANNER && 'Vulnerability Scanner'}
             {currentView === View.DATABASE && 'Threat Intelligence Database'}
             {currentView === View.HISTORY && 'Scan Records & Audit'}
+            {currentView === View.EDGE && 'Edge Control Plane'}
             {currentView === View.PROFILE && 'User Profile & Settings'}
             {currentView === View.USER_MANAGEMENT && 'System Operators'}
           </h1>
@@ -343,6 +352,13 @@ const App: React.FC = () => {
                 token={token}
                 onUnauthorized={handleUnauthorized}
                 onResumeSession={handleResumeAgentSession}
+              />
+            )}
+            {currentView === View.EDGE && (
+              <EdgeManager
+                token={token}
+                currentUser={user}
+                onUnauthorized={handleUnauthorized}
               />
             )}
 

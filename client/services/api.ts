@@ -262,3 +262,74 @@ export const simulateRemediation = async (session: any, token: string | null) =>
 export const generateStructuredReport = async (session: any, token: string | null) => {
   return postAssessment('/api/report/structured', session, token);
 };
+
+const authedFetch = async (path: string, token: string | null, init?: RequestInit) => {
+  const headers: Record<string, string> = {
+    ...(init?.headers as Record<string, string> | undefined),
+  };
+  if (init?.body !== undefined && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${backendUrl}${path}`, {
+      ...init,
+      headers,
+      mode: 'cors',
+    });
+  } catch (error: any) {
+    throw new Error(`Network request failed for ${path}: ${error?.message || 'Failed to fetch'}`);
+  }
+
+  const raw = await res.text();
+  let data: any = {};
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    data = { raw };
+  }
+
+  if (!res.ok) {
+    throw new Error(data.message || data.error || `Request ${path} failed with ${res.status}`);
+  }
+  return data;
+};
+
+export const getEdgeAgents = async (token: string | null) => {
+  return authedFetch('/api/edge/agents', token, { method: 'GET' });
+};
+
+export const getEdgeTasks = async (token: string | null) => {
+  return authedFetch('/api/edge/tasks', token, { method: 'GET' });
+};
+
+export const getEdgeRecommendations = async (
+  filename: string,
+  params: Record<string, any>,
+  token: string | null
+) => {
+  return authedFetch('/api/edge/recommendations', token, {
+    method: 'POST',
+    body: JSON.stringify({ filename, params }),
+  });
+};
+
+export const createEdgeTask = async (
+  payload: {
+    filename: string;
+    params: Record<string, any>;
+    agent_id?: string;
+    session_id?: string;
+    trace_id?: string;
+  },
+  token: string | null
+) => {
+  return authedFetch('/api/edge/tasks', token, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+};

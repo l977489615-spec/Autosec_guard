@@ -14,6 +14,15 @@ import time
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class CANDoSFloodPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "CAN DoS Flood"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "can"
+    meta_target_os = ["all"]
+    meta_required_params = ["can_interface"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         iface = self.params.get("can_interface", "PCAN_USBBUS1")
         self.logger.info(f"使用CAN接口: {iface}")
@@ -57,5 +66,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 24_CAN_DoS_Flood.py <can_interface>")
         sys.exit(1)
-    plugin = CANDoSFloodPlugin({"target_ip": "N/A", "can_interface": iface})
+    plugin = CANDoSFloodPlugin({"target_ip": "N/A", "can_interface": sys.argv[1]})
     plugin.run_verify()

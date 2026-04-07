@@ -22,9 +22,11 @@ interface AgentPhase {
 
 const PHASES: AgentPhase[] = [
   { name: 'recon', label: '侦察 Agent', icon: Network, description: '端口扫描 + 拓扑分析 + 服务指纹' },
-  { name: 'decision', label: '决策 Agent', icon: Cpu, description: '自适应 PoC 筛选 + 认证策略规划' },
+  { name: 'planner', label: '规划 Agent', icon: Sliders, description: '多级任务编排与攻击路径规划' },
+  { name: 'decision', label: '决策 Agent', icon: Cpu, description: '自适应 PoC 筛选 + 认证策略生成' },
   { name: 'weaponize', label: '开采 Agent', icon: Zap, description: '零日漏洞 (0-day) 动态载荷生成' },
   { name: 'execute', label: '执行 Agent', icon: Shield, description: 'PoC 自动化执行 + 响应反馈闭环' },
+  { name: 'reflector', label: '反思 Agent', icon: RotateCcw, description: '错误恢复与动态策略调整' },
   { name: 'assess', label: '评估 Agent', icon: FileText, description: 'ISO 21434 合规报告生成' },
 ];
 
@@ -557,6 +559,12 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, onSessionComplete, engineU
               ...(bluetoothMac && { bluetooth_mac: bluetoothMac }),
               ...(wifiInterface && { wifi_interface: wifiInterface }),
               ...(rfFrequency && { frequency: rfFrequency }),
+              state: {
+                logs: collectedLogs,
+                findings: collectedFindings,
+                phase_records: collectedPhaseRecords,
+                structured: structuredPhases,
+              },
             }),
           });
           const data = await r.json();
@@ -867,6 +875,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, onSessionComplete, engineU
   const supervisorEvents: SupervisorEvent[] = Array.isArray(structuredState?.supervisor?.events) ? structuredState.supervisor.events : [];
   const supervisorMetrics = (structuredState?.supervisor?.metrics || {}) as Partial<SupervisorMetrics>;
   const supervisorAdjustments: SupervisorAdjustment[] = Array.isArray(structuredState?.supervisor?.adjustments) ? structuredState.supervisor.adjustments : [];
+  const hasSupervisorData = supervisorEvents.length > 0 || supervisorAdjustments.length > 0 || Boolean(supervisorMetrics.total_events);
 
   return (
     <div className="flex flex-col gap-4 h-full overflow-y-auto p-4">
@@ -1191,8 +1200,8 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, onSessionComplete, engineU
         })}
       </div>
 
-      {(plannerSteps.length > 0 || supervisorEvents.length > 0) && (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      {(plannerSteps.length > 0 || hasSupervisorData) && (
+        <div className={`grid grid-cols-1 gap-4 ${hasSupervisorData ? 'xl:grid-cols-2' : ''}`}>
           <div className="bg-black/30 border border-cyan-900/40 rounded-lg p-4">
             <div className="flex items-center gap-2 mb-3">
               <Cpu className="w-4 h-4 text-cyan-400" />
@@ -1235,74 +1244,80 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, onSessionComplete, engineU
             )}
           </div>
 
-          <div className="bg-black/30 border border-amber-900/40 rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <AlertTriangle className="w-4 h-4 text-amber-400" />
-              <span className="text-xs font-bold text-amber-300 uppercase tracking-widest">Supervisor Events</span>
-            </div>
-            {(supervisorMetrics.total_events || supervisorAdjustments.length > 0) && (
-              <div className="grid grid-cols-2 gap-2 mb-4">
-                <div className="bg-black/40 border border-amber-900/30 rounded p-2">
-                  <div className="text-[10px] text-gray-500 uppercase">Events</div>
-                  <div className="text-lg font-mono text-amber-300">{supervisorMetrics.total_events || 0}</div>
-                </div>
-                <div className="bg-black/40 border border-amber-900/30 rounded p-2">
-                  <div className="text-[10px] text-gray-500 uppercase">Pruned Steps</div>
-                  <div className="text-lg font-mono text-red-300">{supervisorMetrics.pruned_steps || 0}</div>
-                </div>
-                <div className="bg-black/40 border border-amber-900/30 rounded p-2">
-                  <div className="text-[10px] text-gray-500 uppercase">No Progress</div>
-                  <div className="text-lg font-mono text-amber-300">{supervisorMetrics.no_progress_events || 0}</div>
-                </div>
-                <div className="bg-black/40 border border-amber-900/30 rounded p-2">
-                  <div className="text-[10px] text-gray-500 uppercase">Execution Errors</div>
-                  <div className="text-lg font-mono text-red-300">{supervisorMetrics.execution_errors || 0}</div>
-                </div>
+          {hasSupervisorData ? (
+            <div className="bg-black/30 border border-amber-900/40 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <AlertTriangle className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-bold text-amber-300 uppercase tracking-widest">Supervisor Events</span>
               </div>
-            )}
-            {supervisorAdjustments.length > 0 && (
-              <div className="mb-4 pt-3 border-t border-amber-900/30">
-                <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">Automatic Adjustments</div>
-                <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
-                  {supervisorAdjustments.map((adjustment, index) => (
-                    <div key={`${adjustment.type}-${adjustment.timestamp || index}`} className="bg-black/40 border border-amber-900/30 rounded p-2">
-                      <div className="text-xs font-semibold text-white">{adjustment.type}</div>
-                      <div className="text-[11px] text-gray-300 mt-1">{adjustment.message}</div>
-                      {adjustment.affected_steps && adjustment.affected_steps.length > 0 ? (
-                        <div className="text-[10px] text-gray-500 font-mono mt-1">steps: {adjustment.affected_steps.join(', ')}</div>
+              {(supervisorMetrics.total_events || supervisorAdjustments.length > 0) && (
+                <div className="grid grid-cols-2 gap-2 mb-4">
+                  <div className="bg-black/40 border border-amber-900/30 rounded p-2">
+                    <div className="text-[10px] text-gray-500 uppercase">Events</div>
+                    <div className="text-lg font-mono text-amber-300">{supervisorMetrics.total_events || 0}</div>
+                  </div>
+                  <div className="bg-black/40 border border-amber-900/30 rounded p-2">
+                    <div className="text-[10px] text-gray-500 uppercase">Pruned Steps</div>
+                    <div className="text-lg font-mono text-red-300">{supervisorMetrics.pruned_steps || 0}</div>
+                  </div>
+                  <div className="bg-black/40 border border-amber-900/30 rounded p-2">
+                    <div className="text-[10px] text-gray-500 uppercase">No Progress</div>
+                    <div className="text-lg font-mono text-amber-300">{supervisorMetrics.no_progress_events || 0}</div>
+                  </div>
+                  <div className="bg-black/40 border border-amber-900/30 rounded p-2">
+                    <div className="text-[10px] text-gray-500 uppercase">Execution Errors</div>
+                    <div className="text-lg font-mono text-red-300">{supervisorMetrics.execution_errors || 0}</div>
+                  </div>
+                </div>
+              )}
+              {supervisorAdjustments.length > 0 && (
+                <div className="mb-4 pt-3 border-t border-amber-900/30">
+                  <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">Automatic Adjustments</div>
+                  <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
+                    {supervisorAdjustments.map((adjustment, index) => (
+                      <div key={`${adjustment.type}-${adjustment.timestamp || index}`} className="bg-black/40 border border-amber-900/30 rounded p-2">
+                        <div className="text-xs font-semibold text-white">{adjustment.type}</div>
+                        <div className="text-[11px] text-gray-300 mt-1">{adjustment.message}</div>
+                        {adjustment.affected_steps && adjustment.affected_steps.length > 0 ? (
+                          <div className="text-[10px] text-gray-500 font-mono mt-1">steps: {adjustment.affected_steps.join(', ')}</div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {supervisorEvents.length > 0 ? (
+                <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                  {supervisorEvents.map((event, index) => (
+                    <div key={`${event.scope}-${event.timestamp || index}`} className="bg-black/40 border border-amber-900/30 rounded p-3">
+                      <div className="flex items-center justify-between gap-3 mb-2">
+                        <div className="text-sm font-semibold text-white">
+                          {event.phase ? `${event.phase.toUpperCase()} · ` : ''}{event.scope}
+                        </div>
+                        <span className={`text-[10px] uppercase px-2 py-0.5 rounded border ${
+                          event.severity === 'error'
+                            ? 'text-red-300 border-red-800 bg-red-950/30'
+                            : 'text-amber-300 border-amber-800 bg-amber-950/30'
+                        }`}>
+                          {event.severity}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-300 whitespace-pre-wrap">{event.message}</div>
+                      {event.timestamp ? (
+                        <div className="text-[11px] text-gray-500 font-mono mt-2">{event.timestamp}</div>
                       ) : null}
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
-            {supervisorEvents.length > 0 ? (
-              <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                {supervisorEvents.map((event, index) => (
-                  <div key={`${event.scope}-${event.timestamp || index}`} className="bg-black/40 border border-amber-900/30 rounded p-3">
-                    <div className="flex items-center justify-between gap-3 mb-2">
-                      <div className="text-sm font-semibold text-white">
-                        {event.phase ? `${event.phase.toUpperCase()} · ` : ''}{event.scope}
-                      </div>
-                      <span className={`text-[10px] uppercase px-2 py-0.5 rounded border ${
-                        event.severity === 'error'
-                          ? 'text-red-300 border-red-800 bg-red-950/30'
-                          : 'text-amber-300 border-amber-800 bg-amber-950/30'
-                      }`}>
-                        {event.severity}
-                      </span>
-                    </div>
-                    <div className="text-xs text-gray-300 whitespace-pre-wrap">{event.message}</div>
-                    {event.timestamp ? (
-                      <div className="text-[11px] text-gray-500 font-mono mt-2">{event.timestamp}</div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-xs text-gray-500">当前未触发监督事件。</div>
-            )}
-          </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="bg-black/20 border border-amber-900/20 rounded-lg px-4 py-2 flex items-center gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-500/80" />
+              <span className="text-[11px] font-bold text-amber-300 uppercase tracking-widest">Supervisor</span>
+              <span className="text-xs text-gray-500">当前未触发监督事件</span>
+            </div>
+          )}
         </div>
       )}
 

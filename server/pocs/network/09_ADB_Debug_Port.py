@@ -47,7 +47,14 @@ class ADBDebugPortPlugin(IVIVulnerabilityPlugin):
     扫描目标所有已知 ADB TCP 端口，尝试 ADB CNXN 握手，
     确认是否存在未授权远程 Shell 访问。
     """
-
+    meta_poc_name = "ADB Debug Port Detection"
+    meta_cve_id = "CVE-2018-6242"
+    meta_severity = "Critical"
+    meta_protocol = "tcp"
+    meta_target_os = ["android", "harmonyos"]
+    meta_required_params = ["target_ip"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
     def check_prerequisites(self):
         if not self.target_ip:
             raise RuntimeError("需要指定目标 IP 地址。")

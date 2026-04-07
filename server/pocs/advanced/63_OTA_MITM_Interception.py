@@ -14,6 +14,15 @@ import ssl
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
 class OTAMITMPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "OTA MITM Interception"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "rf"
+    meta_target_os = ["all"]
+    meta_required_params = ["target_ip"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     OTA_PORTS = [443, 8443, 4443, 9443]
     def check_prerequisites(self):
         if not self.target_ip:

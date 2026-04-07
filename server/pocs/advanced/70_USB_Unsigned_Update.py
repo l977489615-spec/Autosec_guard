@@ -15,6 +15,15 @@ import zipfile
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class USBUnsignedUpdatePlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "USB Unsigned Update"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "rf"
+    meta_target_os = ["all"]
+    meta_required_params = ["usb_mount_point"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         return True
 
@@ -60,8 +69,8 @@ class USBUnsignedUpdatePlugin(IVIVulnerabilityPlugin):
             
             return {
                 "status": "success",
-                "vulnerable": True,
-                "details": f"Generated unsigned Android update.zip at {zip_path}."
+                "vulnerable": False,
+                "details": f"已生成无签名 OTA 样本 {zip_path}，需在目标本地升级流程中确认是否被接受。"
             }
 
         except Exception as e:
@@ -69,8 +78,5 @@ class USBUnsignedUpdatePlugin(IVIVulnerabilityPlugin):
             return {"status": "error", "details": str(e)}
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python3 69_USB_Unsigned_Update.py")
-        sys.exit(1)
-    plugin = USBUnsignedUpdatePlugin()
+    plugin = USBUnsignedUpdatePlugin({})
     plugin.run_verify()

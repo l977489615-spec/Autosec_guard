@@ -16,6 +16,15 @@ import time
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class IVIUsbSqliPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "IVI USB SQLi"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "unknown"
+    meta_target_os = ["all"]
+    meta_required_params = ["usb_mount_point"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         if os.geteuid() != 0:
             self.logger.error("此漏洞利用脚本需要配置内核 USB Gadget 层。请使用 root (sudo) 权限执行！")
@@ -97,8 +106,8 @@ class IVIUsbSqliPlugin(IVIVulnerabilityPlugin):
             
             return {
                 "status": "success",
-                "vulnerable": True,
-                "details": "Gadget configured successfully and activated via UDC."
+                "vulnerable": False,
+                "details": "恶意 USB Gadget 已就绪，需插入目标车机并观察是否触发 SQL 注入副作用。"
             }
 
         except Exception as e:
@@ -109,8 +118,5 @@ class IVIUsbSqliPlugin(IVIVulnerabilityPlugin):
             }
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: sudo python3 51_IVI_USB_SQLi.py")
-        sys.exit(1)
-    plugin = IVIUsbSqliPlugin()
+    plugin = IVIUsbSqliPlugin({})
     plugin.run_verify()

@@ -13,6 +13,15 @@ import sys
 import subprocess
 from iv_plugin_base import IVIVulnerabilityPlugin
 class BTSDPEnumPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "BT SDP Enum"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "unknown"
+    meta_target_os = ["all"]
+    meta_required_params = ["bd_addr"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         if not self.params.get("bd_addr"):
             raise RuntimeError("需要指定目标蓝牙MAC地址")
