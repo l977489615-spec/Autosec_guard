@@ -31,54 +31,43 @@ class Dynamic0DayPlugin(IVIVulnerabilityPlugin):
     def exploit(self):
         self.results["description"] = "Weaponize Agent 自动生成的动态0-Day探测"
         target_ip = self.target_ip
-        target_port = self.target_port
-        try:
-        import socket
-        import sys
-        import time
+        target_port = self.target_port or 23
 
-        # 目标 IP 和端口
-        TARGET_IP = "172.16.64.129"
-        TARGET_PORT = 23  # 默认为 Telnet 端口，可以根据需要更改
-
-        # 模糊测试数据包
-        FUZZING_PAYLOADS = [
-            b"A" * 100,  # 100 字节的 'A'
-            b"B" * 500,  # 500 字节的 'B'
-            b"C" * 1000,  # 1000 字节的 'C'
-            b"D" * 2000,  # 2000 字节的 'D'
-            b"E" * 5000,  # 5000 字节的 'E'
+        fuzzing_payloads = [
+            b"A" * 100,
+            b"B" * 500,
+            b"C" * 1000,
+            b"D" * 2000,
+            b"E" * 5000,
         ]
 
-        def send_payload(payload):
-            try:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.settimeout(5)  # 设置超时时间
-                    s.connect((TARGET_IP, TARGET_PORT))
-                    print(f"Sending payload: {payload[:10]}... (Length: {len(payload)})")
-                    s.sendall(payload)
-                    response = s.recv(1024)
-                    print(f"Received: {response}")
-                    return response
-            except Exception as e:
-                print(f"Exception occurred: {e}")
-                return None
-
-        def main():
-            for payload in FUZZING_PAYLOADS:
-                response = send_payload(payload)
-                if response is None:
-                    print("Vulnerable: True")
+        try:
+            vulnerable = False
+            for payload in fuzzing_payloads:
+                try:
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                        s.settimeout(5)
+                        s.connect((target_ip, target_port))
+                        self.logger.info(
+                            f"Sending payload: {payload[:10]}... (Length: {len(payload)})"
+                        )
+                        s.sendall(payload)
+                        response = s.recv(1024)
+                        self.logger.info(f"Received: {response}")
+                except Exception as e:
+                    self.logger.warning(f"Payload {len(payload)}B triggered exception: {e}")
+                    vulnerable = True
+                    self.results["evidence"] = (
+                        f"Target crashed/refused after {len(payload)}-byte payload: {e}"
+                    )
                     break
-                time.sleep(1)  # 避免过快发送请求
+                time.sleep(1)
 
-        if __name__ == "__main__":
-            try:
-                main()
-            except KeyboardInterrupt:
-                print("Interrupted by user, exiting...")
-            except Exception as e:
-                print(f"An unexpected error occurred: {e}")
+            if vulnerable:
+                self.results["vulnerable"] = True
+            else:
+                self.results["vulnerable"] = False
+                self.results["evidence"] = "All payloads sent without crash."
         except Exception as e:
             self.logger.error(f"动态探测脚本执行异常: {e}")
             self.results["evidence"] = f"Exception: {e}"
