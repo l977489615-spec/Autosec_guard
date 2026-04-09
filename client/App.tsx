@@ -10,7 +10,7 @@ import UserManagement from './components/UserManagement';
 import AgentScan from './components/AgentScan';
 import EdgeManager from './components/EdgeManager';
 import { ScanSession } from './types';
-import { getBackendHealth, getBackendUrl } from './services/api';
+import { fetchCurrentProfile, getBackendHealth, getBackendUrl } from './services/api';
 
 enum View {
   DASHBOARD = 'dashboard',
@@ -159,7 +159,7 @@ const App: React.FC = () => {
     let cancelled = false;
 
     const refreshHealth = async () => {
-      const health = await getBackendHealth();
+      const health = await getBackendHealth(engineUrl);
       if (cancelled) return;
       setGlobalBackendHealth({
         url: health.url,
@@ -177,6 +177,30 @@ const App: React.FC = () => {
       cancelled = true;
     };
   }, [engineUrl]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const refreshProfile = async () => {
+      if (!token) return;
+      try {
+        const latestUser = await fetchCurrentProfile(token);
+        if (cancelled || !latestUser) return;
+        setUser(latestUser);
+        localStorage.setItem('autosec_user', JSON.stringify(latestUser));
+      } catch (error: any) {
+        if (cancelled) return;
+        if (/401|403|Could not verify|Invalid token/i.test(String(error?.message || ''))) {
+          handleUnauthorized();
+        }
+      }
+    };
+
+    refreshProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   if (!token || !user) {
     return <AuthPage onLogin={handleLogin} />;
@@ -311,7 +335,7 @@ const App: React.FC = () => {
           {globalBackendHealth.ok ? <Shield className="w-3.5 h-3.5" /> : <ServerCrash className="w-3.5 h-3.5" />}
           <span>Backend: {globalBackendHealth.url}</span>
           {globalBackendHealth.database && <span>DB: {globalBackendHealth.database}</span>}
-          <span>AI: {globalBackendHealth.ai_reports_enabled ? 'enabled' : 'disabled'}</span>
+          <span>AI: {globalBackendHealth.ai_reports_enabled ? 'user-configured' : 'unavailable'}</span>
           {!globalBackendHealth.ok && globalBackendHealth.error && (
             <span className="flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" />{globalBackendHealth.error}</span>
           )}
@@ -342,6 +366,7 @@ const App: React.FC = () => {
                 engineStatus={engineStatus}
                 setEngineStatus={setEngineStatus}
                 token={token}
+                currentUser={user}
               />
             )}
             {currentView === View.DATABASE && <PocDatabase />}

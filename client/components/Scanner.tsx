@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { flushSync } from 'react-dom';
 import { ScanSession, ScanLog, ScanResult, Severity, POC, Category, ConnectionParams } from '../types';
 import { POC_DATABASE } from '../constants';
@@ -23,7 +23,36 @@ interface ScannerProps {
   engineStatus: 'unknown' | 'online' | 'offline';
   setEngineStatus: (status: 'unknown' | 'online' | 'offline') => void;
   token: string | null;
+  currentUser: any;
 }
+
+type DisruptiveApprovalState = {
+  poc: POC;
+  progress: string;
+  secondsLeft: number;
+} | null;
+
+type DisruptiveApprovalDecision = 'approved' | 'approved_all' | 'skipped' | 'timeout';
+
+const normalizePocPath = (value?: string | null): string => {
+  return String(value || '')
+    .replace(/\\/g, '/')
+    .replace(/^\.?\//, '')
+    .toLowerCase();
+};
+
+const getBasename = (value?: string | null): string => {
+  const normalized = normalizePocPath(value);
+  if (!normalized) return '';
+  const parts = normalized.split('/');
+  return parts[parts.length - 1] || '';
+};
+
+const extractPocNumber = (value?: string | null): string => {
+  const filename = getBasename(value);
+  const match = filename.match(/^(\d+)_/);
+  return match ? match[1].padStart(3, '0') : '';
+};
 
 // Helper to render markdown-ish text to HTML
 const MarkdownRenderer: React.FC<{ content: string }> = ({ content }) => {
@@ -66,7 +95,8 @@ const Scanner: React.FC<ScannerProps> = ({
   session, setSession,
   engineUrl, setEngineUrl,
   engineStatus, setEngineStatus,
-  token
+  token,
+  currentUser
 }) => {
   const [isAnalysing, setIsAnalysing] = useState(false);
   const [selectedResultPoc, setSelectedResultPoc] = useState<POC | null>(null);
@@ -82,6 +112,12 @@ const Scanner: React.FC<ScannerProps> = ({
 
   const [filterCategory, setFilterCategory] = useState<string>('All');
   const [manualSearch, setManualSearch] = useState('');
+  const [disruptiveApproval, setDisruptiveApproval] = useState<DisruptiveApprovalState>(null);
+  const autoApproveDisruptiveForRunRef = React.useRef(false);
+  const pocRuntimeMetadataRef = React.useRef<Record<string, Partial<POC>>>({});
+  const approvalResolverRef = React.useRef<((decision: DisruptiveApprovalDecision) => void) | null>(null);
+  const approvalTimeoutRef = React.useRef<number | null>(null);
+  const approvalIntervalRef = React.useRef<number | null>(null);
 
   // Effect to update API service when user types new URL
   useEffect(() => {
@@ -94,33 +130,87 @@ const Scanner: React.FC<ScannerProps> = ({
     fetchPocs();
   }, []);
 
-  const fetchPocs = async () => {
+  useEffect(() => {
+    return () => {
+      if (approvalTimeoutRef.current) {
+        window.clearTimeout(approvalTimeoutRef.current);
+      }
+      if (approvalIntervalRef.current) {
+        window.clearInterval(approvalIntervalRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    pocRuntimeMetadataRef.current = pocRuntimeMetadata;
+  }, [pocRuntimeMetadata]);
+
+  const buildRuntimeMetadataFromBackend = (backendPocs: any[]): {
+    contentsMap: Record<string, string>;
+    metadataMap: Record<string, Partial<POC>>;
+  } => {
+    const contentsMap: Record<string, string> = {};
+    const metadataMap: Record<string, Partial<POC>> = {};
+    const byFullPath = new Map<string, POC>();
+    const byBasename = new Map<string, POC>();
+    const byNumber = new Map<string, POC>();
+
+    POC_DATABASE.forEach((dbPoc) => {
+      const normalized = normalizePocPath(dbPoc.pocFile);
+      const basename = getBasename(dbPoc.pocFile);
+      const number = extractPocNumber(dbPoc.pocFile);
+      if (normalized) byFullPath.set(normalized, dbPoc);
+      if (basename) byBasename.set(basename, dbPoc);
+      if (number) byNumber.set(number, dbPoc);
+    });
+
+    backendPocs.forEach((p: any) => {
+      const normalizedFilename = normalizePocPath(p.filename);
+      const filenameOnly = getBasename(p.filename);
+      const pocNumber = extractPocNumber(p.filename);
+      const matchingDbPoc =
+        byFullPath.get(normalizedFilename) ||
+        byBasename.get(filenameOnly) ||
+        byNumber.get(pocNumber);
+      if (!matchingDbPoc) return;
+
+      if (p.content) {
+        contentsMap[matchingDbPoc.id] = p.content;
+      }
+
+      const destructiveLevel = String(p.meta_destructive_level || p.destructive_level || '').toLowerCase();
+      metadataMap[matchingDbPoc.id] = {
+        supportedExecutionPlanes: p.supported_execution_planes || ['cloud', 'edge'],
+        recommendedExecutionPlane: p.recommended_execution_plane || 'cloud',
+        executionRequirements: p.execution_requirements,
+        manualConfirmationRequired: Boolean(
+          p.manual_confirmation_required ||
+          p.is_disruptive ||
+          p.execution_requirements?.requires_explicit_approval ||
+          p.execution_requirements?.approval_required ||
+          ['restart', 'dataloss', 'brick'].includes(destructiveLevel)
+        ),
+      };
+    });
+
+    return { contentsMap, metadataMap };
+  };
+
+  const fetchPocs = async (): Promise<Record<string, Partial<POC>>> => {
     const data = await listPocs();
     if (data && data.pocs) {
-      const contentsMap: Record<string, string> = {};
-      const metadataMap: Record<string, Partial<POC>> = {};
-      data.pocs.forEach((p: any) => {
-        const matchingDbPoc = POC_DATABASE.find(db => db.pocFile === p.filename);
-        if (matchingDbPoc && p.content) {
-          contentsMap[matchingDbPoc.id] = p.content;
-        }
-        if (matchingDbPoc) {
-          metadataMap[matchingDbPoc.id] = {
-            supportedExecutionPlanes: p.supported_execution_planes || ['cloud', 'edge'],
-            recommendedExecutionPlane: p.recommended_execution_plane || 'cloud',
-            executionRequirements: p.execution_requirements,
-            manualConfirmationRequired: Boolean(p.manual_confirmation_required),
-          };
-        }
-      });
+      const { contentsMap, metadataMap } = buildRuntimeMetadataFromBackend(data.pocs);
       setPocContents(contentsMap);
       setPocRuntimeMetadata(metadataMap);
+      pocRuntimeMetadataRef.current = metadataMap;
+      return metadataMap;
     }
+    return pocRuntimeMetadataRef.current;
   };
 
   const checkEngine = async () => {
     setEngineStatus('unknown');
-    const isUp = await checkBackendHealth();
+    const isUp = await checkBackendHealth(engineUrl);
     setEngineStatus(isUp ? 'online' : 'offline');
     if (isUp) addLog(`Execution Engine detected at ${engineUrl}`, 'success');
   };
@@ -135,13 +225,55 @@ const Scanner: React.FC<ScannerProps> = ({
     });
   };
 
+  const resolveDisruptiveApproval = (decision: DisruptiveApprovalDecision) => {
+    if (approvalTimeoutRef.current) {
+      window.clearTimeout(approvalTimeoutRef.current);
+      approvalTimeoutRef.current = null;
+    }
+    if (approvalIntervalRef.current) {
+      window.clearInterval(approvalIntervalRef.current);
+      approvalIntervalRef.current = null;
+    }
+    const resolver = approvalResolverRef.current;
+    approvalResolverRef.current = null;
+    setDisruptiveApproval(null);
+    if (resolver) {
+      resolver(decision);
+    }
+  };
+
+  const requestDisruptiveApproval = (poc: POC, progress: string): Promise<DisruptiveApprovalDecision> => {
+    return new Promise((resolve) => {
+      if (approvalTimeoutRef.current) {
+        window.clearTimeout(approvalTimeoutRef.current);
+      }
+      if (approvalIntervalRef.current) {
+        window.clearInterval(approvalIntervalRef.current);
+      }
+
+      approvalResolverRef.current = resolve;
+      setDisruptiveApproval({ poc, progress, secondsLeft: 60 });
+
+      const startedAt = Date.now();
+      approvalIntervalRef.current = window.setInterval(() => {
+        const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
+        const nextSecondsLeft = Math.max(0, 60 - elapsedSeconds);
+        setDisruptiveApproval((prev) => (prev ? { ...prev, secondsLeft: nextSecondsLeft } : prev));
+      }, 1000);
+
+      approvalTimeoutRef.current = window.setTimeout(() => {
+        resolveDisruptiveApproval('timeout');
+      }, 60000);
+    });
+  };
+
   const handleGlobalConnect = async () => {
     setSession(prev => ({ ...prev, status: 'connecting' }));
 
     addLog(`Targeting Execution Engine at: ${engineUrl}...`);
 
     // Check Backend
-    const isBackendUp = await checkBackendHealth();
+    const isBackendUp = await checkBackendHealth(engineUrl);
     setEngineStatus(isBackendUp ? 'online' : 'offline');
 
     if (!isBackendUp) {
@@ -183,6 +315,8 @@ const Scanner: React.FC<ScannerProps> = ({
       riskScore: 0,
       aiReport: null
     }));
+    autoApproveDisruptiveForRunRef.current = false;
+    const runtimeMetadata = await fetchPocs();
 
     addLog(`Starting batch execution of ${POC_DATABASE.length} modules...`, 'info');
     addLog(`Engine: ${engineUrl} | Target: ${session.targetName}`, 'info');
@@ -231,9 +365,45 @@ const Scanner: React.FC<ScannerProps> = ({
       addLog(`${progress} ${poc.id}: ${poc.name} — Executing...`, 'info');
 
       const startTime = Date.now();
-      const runtimeMeta = pocRuntimeMetadata[poc.id] || {};
+      const runtimeMeta = runtimeMetadata[poc.id] || pocRuntimeMetadataRef.current[poc.id] || {};
       const supportedPlanes = runtimeMeta.supportedExecutionPlanes || ['cloud', 'edge'];
       const recommendedPlane = runtimeMeta.recommendedExecutionPlane || 'cloud';
+      const requiresManualConfirmation = Boolean(runtimeMeta.manualConfirmationRequired);
+      const shouldAllowDisruptive = requiresManualConfirmation || autoApproveDisruptiveForRunRef.current;
+      const executionParams = { ...session.connection } as any;
+      if (executionParams.bluetoothMac) {
+        executionParams.bluetooth_mac = executionParams.bluetoothMac;
+      }
+      if (shouldAllowDisruptive) {
+        executionParams.allow_disruptive = true;
+      }
+
+      if (requiresManualConfirmation && autoApproveDisruptiveForRunRef.current) {
+        addLog(`${progress} ⇢ ${poc.name} → Auto-approved by current scan policy.`, 'warning');
+      } else if (requiresManualConfirmation) {
+        addLog(`${progress} ! ${poc.name} → High-risk PoC requires confirmation. Waiting up to 60s...`, 'warning');
+        const approvalDecision = await requestDisruptiveApproval(poc, progress);
+        if (approvalDecision === 'skipped') {
+          addLog(`${progress} ⏭ ${poc.name} — Skipped by user`, 'warning');
+          results.push({
+            pocId: poc.id,
+            vulnerable: false,
+            details: 'Skipped by user during disruptive PoC confirmation.',
+            detectedAt: new Date().toISOString(),
+            elapsedSeconds: 0,
+          });
+          continue;
+        }
+        if (approvalDecision === 'timeout') {
+          addLog(`${progress} ! ${poc.name} → No confirmation within 60s. Auto-approving and continuing.`, 'warning');
+        } else if (approvalDecision === 'approved_all') {
+          autoApproveDisruptiveForRunRef.current = true;
+          addLog(`${progress} ⇢ ${poc.name} → User confirmed and enabled auto-approval for the rest of this scan.`, 'info');
+        } else {
+          addLog(`${progress} ⇢ ${poc.name} → User confirmed disruptive execution.`, 'info');
+        }
+      }
+
       if (recommendedPlane === 'edge' && supportedPlanes.includes('edge')) {
         if (!token) {
           addLog(`${progress} ! ${poc.name} → Edge-only PoC requires authenticated session for task dispatch.`, 'warning');
@@ -250,13 +420,14 @@ const Scanner: React.FC<ScannerProps> = ({
 
         try {
           const edgeParams: Record<string, any> = {};
-          if (session.connection.ip) edgeParams.target_ip = session.connection.ip;
-          if (session.connection.port) edgeParams.port = session.connection.port;
-          if (session.connection.bluetoothMac) edgeParams.bluetooth_mac = session.connection.bluetoothMac;
-          if (session.connection.canInterface) edgeParams.can_interface = session.connection.canInterface;
-          if (session.connection.interface) edgeParams.interface = session.connection.interface;
-          if (session.connection.frequency) edgeParams.rf_frequency = session.connection.frequency;
-          if (session.connection.url) edgeParams.url = session.connection.url;
+          if (executionParams.ip) edgeParams.target_ip = executionParams.ip;
+          if (executionParams.port) edgeParams.port = executionParams.port;
+          if (executionParams.bluetoothMac || executionParams.bluetooth_mac) edgeParams.bluetooth_mac = executionParams.bluetoothMac || executionParams.bluetooth_mac;
+          if (executionParams.canInterface) edgeParams.can_interface = executionParams.canInterface;
+          if (executionParams.interface) edgeParams.interface = executionParams.interface;
+          if (executionParams.frequency) edgeParams.rf_frequency = executionParams.frequency;
+          if (executionParams.url) edgeParams.url = executionParams.url;
+          if (shouldAllowDisruptive) edgeParams.allow_disruptive = true;
           const queued = await createEdgeTask({ filename: poc.pocFile!, params: edgeParams }, token);
           const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
           addLog(`${progress} ⇢ ${poc.name} → Queued on edge agent ${queued.selected_agent?.display_name || queued.task?.edge_agent_id || 'auto'} (${elapsed}s)`, 'success');
@@ -285,10 +456,7 @@ const Scanner: React.FC<ScannerProps> = ({
       // Execute Real via the Plugin Loader (Handles parameters and subdirectories natively)
       // 使用 SSE 实时流式传输执行日志，每一行日志实时显示在 System Console 中
       const result = await new Promise<any>((resolve) => {
-        const params = { ...session.connection } as any;
-        if (params.bluetoothMac) {
-          params.bluetooth_mac = params.bluetoothMac;
-        }
+        const params = { ...executionParams } as any;
         // Append poc metadata so the backend can print it nicely
         params.poc_id = poc.id;
         params.poc_name = poc.name;
@@ -300,9 +468,27 @@ const Scanner: React.FC<ScannerProps> = ({
           headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
           body,
         }).then(async (response) => {
-          if (!response.ok || !response.body) {
-            // Fallback to non-streaming
-            const fallback = await runPocPlugin(poc.pocFile, session.connection as any);
+          if (!response.ok) {
+            let message = `Server returned ${response.status}`;
+            try {
+              const data = await response.json();
+              message = data.message || data.error || message;
+            } catch {
+              try {
+                const text = await response.text();
+                if (text.trim()) {
+                  message = text.trim();
+                }
+              } catch {
+                // Ignore secondary parse failures.
+              }
+            }
+            resolve({ success: false, logs: [], errors: [message], vulnerable: false });
+            return;
+          }
+          if (!response.body) {
+            // Fallback to non-streaming when the server does not provide an SSE body.
+            const fallback = await runPocPlugin(poc.pocFile, params, token, engineUrl);
             resolve(fallback);
             return;
           }
@@ -333,7 +519,7 @@ const Scanner: React.FC<ScannerProps> = ({
           resolve(finalResult || { success: false, logs: [], errors: ['No result received'] });
         }).catch(() => {
           // Fallback to non-streaming on network error
-          runPocPlugin(poc.pocFile, session.connection as any).then(resolve);
+          runPocPlugin(poc.pocFile, params, token, engineUrl).then(resolve);
         });
       });
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -412,7 +598,7 @@ const Scanner: React.FC<ScannerProps> = ({
 
   const handleAiAnalysis = async () => {
     setIsAnalysing(true);
-    const report = await generateSecurityReport(session, token);
+    const report = await generateSecurityReport(session, token, currentUser?.ai_config);
     setSession(prev => {
       const updated = { ...prev, aiReport: report };
       // Sync to DB when report is generated
@@ -611,9 +797,47 @@ const Scanner: React.FC<ScannerProps> = ({
         isOpen={!!manualTestPoc}
         onClose={() => setManualTestPoc(null)}
         // In Manual Mode, we pass empty connection params so user MUST input them
-        globalConnection={mode === 'GLOBAL' ? session.connection : { ip: '', port: '', bluetoothMac: '', canInterface: 'PCAN_USBBUS1', url: '', frequency: '', interface: '' }}
+        globalConnection={useMemo(() => (mode === 'GLOBAL' ? session.connection : { ip: '', port: '', bluetoothMac: '', canInterface: 'PCAN_USBBUS1', url: '', frequency: '', interface: '' }), [mode, session.connection])}
         token={token}
       />
+
+      {disruptiveApproval && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg rounded-xl border border-amber-500/50 bg-cyber-900 shadow-[0_0_40px_rgba(245,158,11,0.2)]">
+            <div className="border-b border-cyber-700 px-6 py-4">
+              <div className="flex items-center gap-3 text-amber-300">
+                <AlertTriangle size={20} />
+                <h3 className="text-lg font-semibold">High-Risk PoC Confirmation</h3>
+              </div>
+            </div>
+            <div className="space-y-4 px-6 py-5 text-sm text-gray-300">
+              <p>{disruptiveApproval.progress} {disruptiveApproval.poc.name}</p>
+              <p>这个 PoC 被标记为高风险/破坏性操作。确认后将带 `allow_disruptive=true` 继续执行。</p>
+              <p>如果你在 {disruptiveApproval.secondsLeft}s 内没有操作，系统会自动继续本项扫描。</p>
+            </div>
+            <div className="flex items-center justify-end gap-3 border-t border-cyber-700 px-6 py-4">
+              <button
+                onClick={() => resolveDisruptiveApproval('skipped')}
+                className="rounded-md border border-cyber-700 px-4 py-2 text-sm text-gray-300 hover:border-cyber-500 hover:text-white"
+              >
+                Skip This PoC
+              </button>
+              <button
+                onClick={() => resolveDisruptiveApproval('approved')}
+                className="rounded-md bg-amber-500 px-4 py-2 text-sm font-medium text-black hover:bg-amber-400"
+              >
+                Confirm And Execute
+              </button>
+              <button
+                onClick={() => resolveDisruptiveApproval('approved_all')}
+                className="rounded-md bg-cyber-accent px-4 py-2 text-sm font-medium text-black hover:brightness-110"
+              >
+                Confirm For Rest Of Scan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Top Bar for Modes */}
       {mode !== 'SELECTION' && (
@@ -643,7 +867,7 @@ const Scanner: React.FC<ScannerProps> = ({
 
         {mode === 'AGENT' && token && (
           <div className="h-full flex flex-col">
-            <AgentScan token={token} onSessionComplete={onAddToHistory} engineUrl={engineUrl} />
+            <AgentScan token={token} currentUser={currentUser} onSessionComplete={onAddToHistory} engineUrl={engineUrl} />
           </div>
         )}
 
@@ -673,7 +897,7 @@ const Scanner: React.FC<ScannerProps> = ({
                       type="text"
                       value={engineUrl}
                       onChange={(e) => setEngineUrl(e.target.value)}
-                      placeholder="http://localhost:5002"
+                      placeholder="http://<server-ip>:5002"
                       className="flex-1 bg-cyber-900 border border-cyber-700 text-white p-2 text-sm rounded focus:border-cyber-accent outline-none font-mono"
                     />
                     <button

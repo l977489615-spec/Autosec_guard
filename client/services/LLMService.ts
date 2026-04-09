@@ -3,7 +3,8 @@ import { generateSecurityReport as generateSecurityReportViaBackend } from "./ap
 
 export const generateSecurityReport = async (
   session: ScanSession,
-  token: string | null
+  token: string | null,
+  aiSettings?: any
 ): Promise<string> => {
-  return generateSecurityReportViaBackend(session, token);
+  return generateSecurityReportViaBackend(session, token, aiSettings);
 };

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Cpu, RadioTower, RefreshCw, Send, Server, Usb, Wifi, Bluetooth, Signal, CheckCircle2, AlertTriangle } from 'lucide-react';
-import { createEdgeTask, getEdgeAgents, getEdgeRecommendations, getEdgeTasks, listPocs } from '../services/api';
+import { createEdgeTask, generateEnrollmentToken, getEdgeAgents, getEdgeRecommendations, getEdgeTasks, listPocs } from '../services/api';
 import { EdgeAgentRecord, EdgeRecommendationItem, EdgeRequirementSummary, EdgeTaskRecord } from '../types';
 
 interface EdgeManagerProps {
@@ -15,6 +15,7 @@ const capabilityIcons: Record<string, React.ReactNode> = {
   wifi: <Wifi size={14} />,
   bluetooth: <Bluetooth size={14} />,
   sdr: <Signal size={14} />,
+  pcan: <RadioTower size={14} className="text-emerald-400" />,
 };
 
 const EdgeManager: React.FC<EdgeManagerProps> = ({ token, currentUser, onUnauthorized }) => {
@@ -29,10 +30,14 @@ const EdgeManager: React.FC<EdgeManagerProps> = ({ token, currentUser, onUnautho
   const [requirements, setRequirements] = useState<EdgeRequirementSummary | null>(null);
   const [recommendations, setRecommendations] = useState<EdgeRecommendationItem[]>([]);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [tokenLabel, setTokenLabel] = useState('');
+  const [tokenTtlHours, setTokenTtlHours] = useState('24');
+  const [installCommand, setInstallCommand] = useState('');
   const [params, setParams] = useState({
     target_ip: '',
     bluetooth_mac: '',
-    can_interface: 'PCAN_USBBUS1',
+    can_interface: '',
+    can_bitrate: '',
     interface: '',
     rf_frequency: '',
     url: '',
@@ -97,9 +102,22 @@ const EdgeManager: React.FC<EdgeManagerProps> = ({ token, currentUser, onUnautho
     }
   };
 
+  const startTransitionRefresh = () => {
+    let count = 0;
+    const max = 8; // ~15-16 seconds total
+    const timer = window.setInterval(() => {
+      count++;
+      refreshData();
+      if (count >= max) {
+        window.clearInterval(timer);
+      }
+    }, 2000);
+  };
+
   useEffect(() => {
     refreshData();
   }, [token, currentUser?.role]);
+
 
   const buildParams = () => {
     const next: Record<string, any> = {};
@@ -163,11 +181,33 @@ const EdgeManager: React.FC<EdgeManagerProps> = ({ token, currentUser, onUnautho
       const data = await createEdgeTask(payload, token);
       setMessage(`Edge task queued on ${data.selected_agent?.display_name || data.task?.edge_agent_id || 'agent'}.`);
       await refreshData();
+      startTransitionRefresh();
     } catch (err: any) {
       if (String(err?.message || '').includes('401')) {
         onUnauthorized?.();
       }
       setError(err?.message || 'Failed to create edge task.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGenerateInstallCommand = async () => {
+    if (!token) return;
+    setLoading(true);
+    setError('');
+    setMessage('');
+    try {
+      const ttl = Number.parseInt(tokenTtlHours, 10);
+      const data = await generateEnrollmentToken(tokenLabel.trim(), Number.isFinite(ttl) ? ttl : 24, token);
+      setInstallCommand(data.install_command || '');
+      setMessage('已生成一次性边缘部署命令。令牌首次注册成功后即失效。');
+      await refreshData();
+    } catch (err: any) {
+      if (String(err?.message || '').includes('401')) {
+        onUnauthorized?.();
+      }
+      setError(err?.message || 'Failed to generate edge install command.');
     } finally {
       setLoading(false);
     }
@@ -203,6 +243,49 @@ const EdgeManager: React.FC<EdgeManagerProps> = ({ token, currentUser, onUnautho
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <div className="xl:col-span-1 bg-cyber-800 border border-cyber-700 rounded-xl p-5 space-y-4">
+          <div className="space-y-3 rounded-lg border border-cyber-700 bg-cyber-900/40 p-4">
+            <div className="text-white font-semibold">边缘端自助安装</div>
+            <div className="text-xs text-gray-400">
+              在云端生成一次性部署命令。用户在本地执行后，只会下载最小 edge runtime 并完成注册，不需要访问 `.env`。
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs uppercase tracking-wider text-gray-500">节点标签</label>
+              <input
+                value={tokenLabel}
+                onChange={(e) => setTokenLabel(e.target.value)}
+                placeholder={`${currentUser?.username || 'user'} edge node`}
+                className="w-full bg-cyber-900 border border-cyber-700 rounded-lg px-3 py-2 text-sm text-white"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs uppercase tracking-wider text-gray-500">有效期（小时）</label>
+              <input
+                value={tokenTtlHours}
+                onChange={(e) => setTokenTtlHours(e.target.value)}
+                className="w-full bg-cyber-900 border border-cyber-700 rounded-lg px-3 py-2 text-sm text-white"
+              />
+            </div>
+            <button
+              onClick={handleGenerateInstallCommand}
+              disabled={loading || !token}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-cyber-accent/20 border border-cyber-accent/40 text-cyber-accent hover:bg-cyber-accent/25 disabled:opacity-60"
+            >
+              <Server size={16} />
+              生成部署命令
+            </button>
+            {installCommand && (
+              <div className="space-y-2">
+                <label className="text-xs uppercase tracking-wider text-gray-500">安装命令</label>
+                <textarea
+                  readOnly
+                  value={installCommand}
+                  rows={4}
+                  className="w-full bg-cyber-950 border border-cyber-700 rounded-lg px-3 py-2 text-xs text-emerald-300 font-mono"
+                />
+              </div>
+            )}
+          </div>
+
           <div className="flex items-center gap-2 text-white font-semibold">
             <Cpu size={18} className="text-cyber-accent" />
             任务编排
@@ -231,19 +314,25 @@ const EdgeManager: React.FC<EdgeManagerProps> = ({ token, currentUser, onUnautho
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {[
-              ['target_ip', 'Target IP'],
-              ['bluetooth_mac', 'Bluetooth MAC'],
-              ['can_interface', 'CAN Interface'],
-              ['interface', 'Wi-Fi Interface'],
-              ['rf_frequency', 'RF Frequency'],
-              ['url', 'Target URL'],
-              ['target_mac', 'Target MAC'],
+              ['target_ip', 'TARGET IP'],
+              ['bluetooth_mac', 'BLUETOOTH MAC'],
+              ['can_interface', 'CAN INTERFACE'],
+              ['interface', 'WI-FI INTERFACE'],
+              ['rf_frequency', 'RF FREQUENCY'],
+              ['url', 'TARGET URL'],
+              ['target_mac', 'TARGET MAC'],
+              ['can_bitrate', 'CAN BITRATE'],
             ].map(([key, label]) => (
               <div key={key} className="space-y-2">
                 <label className="text-xs uppercase tracking-wider text-gray-500">{label}</label>
                 <input
                   value={(params as any)[key]}
                   onChange={(e) => setParams((prev) => ({ ...prev, [key]: e.target.value }))}
+                  placeholder={
+                    key === 'can_interface' ? 'PCAN_USBBUS1' : 
+                    key === 'can_bitrate' ? '500000' : 
+                    ''
+                  }
                   className="w-full bg-cyber-900 border border-cyber-700 rounded-lg px-3 py-2 text-sm text-white"
                 />
               </div>
@@ -382,14 +471,58 @@ const EdgeManager: React.FC<EdgeManagerProps> = ({ token, currentUser, onUnautho
                         </td>
                         <td className="py-3 text-gray-300">{agent.status}</td>
                         <td className="py-3">
-                          <div className="flex flex-wrap gap-2">
                             {Object.entries(agent.capability_flags || {}).filter(([, enabled]) => Boolean(enabled)).map(([name]) => (
                               <span key={name} className="inline-flex items-center gap-1 rounded-full bg-cyber-900 border border-cyber-700 px-2 py-1 text-xs text-gray-300">
                                 {capabilityIcons[name] || null}
                                 {name}
                               </span>
                             ))}
-                          </div>
+                          
+                          {/* Hardware Insights Section */}
+                          {agent.capabilities && Object.keys(agent.capabilities).length > 0 && (
+                            <div className="mt-3 space-y-2">
+                              <details className="group">
+                                <summary className="text-[10px] uppercase tracking-tighter text-cyber-accent cursor-pointer hover:text-white transition-colors flex items-center gap-1">
+                                  <span>Hardware Insights</span>
+                                  <Signal size={10} className="group-open:rotate-180 transition-transform" />
+                                </summary>
+                                <div className="mt-2 p-3 bg-cyber-950/80 rounded-lg border border-cyber-700/50 text-[11px] font-mono whitespace-pre-wrap max-h-48 overflow-y-auto text-gray-400">
+                                  {agent.capabilities.usb?.lsusb && (
+                                    <div className="mb-2">
+                                      <div className="text-emerald-400/80 mb-1 flex items-center gap-1 border-b border-cyber-700/30 pb-0.5">
+                                        <Usb size={10} /> USB Devices
+                                      </div>
+                                      {agent.capabilities.usb.lsusb}
+                                    </div>
+                                  )}
+                                  {agent.capabilities.socketcan?.interfaces && (
+                                    <div className="mb-2">
+                                      <div className="text-cyber-accent mb-1 flex items-center gap-1 border-b border-cyber-700/30 pb-0.5">
+                                        <RadioTower size={10} /> CAN Interfaces
+                                      </div>
+                                      {agent.capabilities.socketcan.interfaces}
+                                    </div>
+                                  )}
+                                  {agent.capabilities.pcan_chardev?.present && (
+                                    <div className="mb-2">
+                                      <div className="text-emerald-400 mb-1 flex items-center gap-1 border-b border-cyber-700/30 pb-0.5">
+                                        <RadioTower size={10} /> PEAK Drivers
+                                      </div>
+                                      {agent.capabilities.pcan_chardev.devices?.join('\n') || 'Found pcan chardev'}
+                                      {agent.capabilities.pcan_chardev.proc_pcan && (
+                                        <div className="mt-1 opacity-70 italic">{agent.capabilities.pcan_chardev.proc_pcan}</div>
+                                      )}
+                                    </div>
+                                  )}
+                                  {agent.capabilities.host_tools && (
+                                    <div className="opacity-60 text-[9px]">
+                                      Available host tools: {Object.entries(agent.capabilities.host_tools).filter(([,v]) => v).map(([k]) => k).join(', ')}
+                                    </div>
+                                  )}
+                                </div>
+                              </details>
+                            </div>
+                          )}
                         </td>
                         <td className="py-3 text-xs text-gray-500">{agent.last_seen_at || '-'}</td>
                       </tr>

@@ -47,7 +47,6 @@ DEPENDENCY_MAP = {
     "requests": "requests",
     "scapy": "scapy",
     "can": "python-can",
-    "bluetooth": "pybluez/pybluez2",
     "paho.mqtt": "paho-mqtt",
     "someip": "python-someip",
     "udsoncan": "udsoncan",
@@ -68,6 +67,8 @@ def _iter_poc_files() -> list[Path]:
     files = []
     for path in sorted(POCS_DIR.rglob("*.py")):
         if ".venv" in path.parts or path == BASE_FILE:
+            continue
+        if path.name == "can_bus_utils.py":
             continue
         if path.name == "99_Dynamic_0Day.py":
             continue

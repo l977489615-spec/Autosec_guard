@@ -39,11 +39,9 @@ class NissanBlueOverflowPlugin(IVIVulnerabilityPlugin):
         if not self.target_mac:
             self.logger.error("需提供目标蓝牙MAC地址")
             return False
-        # 简单检查PyBluez是否安装
-        try:
-            import bluetooth
-        except ImportError:
-            self.logger.error("缺少 pybluez 库。请安装: sudo apt install python3-bluez && pip install pybluez")
+        # Python 3.3+ on Linux natively supports socket.AF_BLUETOOTH, so no external libraries (like pybluez2) are actually needed!
+        if not hasattr(socket, 'AF_BLUETOOTH'):
+            self.logger.error("This OS does not support native Bluetooth sockets via Python. Please run on Linux.")
             return False
         return True
 

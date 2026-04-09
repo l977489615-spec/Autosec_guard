@@ -11,6 +11,7 @@ Usage: python3 29_UDS_RoutineControl.py PCAN_USBBUS1
 """
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
+from can_bus_utils import format_can_settings, get_can_settings, open_can_bus
 class UDSRoutineControlPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = "UDS RoutineControl"
     meta_cve_id = "N/A"
@@ -21,16 +22,16 @@ class UDSRoutineControlPlugin(IVIVulnerabilityPlugin):
     is_disruptive = False
     meta_destructive_level = "Safe"
 
-    def check_prerequisites(self): return True
+    def check_prerequisites(self):
+        settings = get_can_settings(self.params)
+        self.logger.info(f"检查CAN接口: {format_can_settings(settings)}")
+        return True
     def exploit(self):
-        iface = self.params.get("can_interface", "PCAN_USBBUS1")
-        self.logger.info(f"UDS RoutineControl测试 ({iface})...")
+        settings = get_can_settings(self.params)
+        self.logger.info(f"UDS RoutineControl测试 ({format_can_settings(settings)})...")
         try:
             import can
-            if "PCAN" in iface:
-                bus = can.interface.Bus(channel=iface, interface="pcan", bitrate=500000)
-            else:
-                bus = can.interface.Bus(channel=iface, bustype="socketcan")
+            bus = open_can_bus(self.params)
             # RoutineControl: startRoutine(0x01), routineID=0xDF01 (EraseMemory variant)
             msg = can.Message(arbitration_id=0x7E0,
                 data=[0x04, 0x31, 0x01, 0xDF, 0x01, 0x00, 0x00, 0x00],

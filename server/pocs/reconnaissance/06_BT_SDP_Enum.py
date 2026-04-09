@@ -42,8 +42,8 @@ class BTSDPEnumPlugin(IVIVulnerabilityPlugin):
                 for line in result.stdout.splitlines():
                     if "Service Name:" in line or "Channel:" in line or "Protocol:" in line:
                         self.logger.info(f"  {line.strip()}")
-                self.results["vulnerable"] = True
-                self.results["evidence"] = f"{services} Bluetooth services found via sdptool"
+                self.results["vulnerable"] = False
+                self.results["evidence"] = f"Enumerated {services} Bluetooth services via sdptool; enumeration alone does not prove a vulnerability."
                 return self.results
             else:
                 self.logger.info("sdptool 查询失败或无服务")
@@ -64,8 +64,8 @@ class BTSDPEnumPlugin(IVIVulnerabilityPlugin):
                 self.logger.info(f"[+] hcitool 设备信息:")
                 for line in result.stdout.splitlines():
                     self.logger.info(f"  {line.strip()}")
-                self.results["vulnerable"] = True
-                self.results["evidence"] = f"Device info retrieved via hcitool for {target}"
+                self.results["vulnerable"] = False
+                self.results["evidence"] = f"Device info retrieved via hcitool for {target}; this is reconnaissance evidence, not a confirmed vulnerability."
                 return self.results
         except FileNotFoundError:
             self.logger.info("hcitool 也不可用，使用基于协议模拟的 SDP 检测...")

@@ -33,3 +33,10 @@ venv/
 *.sln
 *.sw?
 .env
+
+# Local databases / build artifacts
+*.db
+build/
+server/.edge_build/
+server/.edge_spec/
+server/edge_dist/

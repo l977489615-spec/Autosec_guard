@@ -42,10 +42,8 @@ load_environment()
 class AppConfig:
     secret_key: str
     database_uri: str
-    dashscope_api_key: str
     autosec_api: str
     mcp_server: str
-    edge_enrollment_token: str
     flask_host: str
     flask_port: int
     flask_debug: bool
@@ -78,10 +76,8 @@ def get_config() -> AppConfig:
     return AppConfig(
         secret_key=os.environ.get('AUTOSEC_SECRET_KEY') or secrets.token_urlsafe(32),
         database_uri=_normalize_database_uri(os.environ.get('AUTOSEC_DB_URI')),
-        dashscope_api_key=os.environ.get('DASHSCOPE_API_KEY') or os.environ.get('API_KEY', ''),
         autosec_api=os.environ.get('AUTOSEC_API', 'http://localhost:5002'),
         mcp_server=os.environ.get('MCP_SERVER', 'http://localhost:5003'),
-        edge_enrollment_token=os.environ.get('AUTOSEC_EDGE_ENROLLMENT_TOKEN', ''),
         flask_host=os.environ.get('AUTOSEC_HOST', '0.0.0.0'),
         flask_port=int(os.environ.get('AUTOSEC_PORT', '5002')),
         flask_debug=_to_bool(os.environ.get('AUTOSEC_DEBUG'), default=False),
@@ -97,10 +93,6 @@ def get_runtime_warnings(config: AppConfig) -> List[str]:
     if 'AUTOSEC_DB_URI' not in os.environ:
         warnings.append('AUTOSEC_DB_URI not set; using local SQLite database.')
 
-    if not config.dashscope_api_key:
-        warnings.append('DASHSCOPE_API_KEY not set; AI report generation and agent LLM features are disabled.')
-
-    if not config.edge_enrollment_token:
-        warnings.append('AUTOSEC_EDGE_ENROLLMENT_TOKEN not set; edge-agent enrollment is disabled.')
+    warnings.append('AI features require per-user AI configuration from the browser; the server does not use a shared model API key.')
 
     return warnings

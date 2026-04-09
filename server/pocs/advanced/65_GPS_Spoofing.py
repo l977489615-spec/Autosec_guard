@@ -7,9 +7,10 @@ Severity: High
 CVSS: 7.0
 Description: 使用HackRF广播伪造GPS L1信号
 Prerequisites: 需安装 hackrf 驱动组件，连接 HackRF SDR 硬件，并预先使用 gps-sdr-sim 生成 gpssim.bin 信号源文件。
-Usage: python3 64_GPS_Spoofing.py
+Usage: python3 65_GPS_Spoofing.py [frequency_hz]
 """
 import os
+import math
 import time
 import subprocess
 import shutil
@@ -27,6 +28,10 @@ class GPSSpoofingPlugin(IVIVulnerabilityPlugin):
 
     def check_prerequisites(self):
         self.frequency = str(self.params.get("frequency", "")).strip()
+        self.observer_file = self.params.get("observer_file")
+        self.expected_lat = self.params.get("expected_lat")
+        self.expected_lon = self.params.get("expected_lon")
+        self.min_drift_meters = float(self.params.get("min_drift_meters", 100))
         # 1. 检查是否存在hackrf工具
         if not shutil.which("hackrf_transfer"):
             self.logger.error("未找到 hackrf_transfer 工具。请先安装 HackRF 软件包 (如 sudo apt-get install hackrf)。")
@@ -43,6 +48,49 @@ class GPSSpoofingPlugin(IVIVulnerabilityPlugin):
                 except ValueError:
                     self.frequency = "1575420000"
         return True
+
+    def _parse_latest_nmea_position(self, path):
+        if not path or not os.path.exists(path):
+            return None
+        with open(path, "r", encoding="utf-8", errors="ignore") as handle:
+            lines = handle.read().splitlines()
+        for line in reversed(lines):
+            if line.startswith("$GPGGA") or line.startswith("$GNGGA"):
+                parts = line.split(",")
+                if len(parts) > 5 and parts[2] and parts[4]:
+                    lat = self._nmea_to_decimal(parts[2], parts[3])
+                    lon = self._nmea_to_decimal(parts[4], parts[5])
+                    if lat is not None and lon is not None:
+                        return lat, lon
+            if line.startswith("$GPRMC") or line.startswith("$GNRMC"):
+                parts = line.split(",")
+                if len(parts) > 6 and parts[3] and parts[5]:
+                    lat = self._nmea_to_decimal(parts[3], parts[4])
+                    lon = self._nmea_to_decimal(parts[5], parts[6])
+                    if lat is not None and lon is not None:
+                        return lat, lon
+        return None
+
+    def _nmea_to_decimal(self, value, hemisphere):
+        try:
+            raw = float(value)
+        except (TypeError, ValueError):
+            return None
+        degrees = int(raw / 100)
+        minutes = raw - degrees * 100
+        decimal = degrees + minutes / 60.0
+        if hemisphere in {"S", "W"}:
+            decimal *= -1
+        return decimal
+
+    def _distance_meters(self, lat1, lon1, lat2, lon2):
+        radius = 6371000.0
+        phi1 = math.radians(lat1)
+        phi2 = math.radians(lat2)
+        dphi = math.radians(lat2 - lat1)
+        dlambda = math.radians(lon2 - lon1)
+        a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+        return 2 * radius * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
     def exploit(self):
         self.logger.info("准备执行 GPS 欺骗攻击 (HackRF Pcap/Bin Replay)...")
@@ -73,6 +121,7 @@ class GPSSpoofingPlugin(IVIVulnerabilityPlugin):
         ]
         
         try:
+            before_position = self._parse_latest_nmea_position(self.observer_file)
             self.logger.info(f"执行命令: {' '.join(cmd)}")
             
             # 使用 Popen 启动进程，以便中途能够主动终止
@@ -111,14 +160,43 @@ class GPSSpoofingPlugin(IVIVulnerabilityPlugin):
             self.logger.info("PoC 演示时限结束，正在停止无线电发射...")
             process.terminate()
             process.wait(timeout=3)
+            after_position = self._parse_latest_nmea_position(self.observer_file)
             
             self.logger.info("[SUCCESS] \u6210\u529f\u5b8c\u6210 GPS \u4f2a\u9020\u4fe1\u53f7\u7684\u5e7f\u64ad\u3002")
             self.logger.info("\u82e5\u76ee\u6807\u8f66\u8f86(ADAS\u6a21\u5757/\u5bfc\u822a\u6a21\u5757)\u7f3a\u4e4f\u4fe1\u53f7DRM/\u5bc6\u7801\u5b66\u6821\u9a8c(OSNMA)\uff0c\u5176\u4f4d\u7f6e\u5750\u6807\u53ef\u80fd\u5df2\u88ab\u7be1\u6539\u3002")
             
+            if (
+                before_position
+                and after_position
+                and self.expected_lat is not None
+                and self.expected_lon is not None
+            ):
+                expected_lat = float(self.expected_lat)
+                expected_lon = float(self.expected_lon)
+                pre_drift = self._distance_meters(before_position[0], before_position[1], expected_lat, expected_lon)
+                post_drift = self._distance_meters(after_position[0], after_position[1], expected_lat, expected_lon)
+                if post_drift + 1 < pre_drift and abs(post_drift - pre_drift) >= self.min_drift_meters:
+                    return {
+                        "status": "success",
+                        "vulnerable": True,
+                        "details": (
+                            f"Observer NMEA stream moved {abs(post_drift - pre_drift):.1f}m toward spoofed coordinates "
+                            f"({expected_lat},{expected_lon}) during transmission."
+                        ),
+                    }
+                return {
+                    "status": "success",
+                    "vulnerable": False,
+                    "details": (
+                        f"Transmission succeeded but observer drift was insufficient for confirmation "
+                        f"(pre={pre_drift:.1f}m post={post_drift:.1f}m)."
+                    ),
+                }
+
             return {
                 "status": "success",
                 "vulnerable": False,
-                "details": "已发射伪造 GPS 信号，需结合目标导航/ADAS 偏移现象人工确认是否可被欺骗。"
+                "details": "Transmission verified, but no observer_file+expected_lat/expected_lon evidence was provided to confirm target position drift."
             }
                 
         except Exception as e:
@@ -130,9 +208,6 @@ class GPSSpoofingPlugin(IVIVulnerabilityPlugin):
             }
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python3 64_GPS_Spoofing.py")
-        sys.exit(1)
     params = {"target_ip": "N/A"}
     if len(sys.argv) >= 2:
         params["frequency"] = sys.argv[1]

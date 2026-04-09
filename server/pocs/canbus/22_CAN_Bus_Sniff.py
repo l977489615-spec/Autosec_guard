@@ -12,6 +12,7 @@ Usage: python3 22_CAN_Bus_Sniff.py PCAN_USBBUS1
 import sys
 import time
 from iv_plugin_base import IVIVulnerabilityPlugin
+from can_bus_utils import format_can_settings, get_can_settings, open_can_bus
 
 class CANBusSniffPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = "CAN Bus Sniff"
@@ -24,19 +25,15 @@ class CANBusSniffPlugin(IVIVulnerabilityPlugin):
     meta_destructive_level = "Safe"
 
     def check_prerequisites(self):
-        iface = self.params.get("can_interface", "PCAN_USBBUS1")
-        self.logger.info(f"使用CAN接口: {iface}")
+        settings = get_can_settings(self.params)
+        self.logger.info(f"使用CAN接口: {format_can_settings(settings)}")
         return True
 
     def exploit(self):
-        iface = self.params.get("can_interface", "PCAN_USBBUS1")
-        self.logger.info(f"开始CAN总线流量捕获 ({iface}), 持续5秒...")
+        settings = get_can_settings(self.params)
+        self.logger.info(f"开始CAN总线流量捕获 ({format_can_settings(settings)}), 持续5秒...")
         try:
-            import can
-            if "PCAN" in iface:
-                bus = can.interface.Bus(channel=iface, interface="pcan", bitrate=500000)
-            else:
-                bus = can.interface.Bus(channel=iface, bustype="socketcan")
+            bus = open_can_bus(self.params)
             ids = {}
             start = time.time()
             count = 0

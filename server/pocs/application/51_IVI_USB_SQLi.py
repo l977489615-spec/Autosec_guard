@@ -11,7 +11,6 @@ Usage: sudo python3 51_IVI_USB_SQLi.py
 """
 import sys
 import os
-import subprocess
 import time
 from iv_plugin_base import IVIVulnerabilityPlugin
 
@@ -21,7 +20,7 @@ class IVIUsbSqliPlugin(IVIVulnerabilityPlugin):
     meta_severity = "Medium"
     meta_protocol = "unknown"
     meta_target_os = ["all"]
-    meta_required_params = ["usb_mount_point"]
+    meta_required_params = []
     is_disruptive = False
     meta_destructive_level = "Safe"
 

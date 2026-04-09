@@ -1,9 +1,11 @@
 import ast
+import base64
 import errno
 import ipaddress
 import json
 import os
 import resource
+import shutil
 import socket
 import subprocess
 import sys
@@ -15,8 +17,19 @@ from typing import Any, Dict, Iterator, List, Optional
 
 
 SERVER_DIR = Path(__file__).resolve().parent
+if getattr(sys, "frozen", False):
+    SERVER_DIR = Path(getattr(sys, "_MEIPASS"))
 POCS_DIR = SERVER_DIR / "pocs"
 SANDBOX_RUNNER = SERVER_DIR / "sandbox_runner.py"
+
+
+def _is_packaged_runtime() -> bool:
+    return bool(
+        getattr(sys, "frozen", False)
+        or hasattr(sys, "__compiled__")
+        or os.environ.get("NUITKA_ONEFILE_PARENT")
+        or os.environ.get("PYINSTALLER_SAFE_MODE")
+    )
 
 
 def _parse_int_env(name: str, default: int) -> int:
@@ -53,9 +66,9 @@ def _is_allowed_destination(host: Any, allowed_hosts: set[str]) -> bool:
         return False
 
 
-def _extract_security_profile(poc_path: str) -> dict:
+def _extract_security_profile_from_source(source_text: str, poc_name: str) -> dict:
     profile = {
-        "poc_name": os.path.basename(poc_path),
+        "poc_name": poc_name,
         "cve_id": "",
         "severity": "",
         "protocol": "",
@@ -66,8 +79,7 @@ def _extract_security_profile(poc_path: str) -> dict:
     }
 
     try:
-        with open(poc_path, "r", encoding="utf-8") as handle:
-            tree = ast.parse(handle.read(), filename=poc_path)
+        tree = ast.parse(source_text, filename=poc_name)
         metadata_keys = {
             "meta_poc_name",
             "meta_cve_id",
@@ -107,6 +119,13 @@ def _extract_security_profile(poc_path: str) -> dict:
     return profile
 
 
+def _extract_security_profile(poc_path: str, poc_code: Optional[str] = None) -> dict:
+    if poc_code is not None:
+        return _extract_security_profile_from_source(poc_code, os.path.basename(poc_path))
+    with open(poc_path, "r", encoding="utf-8") as handle:
+        return _extract_security_profile_from_source(handle.read(), os.path.basename(poc_path))
+
+
 def _requires_disruptive_approval(profile: dict, params: dict) -> bool:
     if params.get("allow_disruptive") in (True, "true", "True", "1", 1):
         return False
@@ -137,11 +156,38 @@ def _parse_plugin_result(stdout_text: str) -> tuple[list[str], dict]:
     return logs_text.splitlines(), plugin_results
 
 
+def _runtime_entrypoint() -> str:
+    """
+    Exhaustive search for the most reliable executable entrypoint.
+    Prioritizes the stable host binary, then sys.executable, then system python3.
+    """
+    if _is_packaged_runtime():
+        preferred_paths = [
+            os.environ.get("NUITKA_ONEFILE_BINARY"),
+            os.environ.get("AUTOSEC_EDGE_EXECUTABLE"),
+            os.path.abspath(sys.argv[0]) if sys.argv and sys.argv[0] else None,
+            sys.executable,
+        ]
+        for candidate in preferred_paths:
+            if candidate and os.path.isfile(candidate):
+                return candidate
+
+        sys_python = shutil.which("python3") or shutil.which("python")
+        if sys_python:
+            return sys_python
+
+        return sys.executable
+        
+    return sys.executable
+
+
 def _build_command(poc_path: str, params: dict, use_unbuffered: bool = False) -> list[str]:
+    if _is_packaged_runtime():
+        return [_runtime_entrypoint(), "--run-sandbox", poc_path, json.dumps(params)]
     runner_args = [str(SANDBOX_RUNNER), poc_path, json.dumps(params)]
     if use_unbuffered:
-        return [sys.executable, "-u", *runner_args]
-    return [sys.executable, *runner_args]
+        return [_runtime_entrypoint(), "-u", *runner_args]
+    return [_runtime_entrypoint(), *runner_args]
 
 
 @dataclass
@@ -157,6 +203,7 @@ class PocWorkerPlan:
     allowed_hosts: List[str]
     command: list[str]
     env: dict
+    poc_code: Optional[str] = None
     timeout_seconds: int = 60
 
 
@@ -175,9 +222,13 @@ class LocalSandboxPocWorker:
         trace_id: str,
         session_id: str,
         timeout_seconds: int = 60,
+        poc_code: Optional[str] = None,
     ) -> PocWorkerPlan:
         poc_filename = os.path.basename(poc_path)
-        security_profile = _extract_security_profile(poc_path)
+        security_profile = _extract_security_profile(
+            poc_path,
+            poc_code=poc_code if poc_code and not os.path.exists(poc_path) else None,
+        )
         allowed_hosts = []
         if params.get("target_ip"):
             allowed_hosts.append(str(params["target_ip"]))
@@ -202,32 +253,45 @@ class LocalSandboxPocWorker:
             allowed_hosts=allowed_hosts,
             command=_build_command(poc_path, params, use_unbuffered=False),
             env=_build_sandbox_env(params, allowed_hosts),
+            poc_code=poc_code,
             timeout_seconds=timeout_seconds,
         )
 
     def run_once(self, plan: PocWorkerPlan) -> dict:
         start_time = time.time()
-        proc = subprocess.Popen(
-            plan.command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            env=plan.env,
-            start_new_session=True,
-        )
+        logs = []
+        
+        env_override = dict(plan.env)
+        if plan.poc_code:
+            env_override["AUTOSEC_POC_INLINE_CODE_B64"] = base64.b64encode(
+                plan.poc_code.encode("utf-8")
+            ).decode("ascii")
+            env_override["AUTOSEC_POC_INLINE_NAME"] = plan.poc_filename
+
         try:
-            stdout_text, _ = proc.communicate(timeout=plan.timeout_seconds)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            stdout_text, _ = proc.communicate()
-            elapsed = round(time.time() - start_time, 2)
-            logs, plugin_results = _parse_plugin_result(stdout_text or "")
-            return {
-                "success": False,
-                "returncode": proc.returncode,
-                "logs": logs,
-                "plugin_results": plugin_results,
-                "elapsed_seconds": elapsed,
+            logs.append(f"[*] Executing sandbox command: {' '.join(plan.command)}")
+            proc = subprocess.Popen(
+                plan.command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                env=env_override,
+                start_new_session=True,
+            )
+            try:
+                stdout_text, _ = proc.communicate(timeout=plan.timeout_seconds)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                stdout_text, _ = proc.communicate()
+                elapsed = round(time.time() - start_time, 2)
+                p_logs, plugin_results = _parse_plugin_result(stdout_text or "")
+                logs.extend(p_logs)
+                return {
+                    "success": False,
+                    "returncode": proc.returncode,
+                    "logs": logs,
+                    "plugin_results": plugin_results,
+                    "elapsed_seconds": elapsed,
                 "security_profile": plan.security_profile,
                 "sandbox_profile": plan.sandbox_profile,
                 "trace_id": plan.trace_id,
@@ -235,8 +299,19 @@ class LocalSandboxPocWorker:
                 "timeout": True,
             }
 
+        except Exception as e:
+            elapsed = round(time.time() - start_time, 2)
+            logs.append(f"[-] Subprocess failure: {e}")
+            return {
+                "success": False,
+                "logs": logs,
+                "plugin_results": {"error": str(e)},
+                "elapsed_seconds": elapsed,
+                "trace_id": plan.trace_id,
+            }
         elapsed = round(time.time() - start_time, 2)
-        logs, plugin_results = _parse_plugin_result(stdout_text or "")
+        p_logs, plugin_results = _parse_plugin_result(stdout_text or "")
+        logs.extend(p_logs)
         return {
             "success": proc.returncode == 0 and "error" not in plugin_results,
             "returncode": proc.returncode,
@@ -250,13 +325,19 @@ class LocalSandboxPocWorker:
         }
 
     def iter_stream(self, plan: PocWorkerPlan) -> Iterator[dict]:
+        env_override = dict(plan.env)
+        if plan.poc_code:
+            env_override["AUTOSEC_POC_INLINE_CODE_B64"] = base64.b64encode(
+                plan.poc_code.encode("utf-8")
+            ).decode("ascii")
+            env_override["AUTOSEC_POC_INLINE_NAME"] = plan.poc_filename
         proc = subprocess.Popen(
             _build_command(plan.poc_path, plan.params, use_unbuffered=True),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
-            env=plan.env,
+            env=env_override,
             start_new_session=True,
         )
 

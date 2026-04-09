@@ -83,7 +83,7 @@ const PocDetailModal: React.FC<PocDetailModalProps> = ({ poc, isOpen, onClose, o
           {/* Code Snippet */}
           <div>
             <h3 className="text-sm font-bold text-cyber-accent uppercase tracking-wider mb-2 flex items-center gap-2">
-              <Terminal size={16} /> Exploit POC Script (Prototype)
+              <Terminal size={16} /> Exploit POC Script (Header Prototype)
             </h3>
             <div className="bg-[#0d1117] border border-gray-700 rounded-lg p-4 font-mono text-sm text-gray-300 overflow-x-auto shadow-inner relative group">
               <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -91,8 +91,11 @@ const PocDetailModal: React.FC<PocDetailModalProps> = ({ poc, isOpen, onClose, o
               </div>
               <pre className="whitespace-pre-wrap"><code>{poc.codeSnippet}</code></pre>
             </div>
-            <p className="text-xs text-gray-600 mt-2 italic">
-              * This script is a proof-of-concept for verification purposes only. Ensure authorization before executing on target vehicle.
+            <p className="text-xs text-cyber-danger/70 mt-2 italic flex items-center gap-1">
+              <AlertTriangle size={12} /> Full exploit logic is hidden to prevent sensitive code leakage. 
+            </p>
+            <p className="text-[10px] text-gray-600 mt-1 italic">
+              * This snippet is for verification purposes only. Ensure authorization before executing on target vehicle.
             </p>
           </div>
         </div>

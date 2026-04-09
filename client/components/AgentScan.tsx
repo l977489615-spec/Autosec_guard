@@ -10,7 +10,7 @@ import { CarModel } from './CarModel';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import AttackGraph from './AttackGraph';
-import { assessPhysicalImpact, generateAttackGraph, generateStructuredReport, simulateRemediation, getBackendUrl, setBackendUrl } from '../services/api';
+import { assessPhysicalImpact, buildAiConfigPayload, generateAttackGraph, generateStructuredReport, simulateRemediation, getBackendUrl, setBackendUrl } from '../services/api';
 import { AssessmentArtifacts } from '../types';
 
 interface AgentPhase {
@@ -53,6 +53,7 @@ interface AdaptiveContext {
 
 interface AgentScanProps {
   token: string;
+  currentUser?: any;
   onSessionComplete?: (session: any) => void;
   engineUrl?: string;
 }
@@ -87,11 +88,11 @@ const diagnosePhaseFailure = ({
     ].join('\n');
   }
 
-  if (/DASHSCOPE_API_KEY 未配置|AI 报告功能未启用|API key/i.test(combined)) {
+  if (/AI API key is required|API key 未配置|AI 报告功能未启用|base_url is required|base_url 未配置/i.test(combined)) {
     return [
-      'Diagnosis: 模型 API Key 未配置',
-      'Detail: 服务端未检测到 DASHSCOPE_API_KEY，Agent 无法调用模型。',
-      'Action: 在 .env 中配置 DASHSCOPE_API_KEY 后重启后端。',
+      'Diagnosis: 当前用户未配置模型 API',
+      'Detail: 本次请求没有携带有效的 AI 配置，Agent 无法调用模型。',
+      'Action: 到 Profile Settings 填写 OpenAI-compatible Base URL、API Key 和模型名。',
     ].join('\n');
   }
 
@@ -120,13 +121,13 @@ const diagnosePhaseFailure = ({
 };
 
 const diagnosePhaseOutput = (output: string) => {
-  if (/DASHSCOPE_API_KEY 未配置|AI 报告功能未启用|API 错误|请求失败或配额耗尽/i.test(output)) {
+  if (/AI API key is required|API key 未配置|AI 报告功能未启用|API 错误|请求失败或配额耗尽|base_url is required|base_url 未配置/i.test(output)) {
     return {
       isError: true,
       output: [
         'Diagnosis: 模型 API 或模型调用失败',
         `Detail: ${output}`,
-        'Action: 检查 DASHSCOPE_API_KEY、模型额度和外网连通性。',
+        'Action: 检查当前用户的 API Key、模型名、额度和外网连通性。',
       ].join('\n'),
     };
   }
@@ -186,7 +187,7 @@ const getResumablePhase = (records: PhaseRecord[] = []) => {
   return null;
 };
 
-const AgentScan: React.FC<AgentScanProps> = ({ token, onSessionComplete, engineUrl }) => {
+const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComplete, engineUrl }) => {
   const [targetIp, setTargetIp] = useState('');
   const [targetName, setTargetName] = useState('IVI System');
   const [isFullMode, setIsFullMode] = useState(true);
@@ -281,6 +282,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, onSessionComplete, engineU
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${token}`,
   };
+  const aiConfig = buildAiConfigPayload(currentUser?.ai_config);
 
 
   const fetchAdaptiveContext = async (ip: string, openPorts: number[] = []) => {
@@ -479,11 +481,12 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, onSessionComplete, engineU
         const r = await fetch(`${activeBackendUrl}/api/agent-scan`, {
           method: 'POST',
           headers: authHeaders,
-          body: JSON.stringify({
-            target_ip: targetIp,
-            target_name: targetName,
-            resume_from: resumeFrom,
-            ...(canInterface && { can_interface: canInterface }),
+            body: JSON.stringify({
+              target_ip: targetIp,
+              target_name: targetName,
+              resume_from: resumeFrom,
+              ai_config: aiConfig,
+              ...(canInterface && { can_interface: canInterface }),
             ...(bluetoothMac && { bluetooth_mac: bluetoothMac }),
             ...(wifiInterface && { wifi_interface: wifiInterface }),
             ...(rfFrequency && { frequency: rfFrequency }),
@@ -555,6 +558,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, onSessionComplete, engineU
               target_name: targetName,
               phase: PHASES[i].name,
               context: prevContext,
+              ai_config: aiConfig,
               ...(canInterface && { can_interface: canInterface }),
               ...(bluetoothMac && { bluetooth_mac: bluetoothMac }),
               ...(wifiInterface && { wifi_interface: wifiInterface }),

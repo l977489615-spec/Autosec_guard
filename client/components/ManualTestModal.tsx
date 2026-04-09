@@ -13,6 +13,9 @@ interface ManualTestModalProps {
 
 const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose, globalConnection, token }) => {
   const [localParams, setLocalParams] = useState<Partial<ConnectionParams>>({});
+  const prevIsOpen = useRef(false);
+  const prevPocId = useRef<string | null>(null);
+
   const [isRunning, setIsRunning] = useState(false);
   const [consoleOutput, setConsoleOutput] = useState<string[]>([]);
   const [testResult, setTestResult] = useState<'idle' | 'success' | 'fail' | 'error'>('idle');
@@ -27,8 +30,8 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
   const edgeAllowed = supportedPlanes.includes('edge');
 
   useEffect(() => {
-    // Reset state when modal opens
-    if (isOpen && poc) {
+    // Initialize/Reset state only when modal opens or PoC changes
+    if (isOpen && poc && (!prevIsOpen.current || prevPocId.current !== poc.id)) {
       const initial: Partial<ConnectionParams> = {};
       poc.requiredParams.forEach(p => {
         if (p === 'ip') initial.ip = globalConnection.ip;
@@ -64,6 +67,9 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
           .catch(() => setEdgeAgents([]));
       }
     }
+    
+    prevIsOpen.current = isOpen;
+    prevPocId.current = poc?.id || null;
   }, [isOpen, poc, globalConnection, token]);
 
   useEffect(() => {

@@ -291,3 +291,14 @@ export interface EdgeRecommendationItem {
   matches: boolean;
   missing_capabilities: string[];
 }
+
+export interface EdgeEnrollmentTokenRecord {
+  id: number;
+  label: string;
+  status: string;  // active, used, revoked
+  created_by: string;
+  used_by_agent_id?: string;
+  expires_at?: string;
+  created_at?: string;
+  used_at?: string;
+}

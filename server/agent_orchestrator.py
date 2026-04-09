@@ -1,7 +1,7 @@
 """
 Multi-Agent Orchestrator — AutoSec Guard
 ==========================================
-基于 OpenAI 兼容接口（DashScope/Qwen）实现的多 Agent 协作自主渗透测试系统。
+基于 OpenAI 兼容接口实现的多 Agent 协作自主渗透测试系统。
 
 7 个专业 Agent 通过调用 MCP Server 工具协作完成完整的车辆渗透测试闭环：
 
@@ -47,7 +47,7 @@ Multi-Agent Orchestrator — AutoSec Guard
 
 使用方法:
   from agent_orchestrator import AgentOrchestrator
-  orch = AgentOrchestrator(target_ip="192.168.100.1", dashscope_api_key="YOUR_KEY")
+  orch = AgentOrchestrator(target_ip="192.168.100.1", llm_config={"api_key": "YOUR_KEY", "base_url": "https://..."})
   report = await orch.run_full_assessment()
 """
 
@@ -72,7 +72,6 @@ CONFIG = get_config()
 
 # MCP Server 地址
 MCP_SERVER = CONFIG.mcp_server
-DASHSCOPE_API_KEY = CONFIG.dashscope_api_key
 
 # ──────────────────────────────────────────────
 # MCP Tool Caller — 供 Agent 调用
@@ -96,6 +95,14 @@ SUPERVISOR_LIMITS = {
     "max_consecutive_stalled_result": 2,
     "max_cascading_errors": 3,
 }
+
+
+def _utc_now() -> datetime.datetime:
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+def _utc_timestamp() -> str:
+    return _utc_now().strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
 @dataclass
@@ -139,7 +146,7 @@ class Finding:
     error: str = ""
     source: str = "execution"
     detected_at: str = field(
-        default_factory=lambda: datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+        default_factory=_utc_timestamp
     )
 
     def to_legacy_dict(self) -> Dict[str, Any]:
@@ -431,35 +438,63 @@ def _direct_tool_call(
             )
             supported_planes = (poc_meta or {}).get("supported_execution_planes") or ["cloud", "edge"]
             recommended_plane = (poc_meta or {}).get("recommended_execution_plane") or "cloud"
-            if recommended_plane == "edge" and "edge" in supported_planes:
-                auth_token = (tool_state or {}).get("auth_token")
+            
+            # --- START SMART ROUTING LOGIC ---
+            # 1. Check if the PoC explicitly RECOMMENDS Edge (e.g. CAN/Hardware logic)
+            # 2. Check if the Target IP is in a private network reachable by an online Edge Agent (Smart Routing)
+            auth_token = (tool_state or {}).get("auth_token")
+            target_ip = poc_params.get("target_ip")
+            
+            should_use_edge = (recommended_plane == "edge" and "edge" in supported_planes)
+            
+            if not should_use_edge and target_ip and auth_token:
+                try:
+                    route_resp = requests.post(
+                        f"{AUTOSEC_API}/api/edge/route-check",
+                        headers={"Authorization": auth_token},
+                        json={"target_ip": target_ip},
+                        timeout=5,
+                    )
+                    if route_resp.ok:
+                        route_data = route_resp.json()
+                        if route_data.get("recommended_plane") == "edge":
+                            should_use_edge = True
+                            if on_log:
+                                agent_name = (route_data.get("selected_agent") or {}).get("display_name") or "Auto"
+                                on_log({"type": "info", "message": f"[Router] 智能路由探测: 目标 {target_ip} 位于边缘节点 {agent_name} 所在的私有网段，自动转为端侧执行。"})
+                except Exception as e:
+                    logger.warning(f"[Router] Route check failed: {e}")
+
+            if should_use_edge:
                 if not auth_token:
                     return {"blocked": False, "error": f"PoC {poc_name} requires edge execution but no auth token was available to create an edge task."}
-                edge_payload = {"filename": poc_name, "params": poc_params}
+                
+                # Use sync=True to get immediate result from the edge agent
+                edge_payload = {"filename": poc_name, "params": poc_params, "sync": True}
                 try:
                     resp = requests.post(
                         f"{AUTOSEC_API}/api/edge/tasks",
                         headers={"Authorization": auth_token},
                         json=edge_payload,
-                        timeout=30,
+                        timeout=120, 
                     )
                     if resp.ok:
                         data = resp.json()
                         agent_name = (data.get("selected_agent") or {}).get("display_name") or data.get("task", {}).get("edge_agent_id") or "auto"
-                        if on_log:
-                            on_log({"type": "info", "message": f"[Executor] Edge-only PoC 已转为边缘任务: {poc_name} -> {agent_name}"})
+                        sync_result = data.get("sync_result") or {}
+                        
                         return {
                             "blocked": False,
-                            "queued": True,
-                            "vulnerable": False,
-                            "evidence": f"Queued for edge execution on {agent_name}",
-                            "logs": [],
-                            "edge_task_id": data.get("task", {}).get("task_id"),
-                            "worker_mode": "edge_queue",
+                            "vulnerable": sync_result.get("vulnerable", False),
+                            "evidence": sync_result.get("evidence") or f"Executed via edge agent: {agent_name}",
+                            "logs": sync_result.get("logs", []),
+                            "execution_time": sync_result.get("elapsed_seconds"),
+                            "worker_mode": "edge_sync",
                         }
                     return {"blocked": False, "error": f"Edge task API {resp.status_code}: {resp.text[:200]}"}
                 except Exception as e:
                     return {"blocked": False, "error": f"Edge task request failed: {e}"}
+            # --- END SMART ROUTING LOGIC ---
             try:
                 resp = requests.post(
                     f"{AUTOSEC_API}/api/run_poc",
@@ -544,11 +579,14 @@ class QwenAgent:
     单个 Qwen Agent — 封装 LLM 调用，支持通过函数调用驱动 MCP 工具
     """
     def __init__(self, agent_name: str, system_prompt: str, mcp_tools: List[dict],
+                 api_key: str,
+                 base_url: str,
                  model_name: str = "qwen-plus", max_turns: int = 8, on_log: Optional[callable] = None):
         self.agent_name = agent_name
         self.system_prompt = system_prompt
         self.mcp_tools = mcp_tools
-        self._api_key = DASHSCOPE_API_KEY
+        self._api_key = api_key
+        self._base_url = base_url.rstrip("/")
         self._model_name = model_name
         self._max_turns = max_turns
         self.on_log = on_log
@@ -577,7 +615,7 @@ class QwenAgent:
             "scope": scope,
             "severity": severity,
             "message": message,
-            "timestamp": datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+            "timestamp": _utc_timestamp(),
         }
         self.supervisor_events.append(event)
         if self.on_log:
@@ -676,14 +714,16 @@ class QwenAgent:
         """
         if not self._api_key:
             raise RuntimeError(
-                f"[{self.agent_name}] DASHSCOPE_API_KEY 未配置。"
-                "请确保 DASHSCOPE_API_KEY 已设置为环境变量。"
+                f"[{self.agent_name}] API key 未配置。"
+                "请在前端 Profile Settings 中填写当前用户的 AI 配置。"
             )
+        if not self._base_url:
+            raise RuntimeError(f"[{self.agent_name}] base_url 未配置。")
 
         from openai import OpenAI
         client = OpenAI(
             api_key=self._api_key,
-            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+            base_url=self._base_url
         )
 
         full_prompt = f"上下文信息:\n{context}\n\n任务:\n{user_message}"
@@ -918,6 +958,80 @@ ASSESSMENT_AGENT_PROMPT = """
 """
 
 
+def build_assessment_call(
+    target_ip: str,
+    target_name: str = "Unknown Target",
+    context: str = "",
+    report_date: Optional[str] = None,
+) -> Dict[str, str]:
+    """Shared report metadata builder for global scans and agent scans."""
+    effective_report_date = report_date or datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    effective_target_name = target_name or target_ip or "Unknown Target"
+
+    prompt = (
+        f"基于对智能网联汽车目标 '{effective_target_name}' ({target_ip}) 的完整渗透测试结果，"
+        "生成符合 ISO 21434 / UN R155 要求的专业安全评估报告。"
+        f"【当前时间】{effective_report_date}。"
+        f"报告中的评估日期必须写 {effective_report_date}，评估团队必须写 BIOS团队。"
+    )
+
+    context_prefix = (
+        f"【当前时间】{effective_report_date}\n"
+        f"【评估日期】{effective_report_date}\n"
+        f"【评估团队】BIOS团队\n"
+        f"【评估目标】{effective_target_name}\n"
+        f"【目标IP】{target_ip}\n\n"
+    )
+
+    return {
+        "prompt": prompt,
+        "context": f"{context_prefix}{context or ''}",
+    }
+
+
+def create_assessment_agent(
+    llm_config: Optional[Dict[str, Any]] = None,
+    on_log: Optional[callable] = None,
+) -> QwenAgent:
+    llm_config = llm_config or {}
+    api_key = str(llm_config.get("api_key") or "").strip()
+    base_url = str(llm_config.get("base_url") or "").strip()
+    fast_model = str(llm_config.get("fast_model") or "qwen-plus").strip()
+    strong_model = str(llm_config.get("strong_model") or fast_model or "qwen-max").strip()
+    report_model = str(llm_config.get("report_model") or strong_model or fast_model or "qwen-max").strip()
+
+    return QwenAgent(
+        "评估Agent",
+        ASSESSMENT_AGENT_PROMPT,
+        [],
+        api_key=api_key,
+        base_url=base_url,
+        model_name=report_model,
+        on_log=on_log,
+    )
+
+
+def generate_assessment_report(
+    *,
+    target_ip: str,
+    target_name: str = "Unknown Target",
+    llm_config: Optional[Dict[str, Any]] = None,
+    context: str = "",
+    report_date: Optional[str] = None,
+    on_log: Optional[callable] = None,
+) -> str:
+    assessment_input = build_assessment_call(
+        target_ip=target_ip,
+        target_name=target_name,
+        context=context,
+        report_date=report_date,
+    )
+    return create_assessment_agent(llm_config=llm_config, on_log=on_log).call(
+        assessment_input["prompt"],
+        context=assessment_input["context"],
+    )
+
+
 
 REFLECTOR_AGENT_PROMPT = """
 你是一名安全验证策略反思专家（Reflector Agent）。
@@ -939,7 +1053,7 @@ class AgentOrchestrator:
     """
 
     def __init__(self, target_ip: str, target_name: str = "Vehicle Target",
-                 dashscope_api_key: Optional[str] = None,
+                 llm_config: Optional[Dict[str, Any]] = None,
                  auth_token: Optional[str] = None,
                  can_interface: str = "",
                  bluetooth_mac: str = "",
@@ -958,8 +1072,18 @@ class AgentOrchestrator:
         if wifi_interface:
             self.available_params["wifi_interface"] = wifi_interface
 
-        if dashscope_api_key:
-            os.environ["DASHSCOPE_API_KEY"] = dashscope_api_key
+        llm_config = llm_config or {}
+        self.llm_api_key = str(llm_config.get("api_key") or "").strip()
+        self.llm_base_url = str(llm_config.get("base_url") or "").strip()
+        self.fast_model = str(llm_config.get("fast_model") or "qwen-plus").strip()
+        self.strong_model = str(llm_config.get("strong_model") or self.fast_model or "qwen-max").strip()
+        self.report_model = str(llm_config.get("report_model") or self.strong_model or self.fast_model or "qwen-max").strip()
+        logger.info(
+            "[Orchestrator] LLM profile selected: fast_model=%s strong_model=%s report_model=%s",
+            self.fast_model,
+            self.strong_model,
+            self.report_model,
+        )
 
         # 从 MCP Server 获取工具描述
         self.mcp_tools = self._load_mcp_tools()
@@ -970,15 +1094,23 @@ class AgentOrchestrator:
         self.execution_trace: List[dict] = []
 
         # 初始化 Agent
-        self.recon_agent = QwenAgent("侦察Agent", RECON_AGENT_PROMPT, self.mcp_tools, on_log=self._add_log)
-        self.planner_agent = QwenAgent("规划Agent", PLANNER_AGENT_PROMPT, [], model_name="qwen-plus", on_log=self._add_log)
-        self.decision_agent = QwenAgent("决策Agent", DECISION_AGENT_PROMPT, self.mcp_tools, on_log=self._add_log)
-        self.weaponize_agent = QwenAgent("Weaponize Agent", WEAPONIZE_AGENT_PROMPT, [], model_name="qwen-max", on_log=self._add_log)
+        self.recon_agent = QwenAgent("侦察Agent", RECON_AGENT_PROMPT, self.mcp_tools, api_key=self.llm_api_key, base_url=self.llm_base_url, model_name=self.fast_model, on_log=self._add_log)
+        self.planner_agent = QwenAgent("规划Agent", PLANNER_AGENT_PROMPT, [], api_key=self.llm_api_key, base_url=self.llm_base_url, model_name=self.fast_model, on_log=self._add_log)
+        self.decision_agent = QwenAgent("决策Agent", DECISION_AGENT_PROMPT, self.mcp_tools, api_key=self.llm_api_key, base_url=self.llm_base_url, model_name=self.fast_model, on_log=self._add_log)
+        self.weaponize_agent = QwenAgent("Weaponize Agent", WEAPONIZE_AGENT_PROMPT, [], api_key=self.llm_api_key, base_url=self.llm_base_url, model_name=self.strong_model, on_log=self._add_log)
         self.executor_agent = QwenAgent("执行Agent", EXECUTOR_AGENT_PROMPT, self.mcp_tools,
-                                           max_turns=20, on_log=self._add_log)
-        self.assessment_agent = QwenAgent("评估Agent", ASSESSMENT_AGENT_PROMPT, [],
-                                            model_name="qwen-max", on_log=self._add_log)
-        self.reflector_agent = QwenAgent("反思Agent", REFLECTOR_AGENT_PROMPT, [], model_name="qwen-plus", on_log=self._add_log)
+                                           api_key=self.llm_api_key, base_url=self.llm_base_url, model_name=self.fast_model, max_turns=20, on_log=self._add_log)
+        self.assessment_agent = create_assessment_agent(
+            llm_config={
+                "api_key": self.llm_api_key,
+                "base_url": self.llm_base_url,
+                "fast_model": self.fast_model,
+                "strong_model": self.strong_model,
+                "report_model": self.report_model,
+            },
+            on_log=self._add_log,
+        )
+        self.reflector_agent = QwenAgent("反思Agent", REFLECTOR_AGENT_PROMPT, [], api_key=self.llm_api_key, base_url=self.llm_base_url, model_name=self.fast_model, on_log=self._add_log)
 
         # 结果存储
         self.recon_result: Optional[str] = None
@@ -1021,7 +1153,7 @@ class AgentOrchestrator:
                 "phase": phase,
                 "status": status,
                 "attempt": attempt,
-                "timestamp": datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+                "timestamp": _utc_timestamp(),
                 "raw_output": "",
                 "structured_output": {},
                 "error": "",
@@ -1032,7 +1164,7 @@ class AgentOrchestrator:
         existing.update({
             "status": status,
             "attempt": max(existing.get("attempt", 0), attempt),
-            "timestamp": datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+            "timestamp": _utc_timestamp(),
             "raw_output": raw_output if isinstance(raw_output, str) else _safe_json_dumps(raw_output),
             "structured_output": structured_output or {},
             "error": error,
@@ -1535,7 +1667,7 @@ class AgentOrchestrator:
             "severity": severity,
             "message": message,
             "phase": phase,
-            "timestamp": datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+            "timestamp": _utc_timestamp(),
         }
         supervisor = self.structured_results.setdefault("supervisor", {"events": [], "metrics": {}, "adjustments": []})
         supervisor.setdefault("events", []).append(event)
@@ -1557,7 +1689,7 @@ class AgentOrchestrator:
             "message": message,
             "affected_steps": affected_steps or [],
             "affected_pocs": affected_pocs or [],
-            "timestamp": datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+            "timestamp": _utc_timestamp(),
         }
         supervisor = self.structured_results.setdefault("supervisor", {"events": [], "metrics": {}, "adjustments": []})
         supervisor.setdefault("adjustments", []).append(adjustment)
@@ -1918,28 +2050,11 @@ class AgentOrchestrator:
 
     def _build_assessment_call(self, context: str = "") -> Dict[str, str]:
         """为评估 Agent 统一构造报告元数据，禁止模型自行编造日期或团队。"""
-        report_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        target_name = self.target_name or self.target_ip or "Unknown Target"
-
-        prompt = (
-            f"基于对智能网联汽车目标 '{target_name}' ({self.target_ip}) 的完整渗透测试结果，"
-            "生成符合 ISO 21434 / UN R155 要求的专业安全评估报告。"
-            f"【当前时间】{report_date}。"
-            f"报告中的评估日期必须写 {report_date}，评估团队必须写 BIOS团队。"
+        return build_assessment_call(
+            target_ip=self.target_ip,
+            target_name=self.target_name,
+            context=context,
         )
-
-        context_prefix = (
-            f"【当前时间】{report_date}\n"
-            f"【评估日期】{report_date}\n"
-            f"【评估团队】BIOS团队\n"
-            f"【评估目标】{target_name}\n"
-            f"【目标IP】{self.target_ip}\n\n"
-        )
-
-        return {
-            "prompt": prompt,
-            "context": f"{context_prefix}{context or ''}",
-        }
 
     def _add_log(self, entry: Any):
         """添加一条日志到缓冲区"""

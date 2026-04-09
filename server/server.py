@@ -1,5 +1,6 @@
 import sys
 import subprocess
+from typing import Optional, List, Dict, Any, Tuple
 import tempfile
 import os
 import json
@@ -10,18 +11,28 @@ import logging
 import bcrypt
 import jwt
 import datetime
+import ipaddress
+import re
 import socket
 import requests
 import ast
 import uuid
 import secrets
+import base64
+import hashlib
 from logging.handlers import RotatingFileHandler
-from flask import Flask, request, jsonify
+from pathlib import Path
+from urllib.parse import quote
+from flask import Flask, request, jsonify, Response, send_file
 from flask_cors import CORS, cross_origin
 from flask_sqlalchemy import SQLAlchemy
 from functools import wraps
+from cryptography.fernet import Fernet, InvalidToken
 from config import get_config, get_runtime_warnings
-from sqlalchemy import create_engine, text
+
+def _get_utc_now() -> datetime.datetime:
+    """Helper to return a naive UTC datetime, consistent across the app and DB."""
+    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 from assessment_engine import (
     build_structured_report,
     assess_physical_impact,
@@ -34,6 +45,19 @@ from benchmark_suite import (
     score_session_against_benchmark as evaluate_session_against_benchmark,
 )
 from poc_worker import get_poc_worker
+from poc_catalog import resolve_poc_path
+from edge_requirements import (
+    classify_poc_execution_mode,
+    edge_capabilities_missing,
+    edge_capability_flags,
+    infer_edge_requirements,
+)
+from edge_deployment import (
+    build_edge_install_command,
+    edge_runtime_download_path,
+    resolve_public_edge_api_base,
+)
+from edge_task_payload import attach_poc_code_to_task_payload
 
 # This server must be running on the device connected to the vehicle (e.g., Raspberry Pi/Laptop)
 # Run with: python3 server.py
@@ -64,10 +88,11 @@ CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST", "PUT
 
 CONFIG = get_config()
 RUNTIME_WARNINGS = get_runtime_warnings(CONFIG)
-LEGACY_DB_URI = 'mysql+pymysql://root:1@localhost/autosec_db'
 
 # Path to the Pocs directory
 POCS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'pocs')
+EDGE_DIST_DIR = Path(os.path.dirname(os.path.abspath(__file__))) / 'edge_dist'
+EDGE_BUILD_DIR = Path(os.path.dirname(os.path.abspath(__file__))).parent / 'build' / 'edge_runtime'
 
 # ==========================================
 # Application Configuration
@@ -76,152 +101,220 @@ POCS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'pocs')
 # Secret Key for JWT
 app.config['SECRET_KEY'] = CONFIG.secret_key
 
-# Database Configuration (MySQL)
-# Default format: mysql+pymysql://username:password@server/db
+# Database Configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = CONFIG.database_uri
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 
+def _extract_session_target_ip(session: dict) -> str:
+    connection = session.get("connection") or {}
+    return str(
+        session.get("targetIp")
+        or session.get("target_ip")
+        or connection.get("ip")
+        or ""
+    ).strip()
 
-def _build_security_report_prompt(session: dict, vulnerabilities: list) -> str:
-    report_date = session.get('startTime') or datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
-    target_name = session.get('targetName') or session.get('connection', {}).get('ip') or 'Unknown Target'
-    details = '\n'.join(
-        f"- [{item.get('severity', 'UNKNOWN')}] {item.get('name', 'Unknown Vulnerability')}: {item.get('details', 'No details')}"
-        for item in vulnerabilities
+
+def _extract_session_report_date(session: dict) -> str:
+    value = str(session.get("startTime") or session.get("started_at") or "").strip()
+    return value or _get_utc_now().strftime('%Y-%m-%d %H:%M:%S')
+
+
+def _extract_result_identifier(item: dict, index: int) -> str:
+    for key in ("poc_name", "pocPath", "pocId", "name"):
+        value = str(item.get(key) or "").strip()
+        if value:
+            return value
+    return f"manual_scan_item_{index}"
+
+
+def _extract_result_evidence(item: dict) -> str:
+    for key in ("evidence", "details", "description", "error"):
+        value = str(item.get(key) or "").strip()
+        if value:
+            return value
+    return "No evidence recorded."
+
+
+def _normalize_manual_execution_items(session: dict) -> list[dict]:
+    execution_items: list[dict] = []
+    for index, raw_item in enumerate(session.get("results") or [], start=1):
+        item = raw_item if isinstance(raw_item, dict) else {}
+        poc_name = _extract_result_identifier(item, index)
+        vulnerable = bool(item.get("vulnerable"))
+        evidence = _extract_result_evidence(item)
+        execution_items.append({
+            "step": index,
+            "poc_name": poc_name,
+            "status": "vulnerable" if vulnerable else "completed",
+            "vulnerable": vulnerable,
+            "evidence": evidence if vulnerable else "",
+            "error": "" if vulnerable else str(item.get("error") or "").strip(),
+            "details": evidence,
+            "severity": str(item.get("severity") or "UNKNOWN").strip() or "UNKNOWN",
+            "branch": "global_scan",
+        })
+    return execution_items
+
+
+def _normalize_manual_findings(session: dict, execution_items: list[dict]) -> list[dict]:
+    target_ip = _extract_session_target_ip(session)
+    findings: list[dict] = []
+    for item in execution_items:
+        if not item.get("vulnerable"):
+            continue
+        findings.append({
+            "id": item["poc_name"],
+            "trace_id": str(session.get("id") or session.get("session_id") or ""),
+            "poc_id": item["poc_name"],
+            "poc_name": item["poc_name"],
+            "target_ip": target_ip,
+            "vulnerable": True,
+            "severity": item.get("severity") or "UNKNOWN",
+            "domain": "global_scan",
+            "evidence": item.get("details") or item.get("evidence") or "",
+            "error": "",
+            "source": "global_scan",
+            "detected_at": _get_utc_now().strftime('%Y-%m-%dT%H:%M:%SZ'),
+            "description": item.get("details") or item.get("evidence") or "",
+            "details": item.get("details") or item.get("evidence") or "",
+            "name": item["poc_name"],
+            "pocId": item["poc_name"],
+        })
+    return findings
+
+
+def _build_manual_assessment_context(session: dict) -> tuple[str, str, str]:
+    target_ip = _extract_session_target_ip(session)
+    target_name = str(session.get("targetName") or target_ip or "Unknown Target").strip()
+    execution_items = _normalize_manual_execution_items(session)
+    findings = _normalize_manual_findings(session, execution_items)
+
+    context = (
+        "【扫描来源】Global Scan / History Report Generation\n"
+        "【说明】以下内容来自人工触发或计划任务触发的全局扫描结果，已统一转换为 Assessment Agent 可消费的执行结果上下文。\n\n"
+        f"【会话摘要(JSON)】\n{json.dumps({
+            'session_id': session.get('id') or session.get('session_id'),
+            'target_name': target_name,
+            'target_ip': target_ip,
+            'mode': session.get('mode') or 'batch',
+            'risk_score': session.get('riskScore'),
+            'result_count': len(execution_items),
+            'finding_count': len(findings),
+        }, ensure_ascii=False, indent=2)}\n\n"
+        f"【执行结果(JSON)】\n{json.dumps({'items': execution_items}, ensure_ascii=False, indent=2)}\n\n"
+        f"【漏洞发现(JSON)】\n{json.dumps(findings, ensure_ascii=False, indent=2)}"
     )
-
-    return f"""
-你是一位资深的智能网联汽车安全专家，请使用中文撰写专业、克制、可执行的安全分析报告。
-
-针对目标车辆设备 "{target_name}" 完成了漏洞扫描。
-
-报告日期：{report_date}
-报告撰写人：AutoSec Guard Security Copilot
-
-检测到如下安全问题：
-
-{details}
-
-请输出一份 Markdown 格式的报告，内容包括：
-1. 报告页眉（报告名称、目标、扫描日期、撰写人）。
-2. 整体风险等级评估。
-3. 前 3 个最严重漏洞的技术分析。
-4. 对应的修复或缓解建议。
-5. 面向工程团队的后续加固建议。
-
-要求：
-- 全文必须使用中文。
-- 不要使用占位符。
-- 结论需要明确、审慎，避免夸张表述。
-""".strip()
+    return target_name, target_ip, context
 
 
-def _generate_ai_report(session: dict) -> str:
-    if not CONFIG.dashscope_api_key:
-        return "AI 报告功能未启用。请在服务端配置 DASHSCOPE_API_KEY 后重试。"
-
-    results = session.get('results', [])
-    vulnerabilities = [item for item in results if item.get('vulnerable')]
-    if not vulnerabilities:
-        return "未检测到任何漏洞，根据当前测试套件评估，系统安全状态良好。"
-
-    prompt = _build_security_report_prompt(session, vulnerabilities)
-    payload = {
-        "model": "qwen-max",
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.2,
-    }
-    headers = {
-        "Authorization": f"Bearer {CONFIG.dashscope_api_key}",
-        "Content-Type": "application/json",
-    }
-
-    try:
-        response = requests.post(
-            "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=60,
-        )
-        response.raise_for_status()
-        data = response.json()
-        return data["choices"][0]["message"]["content"]
-    except Exception as exc:
-        logger.error(f"AI report generation failed: {exc}")
-        return "与千问（Qwen）大模型通信时发生错误，请检查服务端网络连接或 API Key 配置。"
-
-
-def _deserialize_history_row(row: dict) -> dict:
-    results_json = row.get('results_json')
-    logs = row.get('logs')
-
-    try:
-        parsed_results = json.loads(results_json) if results_json else []
-    except Exception:
-        parsed_results = []
-
-    try:
-        parsed_logs = json.loads(logs) if logs else []
-    except Exception:
-        parsed_logs = []
-
+def _normalize_ai_config(payload: dict | None) -> dict:
+    payload = payload or {}
     return {
-        "id": row.get("id"),
-        "user_id": row.get("user_id"),
-        "username": row.get("username") or "Unknown",
-        "session_id": row.get("session_id"),
-        "target_ip": row.get("target_ip"),
-        "target_mac": row.get("target_mac"),
-        "status": row.get("status"),
-        "started_at": row.get("started_at").strftime('%Y-%m-%dT%H:%M:%SZ') if row.get("started_at") else None,
-        "completed_at": row.get("completed_at").strftime('%Y-%m-%dT%H:%M:%SZ') if row.get("completed_at") else None,
-        "risk_score": row.get("risk_score") or 0,
-        "results_json": parsed_results,
-        "logs": parsed_logs,
-        "findings": parsed_results.get("findings", []) if isinstance(parsed_results, dict) else [],
-        "phase_records": parsed_results.get("phase_records", []) if isinstance(parsed_results, dict) else [],
-        "structured": parsed_results.get("structured", {}) if isinstance(parsed_results, dict) else {},
+        "base_url": str(payload.get("base_url") or payload.get("baseUrl") or "").strip(),
+        "api_key": str(payload.get("api_key") or payload.get("apiKey") or "").strip(),
+        "report_model": str(payload.get("report_model") or payload.get("reportModel") or "").strip(),
+        "fast_model": str(payload.get("fast_model") or payload.get("fastModel") or "").strip(),
+        "strong_model": str(payload.get("strong_model") or payload.get("strongModel") or "").strip(),
     }
 
 
-def _fetch_legacy_history(current_user) -> list:
-    if CONFIG.database_uri == LEGACY_DB_URI:
-        return []
+def _ai_config_fernet() -> Fernet:
+    digest = hashlib.sha256(app.config['SECRET_KEY'].encode('utf-8')).digest()
+    return Fernet(base64.urlsafe_b64encode(digest))
+
+
+def _serialize_ai_config(payload: dict | None) -> dict:
+    normalized = _normalize_ai_config(payload)
+    return {
+        "baseUrl": normalized["base_url"],
+        "apiKey": normalized["api_key"],
+        "reportModel": normalized["report_model"],
+        "fastModel": normalized["fast_model"],
+        "strongModel": normalized["strong_model"],
+    }
+
+
+def _encrypt_ai_config(payload: dict | None) -> str:
+    serialized = json.dumps(_serialize_ai_config(payload), ensure_ascii=False)
+    return _ai_config_fernet().encrypt(serialized.encode('utf-8')).decode('utf-8')
+
+
+def _decrypt_ai_config(encrypted_payload: str | None) -> dict:
+    if not encrypted_payload:
+        return {}
+    try:
+        raw = _ai_config_fernet().decrypt(encrypted_payload.encode('utf-8')).decode('utf-8')
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            return {
+                "baseUrl": str(parsed.get("baseUrl") or "").strip(),
+                "apiKey": str(parsed.get("apiKey") or "").strip(),
+                "reportModel": str(parsed.get("reportModel") or "").strip(),
+                "fastModel": str(parsed.get("fastModel") or "").strip(),
+                "strongModel": str(parsed.get("strongModel") or "").strip(),
+            }
+    except (InvalidToken, ValueError, TypeError, json.JSONDecodeError):
+        return {}
+    return {}
+
+
+def _load_user_ai_config(user_id: int) -> dict:
+    record = UserAiConfig.query.filter_by(user_id=user_id).first()
+    if not record:
+        return {}
+    return _decrypt_ai_config(record.encrypted_payload)
+
+
+def _save_user_ai_config(user_id: int, payload: dict | None) -> dict:
+    record = UserAiConfig.query.filter_by(user_id=user_id).first()
+    encrypted_payload = _encrypt_ai_config(payload)
+    if record is None:
+        record = UserAiConfig(user_id=user_id, encrypted_payload=encrypted_payload)
+        db.session.add(record)
+    else:
+        record.encrypted_payload = encrypted_payload
+    return _decrypt_ai_config(encrypted_payload)
+
+
+def _validate_ai_config(payload: dict | None) -> tuple[dict, str | None]:
+    config = _normalize_ai_config(payload)
+    if not config["api_key"]:
+        return config, "AI API key is required."
+    if not config["base_url"]:
+        return config, "AI base_url is required."
+    return config, None
+
+
+def _generate_unified_assessment_report(session: dict, ai_config: dict) -> str:
+    normalized_ai_config, error = _validate_ai_config(ai_config)
+    if error:
+        return f"AI 报告功能未启用：{error}"
 
     try:
-        engine = create_engine(LEGACY_DB_URI, pool_pre_ping=True)
-        query = """
-            SELECT
-                s.id,
-                s.user_id,
-                u.username,
-                s.session_id,
-                s.target_ip,
-                s.target_mac,
-                s.status,
-                s.started_at,
-                s.completed_at,
-                s.results_json,
-                s.logs,
-                s.risk_score
-            FROM scan_history s
-            LEFT JOIN users u ON u.id = s.user_id
-        """
-        if current_user.role == 'admin':
-            query += " ORDER BY s.started_at DESC LIMIT 100"
-            params = {}
-        else:
-            query += " WHERE s.user_id = :user_id ORDER BY s.started_at DESC LIMIT 100"
-            params = {"user_id": current_user.id}
+        from agent_orchestrator import generate_assessment_report
 
-        with engine.connect() as conn:
-            rows = conn.execute(text(query), params).mappings().all()
-        return [_deserialize_history_row(dict(row)) for row in rows]
+        target_name, target_ip, context = _build_manual_assessment_context(session)
+        report_model = normalized_ai_config["report_model"] or normalized_ai_config["strong_model"] or normalized_ai_config["fast_model"] or "qwen-max"
+        logger.info(
+            "Unified assessment report requested for %s (%s) with model=%s",
+            target_name,
+            target_ip or "n/a",
+            report_model,
+        )
+        return generate_assessment_report(
+            target_ip=target_ip or "Unknown Target",
+            target_name=target_name,
+            llm_config=normalized_ai_config,
+            context=context,
+            report_date=_extract_session_report_date(session),
+        )
     except Exception as exc:
-        logger.info(f"Legacy history fallback unavailable: {exc}")
-        return []
+        logger.error(f"Unified assessment report generation failed: {exc}", exc_info=True)
+        return "与模型接口通信时发生错误，请检查当前用户的 AI 配置、网络和 API Key。"
+
 
 # ==========================================
 # Database Models
@@ -233,7 +326,7 @@ class User(db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.String(20), default='user') # 'admin' or 'user'
-    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=_get_utc_now)
 
     def to_dict(self):
         return {
@@ -243,6 +336,17 @@ class User(db.Model):
             "created_at": self.created_at.isoformat()
         }
 
+
+class UserAiConfig(db.Model):
+    __tablename__ = 'user_ai_configs'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), unique=True, nullable=False, index=True)
+    encrypted_payload = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=_get_utc_now, nullable=False)
+    updated_at = db.Column(db.DateTime, default=_get_utc_now, onupdate=_get_utc_now, nullable=False)
+
+    user = db.relationship('User', backref=db.backref('ai_config_record', uselist=False, lazy=True))
+
 class ScanHistory(db.Model):
     __tablename__ = 'scan_history'
     id = db.Column(db.Integer, primary_key=True)
@@ -251,7 +355,7 @@ class ScanHistory(db.Model):
     target_ip = db.Column(db.String(50), nullable=True)
     target_mac = db.Column(db.String(50), nullable=True)
     status = db.Column(db.String(20), nullable=False) # 'completed', 'failed', 'running'
-    started_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    started_at = db.Column(db.DateTime, default=_get_utc_now)
     completed_at = db.Column(db.DateTime, nullable=True)
     results_json = db.Column(db.Text, nullable=True) # Full JSON data of results
     logs = db.Column(db.Text, nullable=True) # Dedicated column for logs
@@ -286,7 +390,7 @@ class AuditLog(db.Model):
     action = db.Column(db.String(100), nullable=False) # e.g., 'run_disruptive_poc', 'login'
     target = db.Column(db.String(100), nullable=True)
     details_json = db.Column(db.Text, nullable=True)
-    timestamp = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    timestamp = db.Column(db.DateTime, default=_get_utc_now)
     ip_address = db.Column(db.String(50), nullable=True)
 
     def to_dict(self):
@@ -309,7 +413,7 @@ class SupervisorMetricSnapshot(db.Model):
     model_profile = db.Column(db.String(120), nullable=True)
     metrics_json = db.Column(db.Text, nullable=False)
     adjustments_json = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, index=True)
+    created_at = db.Column(db.DateTime, default=_get_utc_now, index=True)
 
     user = db.relationship('User', backref=db.backref('supervisor_snapshots', lazy=True))
 
@@ -341,7 +445,7 @@ class ExecutionArtifact(db.Model):
     target_ip = db.Column(db.String(50), nullable=True)
     target_mac = db.Column(db.String(50), nullable=True)
     payload_json = db.Column(db.Text, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, index=True)
+    created_at = db.Column(db.DateTime, default=_get_utc_now, index=True)
 
     user = db.relationship('User', backref=db.backref('execution_artifacts', lazy=True))
 
@@ -374,15 +478,15 @@ class EdgeAgent(db.Model):
     capabilities_json = db.Column(db.Text, nullable=True)
     metadata_json = db.Column(db.Text, nullable=True)
     last_seen_at = db.Column(db.DateTime, nullable=True, index=True)
-    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, nullable=False, index=True)
-    updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=_get_utc_now, nullable=False, index=True)
+    updated_at = db.Column(db.DateTime, default=_get_utc_now, onupdate=_get_utc_now, nullable=False)
 
     def to_dict(self):
-        capability_flags = _edge_capability_flags(
+        capability_flags = edge_capability_flags(
             json.loads(self.capabilities_json) if self.capabilities_json else {}
         )
         effective_status = self.status
-        if self.last_seen_at and (datetime.datetime.utcnow() - self.last_seen_at).total_seconds() > 90:
+        if self.last_seen_at and (_get_utc_now() - self.last_seen_at).total_seconds() > 90:
             effective_status = 'offline'
         return {
             "agent_id": self.agent_id,
@@ -410,8 +514,8 @@ class EdgeTask(db.Model):
     params_json = db.Column(db.Text, nullable=False)
     status = db.Column(db.String(40), default='queued', nullable=False, index=True)
     result_json = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, nullable=False, index=True)
-    updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=_get_utc_now, nullable=False, index=True)
+    updated_at = db.Column(db.DateTime, default=_get_utc_now, onupdate=_get_utc_now, nullable=False)
     started_at = db.Column(db.DateTime, nullable=True)
     completed_at = db.Column(db.DateTime, nullable=True)
 
@@ -433,6 +537,40 @@ class EdgeTask(db.Model):
             "updated_at": self.updated_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.updated_at else None,
             "started_at": self.started_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.started_at else None,
             "completed_at": self.completed_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.completed_at else None,
+        }
+
+
+class EdgeEnrollmentToken(db.Model):
+    __tablename__ = 'edge_enrollment_tokens'
+    id = db.Column(db.Integer, primary_key=True)
+    token_hash = db.Column(db.String(255), nullable=False)
+    label = db.Column(db.String(255), nullable=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    used_by_agent_id = db.Column(db.String(120), nullable=True)
+    status = db.Column(db.String(40), default='active', nullable=False, index=True)  # active, used, revoked
+    expires_at = db.Column(db.DateTime, nullable=False)
+    created_at = db.Column(db.DateTime, default=_get_utc_now, nullable=False)
+    used_at = db.Column(db.DateTime, nullable=True)
+
+    created_by = db.relationship('User', backref=db.backref('enrollment_tokens', lazy=True))
+
+    def is_valid(self) -> bool:
+        if self.status != 'active':
+            return False
+        if _get_utc_now() > self.expires_at:
+            return False
+        return True
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "label": self.label,
+            "status": self.status,
+            "created_by": self.created_by.username if self.created_by else None,
+            "used_by_agent_id": self.used_by_agent_id,
+            "expires_at": self.expires_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.expires_at else None,
+            "created_at": self.created_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.created_at else None,
+            "used_at": self.used_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.used_at else None,
         }
 
 
@@ -505,7 +643,7 @@ def _should_require_disruptive_approval(profile: dict, params: dict) -> bool:
 
 def _build_execution_artifact_payload(**kwargs) -> dict:
     payload = dict(kwargs)
-    payload.setdefault("created_at", datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'))
+    payload.setdefault("created_at", _get_utc_now().strftime('%Y-%m-%dT%H:%M:%SZ'))
     return payload
 
 
@@ -569,7 +707,7 @@ def _build_poc_registry_entry(filepath: str) -> dict:
     try:
         with open(filepath, "r", encoding="utf-8") as handle:
             content = handle.read()
-        entry["content"] = content
+        entry["content"] = _truncate_poc_for_display(content)
         tree = ast.parse(content, filename=filepath)
         for node in ast.walk(tree):
             if not isinstance(node, ast.ClassDef):
@@ -612,145 +750,6 @@ def _build_poc_registry_entry(filepath: str) -> dict:
         entry["parse_error"] = str(exc)
 
     return entry
-
-
-def _resolve_poc_path(poc_filename: str) -> tuple[str | None, str | None]:
-    if not poc_filename:
-        return None, None
-
-    poc_path = os.path.join(POCS_DIR, poc_filename)
-    if os.path.exists(poc_path):
-        return poc_path, os.path.relpath(poc_path, POCS_DIR)
-
-    basename = os.path.basename(poc_filename)
-    for dirpath, _, filenames in os.walk(POCS_DIR):
-        if basename in filenames:
-            poc_path = os.path.join(dirpath, basename)
-            return poc_path, os.path.relpath(poc_path, POCS_DIR)
-
-    return None, None
-
-
-def _edge_capability_flags(capabilities: dict) -> dict:
-    socketcan_raw = str((capabilities.get("socketcan") or {}).get("interfaces") or "").lower()
-    wifi_raw = str((capabilities.get("wifi") or {}).get("interfaces") or "").lower()
-    bluetooth_raw = " ".join(
-        [
-            str((capabilities.get("bluetooth") or {}).get("bluetoothctl_list") or ""),
-            str((capabilities.get("bluetooth") or {}).get("hciconfig") or ""),
-        ]
-    ).lower()
-    usb_info = capabilities.get("usb") or {}
-    sdr_info = capabilities.get("sdr") or {}
-    host_tools = capabilities.get("host_tools") or {}
-
-    return {
-        "usb": bool(usb_info.get("mount_candidates") or usb_info.get("tty_usb") or usb_info.get("lsusb")),
-        "can": any(token in socketcan_raw for token in [" can", "\ncan", "pcan", "slcan", "vcan"]),
-        "wifi": bool(wifi_raw.strip()),
-        "bluetooth": bool(bluetooth_raw.strip()),
-        "sdr": bool(str(sdr_info.get("hackrf_info") or "").strip() or str(sdr_info.get("rtl_test") or "").strip()),
-        "lsusb": bool(host_tools.get("lsusb")),
-        "iw": bool(host_tools.get("iw")),
-        "ip": bool(host_tools.get("ip")),
-        "bluetoothctl": bool(host_tools.get("bluetoothctl") or host_tools.get("hciconfig")),
-        "hackrf": bool(host_tools.get("hackrf_info") or host_tools.get("rtl_test")),
-    }
-
-
-def _infer_edge_requirements(profile: dict, poc_filename: str, params: dict | None = None) -> dict:
-    params = params or {}
-    protocol = str(profile.get("protocol") or "").lower()
-    category = os.path.basename(os.path.dirname(os.path.join(POCS_DIR, poc_filename))).lower()
-    required_params = {str(item).lower() for item in (profile.get("required_params") or [])}
-    joined_params = " ".join(sorted(required_params))
-    filename = os.path.basename(poc_filename).lower()
-
-    requires = {
-        "usb": False,
-        "can": False,
-        "wifi": False,
-        "bluetooth": False,
-        "sdr": False,
-    }
-
-    if "usb" in protocol or "usb" in filename or "mount" in joined_params or "ttyusb" in joined_params:
-        requires["usb"] = True
-    if "can" in protocol or "uds" in protocol or "obd" in protocol or category == "canbus" or "can_interface" in required_params:
-        requires["can"] = True
-    if any(token in protocol for token in ["wifi", "wi-fi", "802.11"]) or category == "wireless":
-        requires["wifi"] = True
-    if any(token in protocol for token in ["bluetooth", "ble"]) or "bluetooth" in filename or "ble" in filename:
-        requires["bluetooth"] = True
-        requires["wifi"] = False
-    if any(token in protocol for token in ["rf", "gps", "tpms", "v2x", "sdr"]) or any(token in filename for token in ["gps", "tpms", "v2x"]):
-        requires["sdr"] = True
-
-    if required_params & {"interface", "wifi_interface", "client_mac", "ssid", "bssid"}:
-        requires["wifi"] = True
-    if required_params & {"bluetooth_mac", "ble_address", "hci_interface"}:
-        requires["bluetooth"] = True
-        requires["wifi"] = False
-    if required_params & {"rf_frequency", "frequency", "center_frequency", "tpms_frequency"}:
-        requires["sdr"] = True
-    if required_params & {"usb_mount_path", "usb_device", "serial_port", "tty_usb"}:
-        requires["usb"] = True
-
-    if params.get("can_interface"):
-        requires["can"] = True
-    if params.get("bluetooth_mac") or params.get("hci_interface"):
-        requires["bluetooth"] = True
-        requires["wifi"] = False
-    if params.get("interface") or params.get("wifi_interface"):
-        requires["wifi"] = True
-    if params.get("rf_frequency") or params.get("frequency"):
-        requires["sdr"] = True
-
-    required = [name for name, enabled in requires.items() if enabled]
-    return {
-        "required_capabilities": required,
-        "requires_edge": bool(required),
-        "cloud_only": not bool(required),
-    }
-
-
-def _edge_agent_matches_requirements(edge_agent: EdgeAgent, requirements: dict) -> tuple[bool, list[str]]:
-    flags = _edge_capability_flags(json.loads(edge_agent.capabilities_json) if edge_agent.capabilities_json else {})
-    missing = [name for name in requirements.get("required_capabilities", []) if not flags.get(name)]
-    return not missing, missing
-
-
-def _classify_poc_execution_mode(poc_path: str, profile: dict, poc_filename: str) -> dict:
-    requirements = _infer_edge_requirements(profile, poc_filename, {})
-    text = ""
-    try:
-        with open(poc_path, "r", encoding="utf-8", errors="ignore") as handle:
-            text = handle.read().lower()
-    except Exception:
-        text = ""
-
-    manual_hints = (
-        "manual",
-        "人工",
-        "观察目标",
-        "观察车辆",
-        "需确认",
-        "awaiting manual",
-        "requires manual",
-        "插入目标车机",
-        "u盘",
-    )
-    manual_confirmation = any(hint in text for hint in manual_hints)
-
-    supported_planes = ["edge"] if requirements["requires_edge"] else ["cloud", "edge"]
-    recommended_plane = "edge" if requirements["requires_edge"] else "cloud"
-
-    return {
-        "supported_execution_planes": supported_planes,
-        "recommended_execution_plane": recommended_plane,
-        "execution_requirements": requirements,
-        "manual_confirmation_required": manual_confirmation,
-    }
 
 
 def _scan_poc_registry() -> dict:
@@ -832,6 +831,56 @@ def _edge_verify_token(token: str, token_hash: str) -> bool:
         return False
 
 
+def _find_matching_enrollment_token(raw_token: str) -> EdgeEnrollmentToken | None:
+    if not raw_token:
+        return None
+
+    candidates = (
+        EdgeEnrollmentToken.query
+        .filter_by(status='active')
+        .order_by(EdgeEnrollmentToken.created_at.desc())
+        .all()
+    )
+    for token_record in candidates:
+        if not token_record.is_valid():
+            continue
+        if _edge_verify_token(raw_token, token_record.token_hash):
+            return token_record
+    return None
+
+
+def _validate_enrollment_secret(raw_token: str) -> tuple[str | None, EdgeEnrollmentToken | None]:
+    if not raw_token:
+        return None, None
+    token_record = _find_matching_enrollment_token(raw_token)
+    if token_record:
+        return 'user_token', token_record
+    return None, None
+
+
+def _owned_edge_agent_ids_for_user(current_user) -> set[str]:
+    if current_user.role == 'admin':
+        return {item.agent_id for item in EdgeAgent.query.with_entities(EdgeAgent.agent_id).all()}
+
+    rows = (
+        EdgeEnrollmentToken.query
+        .filter_by(created_by_user_id=current_user.id)
+        .filter(EdgeEnrollmentToken.used_by_agent_id.isnot(None))
+        .all()
+    )
+    return {item.used_by_agent_id for item in rows if item.used_by_agent_id}
+
+
+def _edge_agent_query_for_user(current_user):
+    if current_user.role == 'admin':
+        return EdgeAgent.query
+
+    owned_ids = _owned_edge_agent_ids_for_user(current_user)
+    if not owned_ids:
+        return EdgeAgent.query.filter(db.text("1 = 0"))
+    return EdgeAgent.query.filter(EdgeAgent.agent_id.in_(owned_ids))
+
+
 def edge_token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -891,11 +940,13 @@ def login():
         token = jwt.encode({
             'user_id': user.id,
             'role': user.role,
-            'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+            'exp': _get_utc_now() + datetime.timedelta(hours=24)
         }, app.config['SECRET_KEY'], algorithm="HS256")
         
         logger.info(f"User logged in: {user.username}")
-        return jsonify({'token': token, 'user': user.to_dict()})
+        user_payload = user.to_dict()
+        user_payload["ai_config"] = _load_user_ai_config(user.id)
+        return jsonify({'token': token, 'user': user_payload})
 
     return jsonify({"message": "Invalid password!"}), 401
 
@@ -903,12 +954,15 @@ def login():
 @token_required
 def profile(current_user):
     if request.method == 'GET':
-        return jsonify({"user": current_user.to_dict()})
+        user_payload = current_user.to_dict()
+        user_payload["ai_config"] = _load_user_ai_config(current_user.id)
+        return jsonify({"user": user_payload})
         
     if request.method == 'PUT':
         data = request.json
         new_username = data.get('new_username')
         new_password = data.get('new_password')
+        ai_config = data.get('ai_config')
         
         updates_made = False
         
@@ -924,11 +978,17 @@ def profile(current_user):
             hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
             current_user.password_hash = hashed_password
             updates_made = True
+
+        if isinstance(ai_config, dict):
+            _save_user_ai_config(current_user.id, ai_config)
+            updates_made = True
             
         if updates_made:
             db.session.commit()
             logger.info(f"User {current_user.id} updated their profile.")
-            return jsonify({"message": "Profile updated successfully!", "user": current_user.to_dict()}), 200
+            user_payload = current_user.to_dict()
+            user_payload["ai_config"] = _load_user_ai_config(current_user.id)
+            return jsonify({"message": "Profile updated successfully!", "user": user_payload}), 200
             
         return jsonify({"message": "No changes requested."}), 200
 
@@ -1050,19 +1110,20 @@ def health_check():
         "system": sys.platform,
         "pocs_dir": POCS_DIR,
         "database": app.config['SQLALCHEMY_DATABASE_URI'].split(':', 1)[0],
-        "ai_reports_enabled": bool(CONFIG.dashscope_api_key),
+        "ai_reports_enabled": True,
         "warnings": RUNTIME_WARNINGS,
     })
 
 
 @app.route('/api/edge/register', methods=['POST'])
 def edge_register():
-    if not CONFIG.edge_enrollment_token:
-        return jsonify({"message": "Edge enrollment is disabled on this server."}), 403
-
     enrollment_token = request.headers.get('X-Edge-Enrollment-Token') or ''
-    if enrollment_token != CONFIG.edge_enrollment_token:
-        return jsonify({"message": "Invalid edge enrollment token."}), 401
+    if not enrollment_token:
+        return jsonify({"message": "Enrollment token is required."}), 401
+
+    enrollment_mode, matched_db_token = _validate_enrollment_secret(enrollment_token)
+    if not enrollment_mode:
+        return jsonify({"message": "Invalid or expired enrollment token."}), 401
 
     data = request.json or {}
     display_name = (data.get('display_name') or data.get('hostname') or '').strip()
@@ -1071,7 +1132,7 @@ def edge_register():
 
     agent_id = data.get('agent_id') or f"edge-{uuid.uuid4().hex[:12]}"
     raw_token = secrets.token_urlsafe(32)
-    now = datetime.datetime.utcnow()
+    now = _get_utc_now()
 
     agent = EdgeAgent.query.filter_by(agent_id=agent_id).first()
     if agent is None:
@@ -1095,10 +1156,17 @@ def edge_register():
         agent.metadata_json = json.dumps(data.get('metadata', {}), ensure_ascii=False)
         agent.last_seen_at = now
 
+    # Mark dynamic token as used (one-time)
+    if matched_db_token is not None:
+        matched_db_token.status = 'used'
+        matched_db_token.used_by_agent_id = agent.agent_id
+        matched_db_token.used_at = _get_utc_now()
+
     db.session.commit()
     return jsonify({
         "agent_id": agent.agent_id,
         "edge_token": raw_token,
+        "enrollment_mode": enrollment_mode,
         "agent": agent.to_dict(),
     })
 
@@ -1107,7 +1175,7 @@ def edge_register():
 @edge_token_required
 def edge_heartbeat(edge_agent):
     data = request.json or {}
-    edge_agent.last_seen_at = datetime.datetime.utcnow()
+    edge_agent.last_seen_at = _get_utc_now()
     edge_agent.status = data.get('status', 'online')
     if 'capabilities' in data:
         edge_agent.capabilities_json = json.dumps(data.get('capabilities', {}), ensure_ascii=False)
@@ -1127,17 +1195,39 @@ def edge_next_task(edge_agent):
         .first()
     )
     if not task:
-        edge_agent.last_seen_at = datetime.datetime.utcnow()
+        edge_agent.last_seen_at = _get_utc_now()
         edge_agent.status = 'online'
         db.session.commit()
         return jsonify({"task": None})
 
     task.status = 'running'
-    task.started_at = datetime.datetime.utcnow()
-    edge_agent.last_seen_at = datetime.datetime.utcnow()
+    task.started_at = _get_utc_now()
+    edge_agent.last_seen_at = _get_utc_now()
     edge_agent.status = 'busy'
     db.session.commit()
-    return jsonify({"task": task.to_dict()})
+    
+    task_data = task.to_dict()
+    try:
+        task_data = attach_poc_code_to_task_payload(POCS_DIR, task_data, task.poc_filename)
+    except Exception as exc:
+        logger.error(f"Failed to read PoC code for edge task {task.task_id}: {exc}")
+        
+    return jsonify({"task": task_data})
+
+
+@app.route('/api/edge/tasks/<task_id>/payload', methods=['GET'])
+@edge_token_required
+def edge_task_payload(edge_agent, task_id):
+    task = EdgeTask.query.filter_by(task_id=task_id, edge_agent_id=edge_agent.id).first()
+    if not task:
+        return jsonify({"message": "Task not found"}), 404
+
+    task_data = task.to_dict()
+    try:
+        task_data = attach_poc_code_to_task_payload(POCS_DIR, task_data, task.poc_filename)
+    except Exception as exc:
+        logger.error(f"Failed to build payload for edge task {task.task_id}: {exc}")
+    return jsonify({"task": task_data})
 
 
 @app.route('/api/edge/tasks/<task_id>/result', methods=['POST'])
@@ -1160,13 +1250,13 @@ def edge_submit_result(edge_agent, task_id):
         "sandbox_profile": data.get("sandbox_profile", {}),
         "security_profile": data.get("security_profile", {}),
         "worker_mode": data.get("worker_mode", "edge"),
-        "submitted_at": datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+        "submitted_at": _get_utc_now().strftime('%Y-%m-%dT%H:%M:%SZ'),
     }
 
     task.status = 'completed' if result_payload["success"] else 'failed'
     task.result_json = json.dumps(result_payload, ensure_ascii=False)
-    task.completed_at = datetime.datetime.utcnow()
-    edge_agent.last_seen_at = datetime.datetime.utcnow()
+    task.completed_at = _get_utc_now()
+    edge_agent.last_seen_at = _get_utc_now()
     edge_agent.status = 'online'
 
     params = json.loads(task.params_json) if task.params_json else {}
@@ -1200,6 +1290,169 @@ def list_edge_agents(current_user):
     return jsonify({"agents": [agent.to_dict() for agent in agents]})
 
 
+@app.route('/api/edge/enrollment-tokens', methods=['POST'])
+@token_required
+def create_enrollment_token(current_user):
+    """Self-service: any authenticated user can generate a one-time edge enrollment token."""
+    data = request.json or {}
+    label = (data.get('label') or '').strip() or f"{current_user.username}'s edge node"
+    ttl_hours = min(int(data.get('ttl_hours', 24)), 168)  # max 7 days
+
+    raw_token = secrets.token_urlsafe(32)
+    token_record = EdgeEnrollmentToken(
+        token_hash=_edge_hash_token(raw_token),
+        label=label,
+        created_by_user_id=current_user.id,
+        expires_at=_get_utc_now() + datetime.timedelta(hours=ttl_hours),
+    )
+    db.session.add(token_record)
+    db.session.commit()
+
+    logger.info(f"User {current_user.username} generated edge enrollment token (id={token_record.id}, label={label})")
+    return jsonify({
+        "token": raw_token,
+        "enrollment_token_id": token_record.id,
+        "label": label,
+        "expires_at": token_record.expires_at.strftime('%Y-%m-%dT%H:%M:%SZ'),
+        "install_command": build_edge_install_command(
+            resolve_public_edge_api_base(CONFIG.autosec_api, request.host_url),
+            raw_token,
+        ),
+        "install_script_url": f"{resolve_public_edge_api_base(CONFIG.autosec_api, request.host_url)}/api/edge/install.sh?enrollment_token={quote(raw_token)}",
+    }), 201
+
+
+@app.route('/api/edge/enrollment-tokens', methods=['GET'])
+@token_required
+def list_enrollment_tokens(current_user):
+    """List enrollment tokens created by the current user (admin sees all)."""
+    query = EdgeEnrollmentToken.query.order_by(EdgeEnrollmentToken.created_at.desc())
+    if current_user.role != 'admin':
+        query = query.filter_by(created_by_user_id=current_user.id)
+    tokens = query.limit(100).all()
+    return jsonify({"tokens": [t.to_dict() for t in tokens]})
+
+
+@app.route('/api/edge/enrollment-tokens/<int:token_id>', methods=['DELETE'])
+@token_required
+def revoke_enrollment_token(current_user, token_id):
+    """Revoke an enrollment token."""
+    token_record = EdgeEnrollmentToken.query.get(token_id)
+    if not token_record:
+        return jsonify({"message": "Token not found"}), 404
+    if current_user.role != 'admin' and token_record.created_by_user_id != current_user.id:
+        return jsonify({"message": "Not authorized"}), 403
+    token_record.status = 'revoked'
+    db.session.commit()
+    return jsonify({"ok": True, "token": token_record.to_dict()})
+
+
+@app.route('/api/edge/install.sh', methods=['GET'])
+def edge_install_script():
+    enrollment_token = (request.args.get('enrollment_token') or '').strip()
+    enrollment_mode, _ = _validate_enrollment_secret(enrollment_token)
+    if not enrollment_mode:
+        return Response("#!/usr/bin/env bash\necho 'Invalid or expired enrollment token.' >&2\nexit 1\n", mimetype='text/x-shellscript', status=401)
+
+    base = resolve_public_edge_api_base(CONFIG.autosec_api, request.host_url)
+    
+    script = f"""#!/usr/bin/env bash
+set -euo pipefail
+
+# Architecture and OS detection
+OS_TYPE=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH_TYPE=$(uname -m | tr '[:upper:]' '[:lower:]')
+# Normalize arch
+if [ "$ARCH_TYPE" = "x86_64" ] || [ "$ARCH_TYPE" = "amd64" ]; then
+    ARCH_TYPE="x86_64"
+elif [ "$ARCH_TYPE" = "aarch64" ] || [ "$ARCH_TYPE" = "arm64" ]; then
+    ARCH_TYPE="arm64"
+fi
+
+EDGE_API="${{EDGE_API:-{base}}}"
+ENROLLMENT_TOKEN="{enrollment_token}"
+INSTALL_DIR="${{AUTOSEC_EDGE_INSTALL_DIR:-$HOME/.autosec-edge}}"
+BIN_PATH="$INSTALL_DIR/autosec-edge"
+
+RUNTIME_URL="$EDGE_API/api/edge/runtime/download?os=$OS_TYPE&arch=$ARCH_TYPE"
+
+mkdir -p "$INSTALL_DIR"
+cd "$INSTALL_DIR"
+
+echo "[+] Detecting platform: $OS_TYPE ($ARCH_TYPE)"
+echo "[+] Fetching secure Edge Agent binary from: $RUNTIME_URL"
+
+if command -v curl >/dev/null 2>&1; then
+  HTTP_STATUS=$(curl -sL -w "%{{http_code}}" -o "$BIN_PATH" "$RUNTIME_URL")
+  if [ "$HTTP_STATUS" != "200" ]; then
+      echo "[-] Server blocked download (HTTP $HTTP_STATUS). Platform ($OS_TYPE $ARCH_TYPE) binary may not be generated yet." >&2
+      rm -f "$BIN_PATH"
+      exit 1
+  fi
+elif command -v wget >/dev/null 2>&1; then
+  wget -qO "$BIN_PATH" "$RUNTIME_URL" || {{ echo "[-] Download failed. Binary may not be generated yet."; rm -f "$BIN_PATH"; exit 1; }}
+else
+  echo "curl or wget is required" >&2
+  exit 1
+fi
+
+chmod +x "$BIN_PATH"
+
+if [ "$OS_TYPE" = "darwin" ]; then
+  echo "[+] Relaxing macOS Gatekeeper constraints and re-signing..."
+  xattr -cr "$BIN_PATH" 2>/dev/null || true
+  # Ad-hoc sign for arm64 execution
+  if command -v codesign >/dev/null 2>&1; then
+    codesign -s - --force "$BIN_PATH" 2>/dev/null || true
+  fi
+fi
+
+echo "[+] Edge Agent acquired. Initiating isolated setup..."
+"$BIN_PATH" --register --edge-api "$EDGE_API" --enrollment-token="$ENROLLMENT_TOKEN"
+
+cat <<EOF
+--------------------------------------------------
+✅ Security Asset Installed: $BIN_PATH
+Status: OBFUSCATED NATIVE BINARY DEPLOYED
+
+Start once:
+  $BIN_PATH --edge-api "$EDGE_API"
+Run continuously (Daemon):
+  $BIN_PATH --edge-api "$EDGE_API" --daemon
+--------------------------------------------------
+EOF
+"""
+    return Response(script, mimetype='text/x-shellscript')
+
+
+@app.route('/api/edge/runtime/download', methods=['GET'])
+def download_edge_runtime():
+    requested_os = request.args.get('os', 'darwin').strip().lower()
+    requested_arch = request.args.get('arch', 'arm64').strip().lower()
+
+    if requested_os == "mac" or "mac" in requested_os:
+        requested_os = "darwin"
+
+    runtime_path = edge_runtime_download_path(
+        os.environ.get('AUTOSEC_EDGE_RUNTIME_PATH', ''),
+        requested_os,
+        requested_arch,
+        EDGE_BUILD_DIR,
+        EDGE_DIST_DIR,
+    )
+
+    if not runtime_path.exists() or not runtime_path.is_file():
+        return jsonify({
+            "message": "Edge runtime for this OS/architecture is not available.",
+            "requested_os": requested_os,
+            "requested_arch": requested_arch,
+            "expected_path": str(runtime_path),
+            "hint": "Build this target on a matching host/CI runner, for example on Linux ARM64 for linux/arm64.",
+        }), 404
+        
+    return send_file(runtime_path, as_attachment=True, download_name='autosec-edge')
+
+
 @app.route('/api/edge/recommendations', methods=['POST'])
 @token_required
 def recommend_edge_agents(current_user):
@@ -1210,16 +1463,16 @@ def recommend_edge_agents(current_user):
     if not poc_filename:
         return jsonify({"message": "filename is required"}), 400
 
-    poc_path, normalized_filename = _resolve_poc_path(poc_filename)
+    poc_path, normalized_filename = resolve_poc_path(POCS_DIR, poc_filename)
     if not poc_path or not normalized_filename:
         return jsonify({"message": "PoC file not found"}), 404
 
     profile = _extract_poc_security_profile(poc_path)
-    requirements = _infer_edge_requirements(profile, normalized_filename, params)
+    requirements = infer_edge_requirements(POCS_DIR, profile, normalized_filename, params)
 
     recommendations = []
-    for edge_agent in EdgeAgent.query.order_by(EdgeAgent.created_at.desc()).all():
-        matches, missing = _edge_agent_matches_requirements(edge_agent, requirements)
+    for edge_agent in _edge_agent_query_for_user(current_user).order_by(EdgeAgent.created_at.desc()).all():
+        matches, missing = edge_capabilities_missing(edge_agent.capabilities_json, requirements)
         recommendations.append(
             {
                 "agent": edge_agent.to_dict(),
@@ -1245,6 +1498,76 @@ def recommend_edge_agents(current_user):
     )
 
 
+@app.route('/api/edge/route-check', methods=['POST'])
+@token_required
+def check_edge_route(current_user):
+    """
+    API endpoint for the Orchestrator to check if a target IP should be routed to an Edge Agent.
+    """
+    data = request.json or {}
+    target_ip = data.get('target_ip')
+    if not target_ip:
+        return jsonify({"error": "target_ip is required"}), 400
+    
+    agent, plane = _find_best_execution_target(target_ip)
+    return jsonify({
+        "target_ip": target_ip,
+        "recommended_plane": plane,
+        "selected_agent": agent.to_dict() if agent else None,
+        "message": f"Target routed to {plane}"
+    })
+
+
+def _find_best_execution_target(target_ip: str) -> tuple[Optional[EdgeAgent], str]:
+    """
+    Core Smart Task Router logic:
+    Determines whether a target IP should be scanned via Cloud (local) or a specific Edge Agent.
+    Priority:
+    1. If IP matches an online Edge Agent's subnet -> Edge
+    2. Default -> Cloud
+    """
+    if not target_ip:
+        return None, "cloud"
+
+    # Quick check for private IP status
+    try:
+        addr = ipaddress.ip_address(target_ip)
+        if not addr.is_private:
+            # Public IPs default to Cloud scanning
+            return None, "cloud"
+    except Exception:
+        # Invalid IP formats fall back to Cloud
+        return None, "cloud"
+
+    # Search for online Agents reporting matching subnets
+    # We prioritize Online agents, then Busy agents. Offline agents are skipped.
+    now = _get_utc_now()
+    valid_agents = EdgeAgent.query.filter(
+        EdgeAgent.status.in_(['online', 'busy']),
+        EdgeAgent.last_seen_at >= now - datetime.timedelta(seconds=120)
+    ).all()
+
+    for agent in valid_agents:
+        try:
+            capabilities = json.loads(agent.capabilities_json) if agent.capabilities_json else {}
+            networks = capabilities.get("networks") or []
+            if not networks:
+                continue
+            
+            for network_cidr in networks:
+                try:
+                    if addr in ipaddress.ip_network(network_cidr, strict=False):
+                        logger.info(f"[Router] Smart routing match: {target_ip} falls within agent '{agent.display_name}' subnet {network_cidr}")
+                        return agent, "edge"
+                except Exception:
+                    continue
+        except Exception as exc:
+            logger.error(f"[Router] Error parsing agent {agent.agent_id} capabilities: {exc}")
+            continue
+
+    return None, "cloud"
+
+
 @app.route('/api/edge/tasks', methods=['POST'])
 @token_required
 def create_edge_task(current_user):
@@ -1258,19 +1581,19 @@ def create_edge_task(current_user):
     if not poc_filename:
         return jsonify({"message": "filename is required"}), 400
 
-    poc_path, normalized_filename = _resolve_poc_path(poc_filename)
+    poc_path, normalized_filename = resolve_poc_path(POCS_DIR, poc_filename)
     if not poc_path or not normalized_filename:
         return jsonify({"message": "PoC file not found"}), 404
     poc_filename = normalized_filename
     security_profile = _extract_poc_security_profile(poc_path)
-    requirements = _infer_edge_requirements(security_profile, poc_filename, params)
+    requirements = infer_edge_requirements(POCS_DIR, security_profile, poc_filename, params)
 
     edge_agent = None
     if agent_id:
-        edge_agent = EdgeAgent.query.filter_by(agent_id=agent_id).first()
+        edge_agent = _edge_agent_query_for_user(current_user).filter_by(agent_id=agent_id).first()
         if not edge_agent:
             return jsonify({"message": "Edge agent not found"}), 404
-        matches, missing = _edge_agent_matches_requirements(edge_agent, requirements)
+        matches, missing = edge_capabilities_missing(edge_agent.capabilities_json, requirements)
         if not matches:
             return jsonify(
                 {
@@ -1282,8 +1605,8 @@ def create_edge_task(current_user):
             ), 400
     else:
         candidates = []
-        for candidate in EdgeAgent.query.order_by(EdgeAgent.created_at.desc()).all():
-            matches, missing = _edge_agent_matches_requirements(candidate, requirements)
+        for candidate in _edge_agent_query_for_user(current_user).order_by(EdgeAgent.created_at.desc()).all():
+            matches, missing = edge_capabilities_missing(candidate.capabilities_json, requirements)
             if matches and candidate.to_dict()["status"] in {"online", "busy"}:
                 candidates.append(candidate)
         if not candidates:
@@ -1308,65 +1631,38 @@ def create_edge_task(current_user):
     db.session.add(task)
     db.session.commit()
 
-    # Sync mode: execute the PoC immediately and return the result
+    # Sync mode: wait for the selected edge agent to execute the queued task
     if data.get('sync'):
         try:
-            task.status = 'running'
-            task.started_at = datetime.datetime.utcnow()
-            edge_agent.status = 'busy'
-            db.session.commit()
+            wait_timeout = int(params.get("edge_sync_timeout_seconds", 90))
+            deadline = time.time() + wait_timeout
+            result_payload = None
 
-            worker = get_poc_worker("local_sandbox")
-            plan = worker.prepare(
-                poc_path,
-                params,
-                trace_id=trace_id,
-                session_id=session_id,
-                timeout_seconds=int(params.get("sandbox_timeout_seconds", 60)),
-            )
-            run_result = worker.run_once(plan)
-            plugin_results = run_result.get("plugin_results", {})
+            while time.time() < deadline:
+                db.session.expire_all()
+                synced_task = EdgeTask.query.filter_by(id=task.id).first()
+                synced_agent = EdgeAgent.query.filter_by(id=edge_agent.id).first()
+                if not synced_task or not synced_agent:
+                    break
 
-            result_payload = {
-                "success": bool(run_result.get("success")),
-                "logs": run_result.get("logs", []),
-                "errors": [plugin_results.get("error")] if "error" in plugin_results else [],
-                "vulnerable": plugin_results.get("vulnerable", False),
-                "evidence": plugin_results.get("evidence", ""),
-                "cve_id": plugin_results.get("cve_id", ""),
-                "elapsed_seconds": run_result.get("elapsed_seconds", 0),
-                "plugin_results": plugin_results,
-                "sandbox_profile": run_result.get("sandbox_profile", {}),
-                "security_profile": run_result.get("security_profile", {}),
-                "worker_mode": run_result.get("worker_mode", "local_sandbox"),
-                "submitted_at": datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
-            }
+                task = synced_task
+                edge_agent = synced_agent
+                if task.status in {'completed', 'failed'}:
+                    result_payload = json.loads(task.result_json) if task.result_json else {}
+                    break
+                time.sleep(1.0)
 
-            task.status = 'completed' if result_payload["success"] else 'failed'
-            task.result_json = json.dumps(result_payload, ensure_ascii=False)
-            task.completed_at = datetime.datetime.utcnow()
-            edge_agent.status = 'online'
-            edge_agent.last_seen_at = datetime.datetime.utcnow()
+            if result_payload is None:
+                return jsonify(
+                    {
+                        "task": task.to_dict(),
+                        "requirements": requirements,
+                        "selected_agent": edge_agent.to_dict(),
+                        "sync_pending": True,
+                        "message": "Edge task queued. The selected edge agent did not complete within the sync timeout window.",
+                    }
+                ), 202
 
-            if current_user:
-                _persist_execution_artifact(
-                    user_id=current_user.id,
-                    session_id=session_id,
-                    artifact_type="edge_poc_run",
-                    trace_id=trace_id,
-                    poc_filename=poc_filename,
-                    poc_name=(result_payload.get("security_profile") or {}).get("poc_name") or poc_filename,
-                    target_ip=params.get("target_ip"),
-                    target_mac=params.get("target_mac") or params.get("bluetooth_mac"),
-                    payload=_build_execution_artifact_payload(
-                        request_type="edge_task_sync",
-                        task=task.to_dict(),
-                        result=result_payload,
-                        edge_agent=edge_agent.to_dict(),
-                    ),
-                )
-
-            db.session.commit()
             return jsonify(
                 {
                     "task": task.to_dict(),
@@ -1377,11 +1673,6 @@ def create_edge_task(current_user):
             ), 200
         except Exception as exc:
             logger.error(f"Sync edge execution failed: {exc}")
-            task.status = 'failed'
-            task.result_json = json.dumps({"error": str(exc)}, ensure_ascii=False)
-            task.completed_at = datetime.datetime.utcnow()
-            edge_agent.status = 'online'
-            db.session.commit()
             return jsonify(
                 {
                     "task": task.to_dict(),
@@ -1416,16 +1707,30 @@ def generate_report(current_user):
     """Generate AI security report on the server side to avoid exposing LLM credentials in the browser."""
     data = request.json or {}
     session = data.get('session')
+    ai_config = data.get('ai_config') or {}
+    if not isinstance(ai_config, dict) or not any(str(ai_config.get(key) or "").strip() for key in ("api_key", "apiKey", "base_url", "baseUrl")):
+        ai_config = _load_user_ai_config(current_user.id)
 
     if not session or not isinstance(session, dict):
         return jsonify({"message": "session payload is required"}), 400
 
-    logger.info(f"AI report requested by {current_user.username} for {session.get('targetName') or 'Unknown Target'}")
-    report = _generate_ai_report(session)
+    _, ai_error = _validate_ai_config(ai_config)
+    if ai_error:
+        return jsonify({"message": ai_error}), 400
+
+    normalized_ai_config = _normalize_ai_config(ai_config)
+    selected_model = normalized_ai_config["report_model"] or normalized_ai_config["strong_model"] or normalized_ai_config["fast_model"] or "qwen-max"
+    logger.info(
+        "AI report requested by %s for %s using unified assessment agent (model=%s)",
+        current_user.username,
+        session.get('targetName') or 'Unknown Target',
+        selected_model,
+    )
+    report = _generate_unified_assessment_report(session, normalized_ai_config)
     return jsonify({
         "report": report,
-        "provider": "Qwen",
-        "generated_at": datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+        "provider": "user-configured-openai-compatible",
+        "generated_at": _get_utc_now().strftime('%Y-%m-%dT%H:%M:%SZ'),
     })
 
 
@@ -1458,6 +1763,41 @@ def _build_supervisor_model_profile(structured: dict) -> str:
     if planner.get("steps"):
         return "planner"
     return "baseline"
+
+
+def _truncate_poc_for_display(content: str) -> str:
+    """
+    Extracts the module-level docstring from a Python script for safe display.
+    Prevents leakage of exploit logic.
+    """
+    if not content:
+        return ""
+    
+    content = content.strip()
+    
+    # Try using AST to get the docstring cleanly
+    try:
+        import ast
+        tree = ast.parse(content)
+        doc = ast.get_docstring(tree)
+        if doc:
+            return f'"""\n{doc.strip()}\n"""\n\n# ... [Exploit logic hidden] ...'
+    except Exception:
+        pass
+
+    # Fallback to manual triple-quote extraction if AST fails or docstring is missing
+    for quote in ['"""', "'''"]:
+        if content.startswith(quote):
+            second_quote_idx = content.find(quote, len(quote))
+            if second_quote_idx != -1:
+                return content[:second_quote_idx + len(quote)].strip() + "\n\n# ... [Rest of code hidden] ..."
+
+    # Second fallback: take first 15 lines if no obvious docstring
+    lines = content.splitlines()
+    if len(lines) > 15:
+        return "\n".join(lines[:15]) + "\n\n# ... [Rest of code hidden] ..."
+        
+    return content
 
 
 @app.route('/api/attack-graph/generate', methods=['POST'])
@@ -1586,7 +1926,7 @@ def list_pocs():
                 try:
                     with open(filepath, 'r', encoding='utf-8') as f:
                         content = f.read()
-                        poc_info['content'] = content
+                        poc_info['content'] = _truncate_poc_for_display(content)
                         
                         import ast
                         tree = ast.parse(content)
@@ -1619,7 +1959,8 @@ def list_pocs():
                 if 'is_disruptive' not in poc_info:
                      poc_info['is_disruptive'] = False
                 profile = _extract_poc_security_profile(filepath)
-                poc_info.update(_classify_poc_execution_mode(filepath, profile, rel_path))
+                poc_info["manual_confirmation_required"] = _should_require_disruptive_approval(profile, {})
+                poc_info.update(classify_poc_execution_mode(POCS_DIR, filepath, profile, rel_path))
                 pocs.append(poc_info)
 
     return jsonify({"pocs": pocs, "total": len(pocs)})
@@ -1719,7 +2060,7 @@ def run_poc():
     if not poc_filename:
         return jsonify({"error": "No PoC filename provided"}), 400
 
-    poc_path, normalized_filename = _resolve_poc_path(poc_filename)
+    poc_path, normalized_filename = resolve_poc_path(POCS_DIR, poc_filename)
     if not poc_path:
         logger.warning(f"PoC file not found: {poc_filename}")
         return jsonify({"error": f"PoC file not found: {poc_filename}"}), 404
@@ -1864,7 +2205,7 @@ def run_poc_stream():
     if not poc_filename:
         return jsonify({"error": "No PoC filename provided"}), 400
 
-    poc_path, normalized_filename = _resolve_poc_path(poc_filename)
+    poc_path, normalized_filename = resolve_poc_path(POCS_DIR, poc_filename)
     if not poc_path:
         return jsonify({"error": f"PoC file not found: {poc_filename}"}), 404
     poc_filename = normalized_filename
@@ -2045,7 +2386,7 @@ def save_session(current_user):
             # Update existing record
             history.results_json = json.dumps(results_payload)
             history.logs = json.dumps(logs)
-            history.completed_at = datetime.datetime.utcnow()
+            history.completed_at = _get_utc_now()
             history.risk_score = risk_score
         else:
             # Create a new history record
@@ -2055,7 +2396,7 @@ def save_session(current_user):
                 target_ip=connection.get('ip'),
                 target_mac=connection.get('bluetoothMac') or connection.get('canInterface'),
                 status='completed',
-                completed_at=datetime.datetime.utcnow(),
+                completed_at=_get_utc_now(),
                 results_json=json.dumps(results_payload),
                 logs=json.dumps(logs), # Added logs here
                 risk_score=risk_score
@@ -2071,7 +2412,7 @@ def save_session(current_user):
                 supervisor_snapshot.model_profile = model_profile
                 supervisor_snapshot.metrics_json = json.dumps(metrics_payload)
                 supervisor_snapshot.adjustments_json = json.dumps(adjustments_payload)
-                supervisor_snapshot.created_at = datetime.datetime.utcnow()
+                supervisor_snapshot.created_at = _get_utc_now()
             else:
                 supervisor_snapshot = SupervisorMetricSnapshot(
                     user_id=current_user.id,
@@ -2251,15 +2592,7 @@ def get_history(current_user):
         scans = ScanHistory.query.filter_by(user_id=current_user.id).order_by(ScanHistory.started_at.desc()).limit(100).all()
 
     history = [scan.to_dict() for scan in scans]
-    source = 'primary'
-
-    if not history:
-        legacy_history = _fetch_legacy_history(current_user)
-        if legacy_history:
-            history = legacy_history
-            source = 'legacy'
-
-    return jsonify({"history": history, "source": source})
+    return jsonify({"history": history, "source": 'primary'})
 
 @app.route('/api/supervisor-metrics', methods=['GET'])
 @token_required
@@ -2555,9 +2888,73 @@ def adaptive_context(current_user):
         return jsonify({"error": str(e)}), 500
 
 
-# ==========================================
-# Patent-2: Multi-Agent Orchestrator Endpoint
-# ==========================================
+@app.route('/api/test-ai-config', methods=['POST'])
+@token_required
+def test_ai_config(current_user):
+    """
+    Test the AI configuration (API key, Base URL, models) by making a lightweight request.
+    Useful for ensuring the credentials work before starting a long scan.
+    """
+    data = request.json or {}
+    ai_config = data.get('ai_config') or {}
+    
+    # Fallback to saved config if not provided in request
+    if not isinstance(ai_config, dict) or not any(str(ai_config.get(key) or "").strip() for key in ("api_key", "apiKey", "base_url", "baseUrl")):
+        ai_config = _load_user_ai_config(current_user.id)
+        
+    normalized, error = _validate_ai_config(ai_config)
+    if error:
+        return jsonify({"success": False, "message": error}), 400
+        
+    # Use Fast Model for testing if available, else default to qwen-plus
+    test_model = normalized.get("fast_model") or normalized.get("strong_model") or "qwen-plus"
+    
+    logger.info(f"Testing AI config for user {current_user.username} using model {test_model}")
+    
+    try:
+        response = requests.post(
+            f"{normalized['base_url'].rstrip('/')}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {normalized['api_key']}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": test_model,
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 5
+            },
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            return jsonify({
+                "success": True, 
+                "message": f"Successfully connected to {test_model}.",
+                "model": test_model
+            })
+        else:
+            try:
+                err_data = response.json()
+                msg = err_data.get('error', {}).get('message', response.text)
+            except:
+                msg = response.text
+            return jsonify({
+                "success": False, 
+                "message": f"API returned error ({response.status_code}): {msg}"
+            })
+            
+    except requests.exceptions.RequestException as e:
+        return jsonify({
+            "success": False, 
+            "message": f"Network/Connection failed: {str(e)}"
+        })
+    except Exception as e:
+        logger.error(f"Unexpected error testing AI config: {e}")
+        return jsonify({
+            "success": False, 
+            "message": f"Internal error: {str(e)}"
+        })
+
 
 @app.route('/api/agent-scan', methods=['POST'])
 @token_required
@@ -2573,6 +2970,9 @@ def agent_scan(current_user):
     resume_from = data.get('resume_from')
     state = data.get('state') or {}
     context = data.get('context', '')
+    ai_config = data.get('ai_config') or {}
+    if not isinstance(ai_config, dict) or not any(str(ai_config.get(key) or "").strip() for key in ("api_key", "apiKey", "base_url", "baseUrl")):
+        ai_config = _load_user_ai_config(current_user.id)
     # 可选资源参数（用于 Agent 智能过滤 PoC）
     can_interface  = data.get('can_interface', '')
     bluetooth_mac  = data.get('bluetooth_mac', '')
@@ -2580,6 +2980,10 @@ def agent_scan(current_user):
 
     if not target_ip:
         return jsonify({"error": "target_ip is required"}), 400
+
+    normalized_ai_config, ai_error = _validate_ai_config(ai_config)
+    if ai_error:
+        return jsonify({"error": ai_error, "error_code": "MODEL_API_KEY_MISSING"}), 400
 
     logger.info(f"Agent scan started by {current_user.username}: {target_name} ({target_ip})")
 
@@ -2592,6 +2996,7 @@ def agent_scan(current_user):
             target_ip=target_ip,
             target_name=target_name,
             auth_token=request.headers.get('Authorization'),
+            llm_config=normalized_ai_config,
             can_interface=can_interface,
             bluetooth_mac=bluetooth_mac,
             wifi_interface=wifi_interface,
@@ -2627,7 +3032,7 @@ def agent_scan(current_user):
         return _error_payload(f"Agent module not available: {e}", "AGENT_MODULE_UNAVAILABLE")
     except RuntimeError as e:
         message = str(e)
-        if "DASHSCOPE_API_KEY" in message:
+        if "API key" in message or "base_url" in message:
             return _error_payload(message, "MODEL_API_KEY_MISSING")
         if "MCP" in message:
             return _error_payload(message, "MCP_UNAVAILABLE")
@@ -2635,7 +3040,7 @@ def agent_scan(current_user):
     except Exception as e:
         logger.error(f"Agent scan error: {e}")
         message = str(e)
-        if "DASHSCOPE_API_KEY" in message:
+        if "API key" in message or "base_url" in message:
             return _error_payload(message, "MODEL_API_KEY_MISSING")
         if "MCP" in message or "AutoSec API" in message:
             return _error_payload(message, "MCP_UNAVAILABLE")

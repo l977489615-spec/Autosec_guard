@@ -11,6 +11,7 @@ Usage: python3 30_OBD_VIN_Spoof.py PCAN_USBBUS1
 """
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
+from can_bus_utils import format_can_settings, get_can_settings, open_can_bus
 class OBDVINSpoofPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = "OBD VIN Spoof"
     meta_cve_id = "N/A"
@@ -21,16 +22,16 @@ class OBDVINSpoofPlugin(IVIVulnerabilityPlugin):
     is_disruptive = False
     meta_destructive_level = "Safe"
 
-    def check_prerequisites(self): return True
+    def check_prerequisites(self):
+        settings = get_can_settings(self.params)
+        self.logger.info(f"检查CAN接口: {format_can_settings(settings)}")
+        return True
     def exploit(self):
-        iface = self.params.get("can_interface", "PCAN_USBBUS1")
-        self.logger.info(f"OBD-II VIN欺骗测试 ({iface})...")
+        settings = get_can_settings(self.params)
+        self.logger.info(f"OBD-II VIN欺骗测试 ({format_can_settings(settings)})...")
         try:
             import can
-            if "PCAN" in iface:
-                bus = can.interface.Bus(channel=iface, interface="pcan", bitrate=500000)
-            else:
-                bus = can.interface.Bus(channel=iface, bustype="socketcan")
+            bus = open_can_bus(self.params)
             # First query VIN (Mode 09 PID 02)
             query = can.Message(arbitration_id=0x7DF,
                 data=[0x02, 0x09, 0x02, 0,0,0,0,0], is_extended_id=False)
