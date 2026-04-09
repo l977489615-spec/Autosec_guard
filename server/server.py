@@ -195,7 +195,7 @@ def _build_manual_assessment_context(session: dict) -> tuple[str, str, str]:
     context = (
         "【扫描来源】Global Scan / History Report Generation\n"
         "【说明】以下内容来自人工触发或计划任务触发的全局扫描结果，已统一转换为 Assessment Agent 可消费的执行结果上下文。\n\n"
-        f"【会话摘要(JSON)】\n{json.dumps({
+                f"【会话摘要(JSON)】\n{json.dumps({
             'session_id': session.get('id') or session.get('session_id'),
             'target_name': target_name,
             'target_ip': target_ip,
