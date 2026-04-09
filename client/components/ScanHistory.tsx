@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ScanSession, POC, PhaseRecord, PlannerStep, SupervisorAdjustment, SupervisorEvent, SupervisorMetrics, ExecutionArtifactRecord } from '../types';
 import { Clock, AlertTriangle, CheckCircle, FileText, ChevronRight, X, List, Shield, Download, Trash2, Square, CheckSquare } from 'lucide-react';
 import ScanLogs from './ScanLogs';
-import { POC_DATABASE } from '../constants';
+import { POC_DATABASE } from '../data/pocDatabase';
 import PocDetailModal from './PocDetailModal';
 import { getBackendUrl } from '../services/api';
 import AttackGraph from './AttackGraph';

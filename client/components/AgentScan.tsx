@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Bot, Shield, Network, Cpu, FileText, Play, Loader, CheckCircle, XCircle, Key, Sliders, Download, RotateCcw, AlertTriangle, ShieldCheck, Zap } from 'lucide-react';
 import { saveScanSession } from '../services/api';
 import ScanLogs from './ScanLogs';
-import { POC_DATABASE } from '../constants';
+import { POC_DATABASE } from '../data/pocDatabase';
 import { PhaseRecord, PlannerStep, Severity, SupervisorAdjustment, SupervisorEvent, SupervisorMetrics } from '../types';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Environment, ContactShadows } from '@react-three/drei';

@@ -33,90 +33,60 @@ class Dynamic0DayPlugin(IVIVulnerabilityPlugin):
         target_ip = self.target_ip
         target_port = self.target_port
         try:
-            import socket
-            import paramiko
-            import time
+        import socket
+        import random
+        import string
+        import time
 
-            # 目标 IP 地址
-            # Note: target_ip is already defined above from self.target_ip
-            telnet_port = 23
-            ssh_port = 22
+        def generate_random_string(length):
+            """生成指定长度的随机字符串"""
+            return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
 
-            # 弱口令字典
-            weak_creds = [
-                ("root", "root"),
-                ("admin", "admin"),
-                ("root", "123456"),
-                ("admin", "123456"),
-            ]
-
-            def telnet_login(ip, port, username, password):
-                try:
-                    # 创建 Telnet 连接
-                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                        s.settimeout(5)
-                        s.connect((ip, port))
-                        time.sleep(2)  # 等待 Telnet 服务响应
-                        data = s.recv(1024).decode('utf-8')
-
-                        if "login" in data:
-                            s.send(f"{username}\n".encode('utf-8'))
-                            time.sleep(2)
-                            data = s.recv(1024).decode('utf-8')
-
-                            if "Password" in data:
-                                s.send(f"{password}\n".encode('utf-8'))
-                                time.sleep(2)
-                                data = s.recv(1024).decode('utf-8')
-
-                                if "#" in data or "$" in data:
-                                    print(f"Telnet 登录成功: {username}:{password}")
-                                    return True
-                                else:
-                                    print(f"Telnet 登录失败: {username}:{password}")
-                                    return False
-                            else:
-                                print(f"Telnet 登录失败: {username}:{password}")
-                                return False
-                        else:
-                            print("Telnet 服务未响应")
-                            return False
-                except Exception as e:
-                    print(f"Telnet 登录异常: {e}")
-                    return False
-
-            def ssh_login(ip, port, username, password):
-                try:
-                    # 创建 SSH 客户端
-                    client = paramiko.SSHClient()
-                    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                    client.connect(ip, port=port, username=username, password=password, timeout=5)
-
-                    print(f"SSH 登录成功: {username}:{password}")
-                    return True
-                except (paramiko.AuthenticationException, paramiko.SSHException, socket.error) as e:
-                    print(f"SSH 登录失败: {username}:{password} - {e}")
-                    return False
-                finally:
-                    client.close()
-
-            # 尝试 Telnet 登录
+        def fuzz_telnet(target_ip, target_port, test_count=100, timeout=5):
+            """对指定IP和端口上的Telnet服务执行模糊测试"""
             vulnerable = False
-            for username, password in weak_creds:
-                if telnet_login(target_ip, telnet_port, username, password):
+            for i in range(test_count):
+                try:
+                    # 创建TCP连接
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                        s.settimeout(timeout)
+                        s.connect((target_ip, target_port))
+
+                        # 发送随机payload
+                        payload_size = random.randint(10, 100)  # 随机选择payload大小
+                        payload = generate_random_string(payload_size).encode('utf-8')
+                        print(f"Sending payload of size {len(payload)}: {payload[:10]}...")
+                        s.sendall(payload)
+
+                        # 接收响应
+                        response = s.recv(1024)
+                        if response:
+                            print("Received response:", response)
+                            # 如果收到异常响应，标记为可能存在漏洞
+                            if b"Error" in response or b"Exception" in response:
+                                print("Vulnerable: True")
+                                vulnerable = True
+                                break
+                        else:
+                            print("No response received.")
+
+                except Exception as e:
+                    print(f"An error occurred: {e}")
+                    # 如果发生错误，也视为可能存在漏洞
+                    print("Vulnerable: True")
                     vulnerable = True
                     break
 
-            if not vulnerable:
-                # 如果 Telnet 登录失败，尝试 SSH 登录
-                for username, password in weak_creds:
-                    if ssh_login(target_ip, ssh_port, username, password):
-                        vulnerable = True
-                        break
+                # 每次请求后等待一段时间
+                time.sleep(0.5)
 
-            self.results["vulnerable"] = vulnerable
-            if vulnerable:
-                self.results["evidence"] = "Weak credentials detected via Telnet/SSH"
+            if not vulnerable:
+                print("No obvious vulnerabilities detected during fuzzing.")
+
+        if __name__ == "__main__":
+            TARGET_IP = "172.16.64.129"
+            TARGET_PORT = 23
+            fuzz_telnet(TARGET_IP, TARGET_PORT)
         except Exception as e:
             self.logger.error(f"动态探测脚本执行异常: {e}")
             self.results["evidence"] = f"Exception: {e}"

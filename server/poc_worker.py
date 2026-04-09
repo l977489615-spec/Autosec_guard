@@ -14,6 +14,7 @@ import traceback
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
+from poc_security import should_require_disruptive_approval
 
 
 SERVER_DIR = Path(__file__).resolve().parent
@@ -127,12 +128,7 @@ def _extract_security_profile(poc_path: str, poc_code: Optional[str] = None) -> 
 
 
 def _requires_disruptive_approval(profile: dict, params: dict) -> bool:
-    if params.get("allow_disruptive") in (True, "true", "True", "1", 1):
-        return False
-    if profile.get("is_disruptive"):
-        return True
-    destructive_level = str(profile.get("destructive_level") or "").lower()
-    return destructive_level in {"restart", "dataloss", "brick"}
+    return should_require_disruptive_approval(profile, params)
 
 
 def _build_sandbox_env(params: dict, allowed_hosts: Optional[List[str]] = None) -> dict:

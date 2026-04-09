@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { flushSync } from 'react-dom';
+import { flushSync, createPortal } from 'react-dom';
 import { ScanSession, ScanLog, ScanResult, Severity, POC, Category, ConnectionParams } from '../types';
-import { POC_DATABASE } from '../constants';
+import { POC_DATABASE } from '../data/pocDatabase';
 import ScanLogs from './ScanLogs';
 import { generateSecurityReport } from '../services/LLMService';
 import PocDetailModal from './PocDetailModal';
@@ -774,6 +774,47 @@ const Scanner: React.FC<ScannerProps> = ({
     </div>
   );
 
+  const disruptiveApprovalModal = disruptiveApproval && typeof document !== 'undefined'
+    ? createPortal(
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div className="w-full max-w-lg rounded-xl border border-amber-500/50 bg-cyber-900 shadow-[0_0_40px_rgba(245,158,11,0.2)]">
+          <div className="border-b border-cyber-700 px-6 py-4">
+            <div className="flex items-center gap-3 text-amber-300">
+              <AlertTriangle size={20} />
+              <h3 className="text-lg font-semibold">High-Risk PoC Confirmation</h3>
+            </div>
+          </div>
+          <div className="space-y-4 px-6 py-5 text-sm text-gray-300">
+            <p>{disruptiveApproval.progress} {disruptiveApproval.poc.name}</p>
+            <p>这个 PoC 被标记为高风险/破坏性操作。确认后将带 `allow_disruptive=true` 继续执行。</p>
+            <p>如果你在 {disruptiveApproval.secondsLeft}s 内没有操作，系统会自动继续本项扫描。</p>
+          </div>
+          <div className="flex items-center justify-end gap-3 border-t border-cyber-700 px-6 py-4">
+            <button
+              onClick={() => resolveDisruptiveApproval('skipped')}
+              className="rounded-md border border-cyber-700 px-4 py-2 text-sm text-gray-300 hover:border-cyber-500 hover:text-white"
+            >
+              Skip This PoC
+            </button>
+            <button
+              onClick={() => resolveDisruptiveApproval('approved')}
+              className="rounded-md bg-amber-500 px-4 py-2 text-sm font-medium text-black hover:bg-amber-400"
+            >
+              Confirm And Execute
+            </button>
+            <button
+              onClick={() => resolveDisruptiveApproval('approved_all')}
+              className="rounded-md bg-cyber-accent px-4 py-2 text-sm font-medium text-black hover:brightness-110"
+            >
+              Confirm For Rest Of Scan
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )
+    : null;
+
   return (
     <div className="h-full relative overflow-hidden">
       {/* Detail Modal for Result Inspection */}
@@ -801,43 +842,7 @@ const Scanner: React.FC<ScannerProps> = ({
         token={token}
       />
 
-      {disruptiveApproval && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg rounded-xl border border-amber-500/50 bg-cyber-900 shadow-[0_0_40px_rgba(245,158,11,0.2)]">
-            <div className="border-b border-cyber-700 px-6 py-4">
-              <div className="flex items-center gap-3 text-amber-300">
-                <AlertTriangle size={20} />
-                <h3 className="text-lg font-semibold">High-Risk PoC Confirmation</h3>
-              </div>
-            </div>
-            <div className="space-y-4 px-6 py-5 text-sm text-gray-300">
-              <p>{disruptiveApproval.progress} {disruptiveApproval.poc.name}</p>
-              <p>这个 PoC 被标记为高风险/破坏性操作。确认后将带 `allow_disruptive=true` 继续执行。</p>
-              <p>如果你在 {disruptiveApproval.secondsLeft}s 内没有操作，系统会自动继续本项扫描。</p>
-            </div>
-            <div className="flex items-center justify-end gap-3 border-t border-cyber-700 px-6 py-4">
-              <button
-                onClick={() => resolveDisruptiveApproval('skipped')}
-                className="rounded-md border border-cyber-700 px-4 py-2 text-sm text-gray-300 hover:border-cyber-500 hover:text-white"
-              >
-                Skip This PoC
-              </button>
-              <button
-                onClick={() => resolveDisruptiveApproval('approved')}
-                className="rounded-md bg-amber-500 px-4 py-2 text-sm font-medium text-black hover:bg-amber-400"
-              >
-                Confirm And Execute
-              </button>
-              <button
-                onClick={() => resolveDisruptiveApproval('approved_all')}
-                className="rounded-md bg-cyber-accent px-4 py-2 text-sm font-medium text-black hover:brightness-110"
-              >
-                Confirm For Rest Of Scan
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {disruptiveApprovalModal}
 
       {/* Top Bar for Modes */}
       {mode !== 'SELECTION' && (

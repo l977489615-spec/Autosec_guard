@@ -1,6 +1,6 @@
 import React from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
-import { POC_DATABASE } from '../constants';
+import { POC_DATABASE } from '../data/pocDatabase';
 import { Severity, Category } from '../types';
 import { Activity, Shield, AlertTriangle, Zap } from 'lucide-react';
 

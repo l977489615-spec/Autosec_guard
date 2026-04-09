@@ -40,3 +40,8 @@ build/
 server/.edge_build/
 server/.edge_spec/
 server/edge_dist/
+server/.edge-agent-state.json
+server/backups/
+nuitka-crash-report.xml
+*.crash
+*.stackdump

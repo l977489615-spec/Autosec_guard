@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { POC_DATABASE } from '../constants';
+import { POC_DATABASE } from '../data/pocDatabase';
 import { Category, Severity, POC } from '../types';
 import { Search, ShieldAlert, Cpu, Radio, Activity, Globe, Terminal, Zap, Eye } from 'lucide-react';
 import PocDetailModal from './PocDetailModal';

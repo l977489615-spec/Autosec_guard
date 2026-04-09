@@ -58,6 +58,9 @@ from edge_deployment import (
     resolve_public_edge_api_base,
 )
 from edge_task_payload import attach_poc_code_to_task_payload
+from poc_security import extract_poc_security_profile, should_require_disruptive_approval
+from poc_execution_service import normalize_poc_params, resolve_target_label
+from auth_service import resolve_user_from_bearer
 
 # This server must be running on the device connected to the vehicle (e.g., Raspberry Pi/Laptop)
 # Run with: python3 server.py
@@ -192,20 +195,28 @@ def _build_manual_assessment_context(session: dict) -> tuple[str, str, str]:
     execution_items = _normalize_manual_execution_items(session)
     findings = _normalize_manual_findings(session, execution_items)
 
+    session_summary = json.dumps({
+        'session_id': session.get('id') or session.get('session_id'),
+        'target_name': target_name,
+        'target_ip': target_ip,
+        'mode': session.get('mode') or 'batch',
+        'risk_score': session.get('riskScore'),
+        'result_count': len(execution_items),
+        'finding_count': len(findings),
+    }, ensure_ascii=False, indent=2)
+
+    execution_result = json.dumps({'items': execution_items}, ensure_ascii=False, indent=2)
+    finding_result = json.dumps(findings, ensure_ascii=False, indent=2)
+
     context = (
         "【扫描来源】Global Scan / History Report Generation\n"
         "【说明】以下内容来自人工触发或计划任务触发的全局扫描结果，已统一转换为 Assessment Agent 可消费的执行结果上下文。\n\n"
-                f"【会话摘要(JSON)】\n{json.dumps({
-            'session_id': session.get('id') or session.get('session_id'),
-            'target_name': target_name,
-            'target_ip': target_ip,
-            'mode': session.get('mode') or 'batch',
-            'risk_score': session.get('riskScore'),
-            'result_count': len(execution_items),
-            'finding_count': len(findings),
-        }, ensure_ascii=False, indent=2)}\n\n"
-        f"【执行结果(JSON)】\n{json.dumps({'items': execution_items}, ensure_ascii=False, indent=2)}\n\n"
-        f"【漏洞发现(JSON)】\n{json.dumps(findings, ensure_ascii=False, indent=2)}"
+        "【会话摘要(JSON)】\n"
+        f"{session_summary}\n\n"
+        "【执行结果(JSON)】\n"
+        f"{execution_result}\n\n"
+        "【漏洞发现(JSON)】\n"
+        f"{finding_result}"
     )
     return target_name, target_ip, context
 
@@ -575,70 +586,11 @@ class EdgeEnrollmentToken(db.Model):
 
 
 def _extract_poc_security_profile(poc_path: str) -> dict:
-    profile = {
-        "poc_name": os.path.basename(poc_path),
-        "cve_id": "",
-        "severity": "",
-        "protocol": "",
-        "target_os": [],
-        "required_params": [],
-        "destructive_level": "Safe",
-        "is_disruptive": False,
-    }
-
-    try:
-        with open(poc_path, "r", encoding="utf-8") as handle:
-            tree = ast.parse(handle.read(), filename=poc_path)
-    except Exception as exc:
-        profile["parse_error"] = str(exc)
-        return profile
-
-    metadata_keys = {
-        "meta_poc_name",
-        "meta_cve_id",
-        "meta_severity",
-        "meta_protocol",
-        "meta_target_os",
-        "meta_required_params",
-        "meta_destructive_level",
-        "is_disruptive",
-    }
-
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.ClassDef):
-            continue
-        class_meta = {}
-        for body_item in node.body:
-            if not isinstance(body_item, ast.Assign):
-                continue
-            try:
-                value = ast.literal_eval(body_item.value)
-            except Exception:
-                continue
-            for target_node in body_item.targets:
-                if isinstance(target_node, ast.Name) and target_node.id in metadata_keys:
-                    class_meta[target_node.id] = value
-        if class_meta:
-            profile["poc_name"] = class_meta.get("meta_poc_name") or profile["poc_name"]
-            profile["cve_id"] = class_meta.get("meta_cve_id") or profile["cve_id"]
-            profile["severity"] = class_meta.get("meta_severity") or profile["severity"]
-            profile["protocol"] = class_meta.get("meta_protocol") or profile["protocol"]
-            profile["target_os"] = class_meta.get("meta_target_os") or profile["target_os"]
-            profile["required_params"] = class_meta.get("meta_required_params") or profile["required_params"]
-            profile["destructive_level"] = class_meta.get("meta_destructive_level") or profile["destructive_level"]
-            profile["is_disruptive"] = bool(class_meta.get("is_disruptive", profile["is_disruptive"]))
-            break
-
-    return profile
+    return extract_poc_security_profile(poc_path)
 
 
 def _should_require_disruptive_approval(profile: dict, params: dict) -> bool:
-    if params.get("allow_disruptive") in (True, "true", "True", "1", 1):
-        return False
-    destructive_level = str(profile.get("destructive_level") or "").lower()
-    if profile.get("is_disruptive"):
-        return True
-    return destructive_level in {"restart", "dataloss", "brick"}
+    return should_require_disruptive_approval(profile, params)
 
 
 def _build_execution_artifact_payload(**kwargs) -> dict:
@@ -2030,32 +1982,16 @@ def fingerprint_os():
 def run_poc():
     """Run a specific PoC plugin by filename with given parameters."""
     # Optional authorization to link scan to a user
-    current_user = None
-    token = request.headers.get('Authorization')
-    if token and token.startswith("Bearer "):
-        try:
-            token = token.split(" ")[1]
-            token_data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
-            current_user = User.query.filter_by(id=token_data['user_id']).first()
-        except:
-            pass
+    current_user = resolve_user_from_bearer(
+        request.headers.get('Authorization'),
+        app.config['SECRET_KEY'],
+        User,
+    )
 
     data = request.json
     poc_filename = data.get('filename')
-    params = data.get('params', {}).copy() # Use a copy to avoid mutating source if needed
+    params = normalize_poc_params(data.get('params', {}))
     session_id = data.get('session_id', 'manual')
-
-    # Parameter mapping for plugin compatibility (ip -> target_ip, port -> target_port)
-    if 'ip' in params and 'target_ip' not in params:
-        params['target_ip'] = params['ip']
-    if 'port' in params and 'target_port' not in params:
-        params['target_port'] = params['port']
-    # Bluetooth MAC 映射：前端字段 bluetoothMac -> 后端各 PoC 使用的 bd_addr / target_mac / bluetooth_mac
-    bt_mac = params.get('bluetoothMac') or params.get('bluetooth_mac') or params.get('bd_addr') or ''
-    if bt_mac:
-        params['bd_addr'] = bt_mac
-        params['target_mac'] = bt_mac
-        params['bluetooth_mac'] = bt_mac
 
     if not poc_filename:
         return jsonify({"error": "No PoC filename provided"}), 400
@@ -2070,7 +2006,7 @@ def run_poc():
     trace_id = data.get("trace_id") or session_id or uuid.uuid4().hex
     
     try:
-        target = params.get('target_ip') or params.get('target_mac') or params.get('can_interface') or 'unknown'
+        target = resolve_target_label(params)
         security_profile = _extract_poc_security_profile(poc_path)
         requires_approval = _should_require_disruptive_approval(security_profile, params)
 
@@ -2188,19 +2124,8 @@ def run_poc_stream():
 
     data = request.json
     poc_filename = data.get('filename')
-    params = data.get('params', {}).copy()
+    params = normalize_poc_params(data.get('params', {}))
     session_id = data.get('session_id', 'manual')
-
-    # 统一参数映射
-    if 'ip' in params and 'target_ip' not in params:
-        params['target_ip'] = params['ip']
-    if 'port' in params and 'target_port' not in params:
-        params['target_port'] = params['port']
-    bt_mac = params.get('bluetoothMac') or params.get('bluetooth_mac') or params.get('bd_addr') or ''
-    if bt_mac:
-        params['bd_addr'] = bt_mac
-        params['target_mac'] = bt_mac
-        params['bluetooth_mac'] = bt_mac
 
     if not poc_filename:
         return jsonify({"error": "No PoC filename provided"}), 400
@@ -2217,7 +2142,7 @@ def run_poc_stream():
             audit = AuditLog(
                 user_id=None,
                 action='run_disruptive_poc',
-                target=params.get('target_ip') or params.get('target_mac') or params.get('can_interface') or 'unknown',
+                target=resolve_target_label(params),
                 details_json=json.dumps({
                     "poc": poc_filename,
                     "params": params,
@@ -2242,7 +2167,7 @@ def run_poc_stream():
 
     # Audit Logging
     try:
-        target = params.get('target_ip') or params.get('target_mac') or params.get('can_interface') or 'unknown'
+        target = resolve_target_label(params)
         if security_profile.get("is_disruptive"):
             audit = AuditLog(
                 user_id=None,
@@ -2295,12 +2220,11 @@ def run_poc_stream():
                 }
                 if request.headers.get('Authorization'):
                     try:
-                        auth_header = request.headers.get('Authorization')
-                        current_user = None
-                        if auth_header and auth_header.startswith("Bearer "):
-                            token_value = auth_header.split(" ")[1]
-                            token_data = jwt.decode(token_value, app.config['SECRET_KEY'], algorithms=["HS256"])
-                            current_user = User.query.filter_by(id=token_data['user_id']).first()
+                        current_user = resolve_user_from_bearer(
+                            request.headers.get('Authorization'),
+                            app.config['SECRET_KEY'],
+                            User,
+                        )
                         if current_user:
                             _persist_execution_artifact(
                                 user_id=current_user.id,
