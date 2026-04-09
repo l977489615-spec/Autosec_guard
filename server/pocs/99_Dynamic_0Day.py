@@ -10,6 +10,8 @@ Prerequisites: 目标可达
 import sys
 import socket
 import time
+import random
+import string
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 
@@ -32,20 +34,18 @@ class Dynamic0DayPlugin(IVIVulnerabilityPlugin):
         self.results["description"] = "Weaponize Agent 自动生成的动态0-Day探测"
         target_ip = self.target_ip
         target_port = self.target_port
+        vulnerable = False
+        evidence = "No obvious vulnerabilities detected during fuzzing."
+
         try:
-        import socket
-        import random
-        import string
-        import time
+            def generate_random_string(length: int) -> str:
+                """生成指定长度的随机字符串"""
+                return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
 
-        def generate_random_string(length):
-            """生成指定长度的随机字符串"""
-            return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
+            test_count = int(self.params.get("test_count", 30))
+            timeout = float(self.params.get("timeout", 5))
 
-        def fuzz_telnet(target_ip, target_port, test_count=100, timeout=5):
-            """对指定IP和端口上的Telnet服务执行模糊测试"""
-            vulnerable = False
-            for i in range(test_count):
+            for _ in range(test_count):
                 try:
                     # 创建TCP连接
                     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -53,43 +53,31 @@ class Dynamic0DayPlugin(IVIVulnerabilityPlugin):
                         s.connect((target_ip, target_port))
 
                         # 发送随机payload
-                        payload_size = random.randint(10, 100)  # 随机选择payload大小
+                        payload_size = random.randint(10, 100)
                         payload = generate_random_string(payload_size).encode('utf-8')
-                        print(f"Sending payload of size {len(payload)}: {payload[:10]}...")
+                        self.logger.info(f"Sending payload of size {len(payload)}")
                         s.sendall(payload)
 
                         # 接收响应
                         response = s.recv(1024)
-                        if response:
-                            print("Received response:", response)
-                            # 如果收到异常响应，标记为可能存在漏洞
-                            if b"Error" in response or b"Exception" in response:
-                                print("Vulnerable: True")
-                                vulnerable = True
-                                break
-                        else:
-                            print("No response received.")
+                        if response and (b"Error" in response or b"Exception" in response):
+                            vulnerable = True
+                            evidence = "Received suspicious error response during telnet fuzzing."
+                            break
 
                 except Exception as e:
-                    print(f"An error occurred: {e}")
-                    # 如果发生错误，也视为可能存在漏洞
-                    print("Vulnerable: True")
+                    # 连接异常视为潜在风险信号（保持原脚本语义）
                     vulnerable = True
+                    evidence = f"Connection error during fuzzing: {e}"
                     break
 
-                # 每次请求后等待一段时间
-                time.sleep(0.5)
-
-            if not vulnerable:
-                print("No obvious vulnerabilities detected during fuzzing.")
-
-        if __name__ == "__main__":
-            TARGET_IP = "172.16.64.129"
-            TARGET_PORT = 23
-            fuzz_telnet(TARGET_IP, TARGET_PORT)
+                time.sleep(0.2)
         except Exception as e:
             self.logger.error(f"动态探测脚本执行异常: {e}")
-            self.results["evidence"] = f"Exception: {e}"
+            evidence = f"Exception: {e}"
+
+        self.results["vulnerable"] = vulnerable
+        self.results["evidence"] = evidence
         return self.results
 
 
