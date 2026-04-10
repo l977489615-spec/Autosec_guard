@@ -1249,6 +1249,12 @@ def create_enrollment_token(current_user):
     data = request.json or {}
     label = (data.get('label') or '').strip() or f"{current_user.username}'s edge node"
     ttl_hours = min(int(data.get('ttl_hours', 24)), 168)  # max 7 days
+    public_edge_api_base = resolve_public_edge_api_base(
+        CONFIG.autosec_api,
+        request.host_url,
+        forwarded_host=request.headers.get('X-Forwarded-Host', ''),
+        forwarded_proto=request.headers.get('X-Forwarded-Proto', ''),
+    )
 
     raw_token = secrets.token_urlsafe(32)
     token_record = EdgeEnrollmentToken(
@@ -1267,10 +1273,10 @@ def create_enrollment_token(current_user):
         "label": label,
         "expires_at": token_record.expires_at.strftime('%Y-%m-%dT%H:%M:%SZ'),
         "install_command": build_edge_install_command(
-            resolve_public_edge_api_base(CONFIG.autosec_api, request.host_url),
+            public_edge_api_base,
             raw_token,
         ),
-        "install_script_url": f"{resolve_public_edge_api_base(CONFIG.autosec_api, request.host_url)}/api/edge/install.sh?enrollment_token={quote(raw_token)}",
+        "install_script_url": f"{public_edge_api_base}/api/edge/install.sh?enrollment_token={quote(raw_token)}",
     }), 201
 
 
@@ -1301,14 +1307,28 @@ def revoke_enrollment_token(current_user, token_id):
 
 @app.route('/api/edge/install.sh', methods=['GET'])
 def edge_install_script():
-    enrollment_token = (request.args.get('enrollment_token') or '').strip()
-    enrollment_mode, _ = _validate_enrollment_secret(enrollment_token)
-    if not enrollment_mode:
-        return Response("#!/usr/bin/env bash\necho 'Invalid or expired enrollment token.' >&2\nexit 1\n", mimetype='text/x-shellscript', status=401)
+    def _shell_error(message: str, status: int = 500) -> Response:
+        body = (
+            "#!/usr/bin/env bash\n"
+            "echo " + json.dumps(message) + " >&2\n"
+            "exit 1\n"
+        )
+        return Response(body, mimetype='text/x-shellscript', status=status)
 
-    base = resolve_public_edge_api_base(CONFIG.autosec_api, request.host_url)
-    
-    script = f"""#!/usr/bin/env bash
+    try:
+        enrollment_token = (request.args.get('enrollment_token') or '').strip()
+        enrollment_mode, _ = _validate_enrollment_secret(enrollment_token)
+        if not enrollment_mode:
+            return _shell_error("Invalid or expired enrollment token.", 401)
+
+        base = resolve_public_edge_api_base(
+            CONFIG.autosec_api,
+            request.host_url,
+            forwarded_host=request.headers.get('X-Forwarded-Host', ''),
+            forwarded_proto=request.headers.get('X-Forwarded-Proto', ''),
+        )
+
+        script = f"""#!/usr/bin/env bash
 set -euo pipefail
 
 # Architecture and OS detection
@@ -1364,7 +1384,7 @@ echo "[+] Edge Agent acquired. Initiating isolated setup..."
 
 cat <<EOF
 --------------------------------------------------
-✅ Security Asset Installed: $BIN_PATH
+Edge runtime installed: $BIN_PATH
 Status: OBFUSCATED NATIVE BINARY DEPLOYED
 
 Start once:
@@ -1374,7 +1394,10 @@ Run continuously (Daemon):
 --------------------------------------------------
 EOF
 """
-    return Response(script, mimetype='text/x-shellscript')
+        return Response(script, mimetype='text/x-shellscript')
+    except Exception as exc:
+        logger.exception(f"Failed to generate edge install script: {exc}")
+        return _shell_error(f"Failed to generate edge install script: {exc}", 500)
 
 
 @app.route('/api/edge/runtime/download', methods=['GET'])
