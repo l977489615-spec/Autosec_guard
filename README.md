@@ -1,58 +1,46 @@
 <div align="center">
 
 # 🛡️ 智驭安盾
-### SmartDrive Shield — 智能网联汽车漏洞扫描与安全评估平台
+### SmartDrive Shield · 智能网联汽车漏洞扫描与安全评估平台
 
 <p>
-  <img src="https://img.shields.io/badge/版本-Current-blue?style=flat-square" />
-  <img src="https://img.shields.io/badge/静态%20PoC-70-green?style=flat-square" />
-  <img src="https://img.shields.io/badge/攻击面类别-6-orange?style=flat-square" />
-  <img src="https://img.shields.io/badge/Agent%20Workflow-MCP%20%2B%20Qwen-purple?style=flat-square" />
-  <img src="https://img.shields.io/badge/database-SQLite-informational?style=flat-square" />
-  <img src="https://img.shields.io/badge/license-MIT-brightgreen?style=flat-square" />
-  <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey?style=flat-square" />
+  <img src="https://img.shields.io/badge/PoC-71-16c47f?style=flat-square" />
+  <img src="https://img.shields.io/badge/Attack%20Surfaces-6-f59e0b?style=flat-square" />
+  <img src="https://img.shields.io/badge/Execution-Cloud%20%2B%20Edge-2563eb?style=flat-square" />
+  <img src="https://img.shields.io/badge/UI-React%20%2B%20Vite-0ea5e9?style=flat-square" />
+  <img src="https://img.shields.io/badge/API-Flask-64748b?style=flat-square" />
+  <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-6b7280?style=flat-square" />
 </p>
 
-**智驭安盾（SmartDrive Shield）** 是一个面向智能网联汽车（ICV）的漏洞验证、攻击面分析与结构化安全评估平台。  
-它集成了 PoC 执行、风险控制、结果留痕、历史审计、Agent 协作扫描与边缘节点调度能力，适用于教学研究、实验室台架验证和授权安全测试场景。
+**智驭安盾（SmartDrive Shield）** 是一个面向智能网联汽车（ICV）的漏洞验证、攻击面分析、结构化评估与边云协同执行平台。  
+它不只是“PoC 集合”，而是一条从 **PoC 管理 → 风险控制 → 执行调度 → 结果沉淀 → 报告输出** 的完整工程链路。
 
 </div>
 
 ---
 
-## 📚 目录
+## ✨ Why This Project
 
-- [🎯 你会得到什么](#-你会得到什么)
-- [🚀 5 分钟快速上手](#-5-分钟快速上手)
-- [🧭 第一次完整扫描（实战教程）](#-第一次完整扫描实战教程)
-- [🧠 项目原理与架构设计](#-项目原理与架构设计)
-- [✨ 核心亮点](#-核心亮点)
-- [🌐 Edge Control 与边缘节点](#-edge-control-与边缘节点)
-- [⚙️ 配置说明](#️-配置说明)
-- [🔌 常用 API](#-常用-api)
-- [🗂️ 项目目录结构](#️-项目目录结构)
-- [❓ 常见问题](#-常见问题)
-- [⚠️ 免责声明](#️-免责声明)
-- [📄 License](#-license)
+如果你做的是 ICV 安全研究、实验室验证、授权测试或课程演示，你通常会遇到这几个问题：
 
----
+- PoC 分散，执行方式不统一
+- 高风险动作缺少审批和审计
+- 很多 PoC 依赖 CAN / 蓝牙 / Wi-Fi Monitor / SDR / USB OTG，云端根本跑不起来
+- 扫描跑完之后，日志、证据、报告、历史记录无法沉淀
 
-## 🎯 你会得到什么
+**智驭安盾** 的目标就是把这些问题收束成一个统一平台：
 
-**智驭安盾（SmartDrive Shield）** 是一个面向 ICV（智能网联汽车）安全验证的端到端平台：  
-从 PoC 验证、风险拦截、结构化评估，到历史审计、Agent 协作扫描与 Edge 执行调度，提供一条完整工程链路。
-
-它适合三类场景：
-
-- 🔬 **实验室与台架验证**：快速复现实验并保留审计证据
-- 🧪 **教学与研究**：按攻击面组织 PoC，便于演示与对比
-- 🏭 **授权安全测试**：通过审批机制和边缘节点控制高风险动作
+- 🧠 **统一管理 71 个 PoC**
+- 🛡️ **高风险 PoC 审批与审计留痕**
+- 🌐 **云端控制 + 边端执行**
+- 📊 **SSE 实时日志 + 历史记录 + 结构化评估**
+- 🤖 **支持 Agent Scan 与自动化协作扫描**
 
 ---
 
-## 🚀 5 分钟快速上手
+## 🚀 Quick Start
 
-### 1) 启动后端（Flask API）
+### 1) 启动后端
 
 ```bash
 cd server
@@ -62,7 +50,7 @@ pip install -r requirements.txt
 python3 server.py
 ```
 
-### 2) 启动前端（Vite + React）
+### 2) 启动前端
 
 ```bash
 cd client
@@ -70,10 +58,10 @@ npm install
 npm run dev
 ```
 
-### 3) 访问与健康检查
+### 3) 打开系统
 
-- 前端控制台：`http://localhost:3000`
-- 后端健康检查：`http://localhost:5002/api/health`
+- Frontend: `http://localhost:3000`
+- Health Check: `http://localhost:5002/api/health`
 
 ### 4) 可选：启用 Agent Scan
 
@@ -83,177 +71,292 @@ source .venv/bin/activate
 python3 mcp_server.py
 ```
 
-> ✅ 到这里，你已经可以进行 Manual / Global 扫描。  
-> ✅ 仅当需要 `Agent Scan` 时才必须启动 MCP Server。
+> ✅ 到这里，你已经可以执行 Manual Scan / Global Scan / Edge Control。  
+> ✅ 只有在使用 `Agent Scan` 时才必须启动 `mcp_server.py`。
 
 ---
 
-## 🧭 第一次完整扫描（实战教程）
+## 🧭 First Run
 
-下面是一条推荐路径，能让新用户 10-15 分钟掌握完整闭环。
+第一次使用，推荐按下面路径跑一遍：
 
-### Step A — 登录并检查引擎连通
+### Step A · 检查引擎
 
-1. 进入 `Global Auto Scan`
-2. 确认 Engine URL（默认 `http://localhost:5002`）
-3. 点击连接测试，看到 `online`
+进入前端后确认：
 
-### Step B — 配置目标参数
+- `Engine URL` 指向你的后端
+- `Connection Test` 返回 `online`
 
-建议至少填写一个可用参数（推荐 `IP Address`），可选：
+### Step B · 填目标参数
 
+最少填一个有效目标，常见参数包括：
+
+- `IP Address`
 - `Bluetooth MAC`
 - `CAN Interface`
 - `Wi-Fi Interface`
 - `RF Frequency`
 
-### Step C — 执行全量扫描
+### Step C · 执行扫描
 
-点击 `EXECUTE FULL SCAN` 后系统会自动：
+系统会自动完成：
 
-1. 做后端与目标连通检查
-2. 进行 OS 指纹识别（可用时）
-3. 按 PoC 元数据过滤可执行项
-4. 实时输出日志与结果
-5. 汇总风险并保存会话
+1. 目标连通性检查
+2. OS / 服务指纹识别
+3. PoC 过滤与能力匹配
+4. PoC 执行与实时日志输出
+5. 风险汇总与历史落库
 
-### Step D — 处理高风险 PoC 审批
+### Step D · 处理高风险 PoC
 
-当命中高风险 PoC（如重启/破坏类），系统会弹出确认框：
+如果命中高风险动作，系统不会直接执行，而是要求人工确认：
 
-- `Skip This PoC`：跳过
-- `Confirm And Execute`：只确认当前项
-- `Confirm For Rest Of Scan`：本轮后续高风险项自动通过
+- `Skip This PoC`
+- `Confirm And Execute`
+- `Confirm For Rest Of Scan`
 
-### Step E — 结果分析与沉淀
+### Step E · 看结果
 
-扫描完成后你可以：
+扫描完成后可直接进入：
 
-- 查看漏洞明细、证据和错误原因
-- 生成 AI 安全报告
-- 在 `Scan History` 中检索历史会话
-- 查看结构化评估（攻击路径 / 物理影响 / 修复建议）
-
----
-
-## 🧠 项目原理与架构设计
-
-### 1) 三层执行模型：UI → API → Runner
-
-- **UI 层（client）**：参数收集、风险确认、可视化日志和报告
-- **API 层（server）**：鉴权、参数归一化、调度、审计和持久化
-- **Runner 层（poc_worker + sandbox_runner）**：PoC 沙箱执行与结果解析
-
-### 2) 为什么需要 `run_poc_stream`
-
-普通同步接口适合短任务；`run_poc_stream` 通过 SSE 逐行回传日志，解决：
-
-- 大量 PoC 批量执行的“黑盒等待”
-- 复杂 PoC 的调试可观测性
-- 用户对执行过程的实时确认需求
-
-### 3) 高风险防护链路
-
-高风险 PoC 并不是“直接运行”，而是经过：
-
-1. PoC 安全画像识别（`is_disruptive`、`destructive_level`）
-2. 前端审批弹窗确认
-3. 后端二次校验 `allow_disruptive`
-4. 审计日志落库
-
-这保证了“前端体验 + 后端强约束”的双保险。
-
-### 4) 云边协同模型（Cloud + Edge）
-
-- `cloud`：适合云主机可直接触达的目标
-- `edge`：适合私网、实验网、带本地硬件依赖（CAN/BT/Wi-Fi Monitor/SDR）的目标
-
-后端根据 PoC 能力需求给出推荐，并下发任务到边缘节点执行。
+- `Scan History`
+- `PoC Database`
+- `Structured Report`
+- `Edge Control`
 
 ---
 
-## ✨ 核心亮点
+## 🏗️ Architecture
 
-- 🛡️ **安全优先**：高风险 PoC 双重审批与审计留痕
-- 🧱 **工程化执行**：SSE 实时日志 + 结构化结果 + 历史可追溯
-- 🧠 **可扩展架构**：PoC 安全判定、执行参数归一化、认证逻辑已模块化
-- 🌐 **云边一体**：在云端控制，在边缘执行，兼顾可达性与硬件能力
-- 📚 **多场景覆盖**：Recon / Network / CAN / Wireless / Application / Advanced
+下面这张图就是当前项目的真实架构分层：
+
+```mermaid
+flowchart TD
+    U[👤 User / Analyst] --> FE[🖥️ React Frontend]
+
+    FE --> API[⚙️ Flask API Server]
+    FE --> EDGEUI[🌐 Edge Control UI]
+
+    API --> AUTH[🔐 Auth / User Profile]
+    API --> ORCH[🧠 Scan Orchestrator]
+    API --> AUDIT[🧾 Audit / History / Artifacts]
+    API --> REPORT[📊 Structured Assessment & Report]
+
+    ORCH --> ROUTER{☁️ Cloud or Edge?}
+
+    ROUTER --> CLOUD[☁️ Local Runner]
+    ROUTER --> EDGE[📡 Edge Task Queue]
+
+    CLOUD --> WORKER[🧪 poc_worker]
+    WORKER --> SANDBOX[🧱 sandbox_runner]
+    SANDBOX --> POCS[📚 PoC Plugins]
+
+    EDGE --> AGENT[🛰️ edge_agent]
+    AGENT --> PROBE[🔍 Capability Probe]
+    AGENT --> EWORKER[🧪 Edge Runner]
+    EWORKER --> EPOCS[📚 PoC Plugins]
+
+    PROBE --> HW[🔌 CAN / BT / Wi-Fi / SDR / USB]
+
+    SANDBOX --> RESULT[📦 Result / Evidence]
+    AGENT --> RESULT
+    RESULT --> AUDIT
+    RESULT --> REPORT
+
+    REPORT --> FE
+    AUDIT --> FE
+```
+
+### 核心设计思想
+
+- **UI 层**：负责参数录入、日志展示、审批确认、节点管理
+- **API 层**：负责鉴权、参数归一化、执行调度、审计与持久化
+- **Runner 层**：负责 PoC 沙箱执行、结果提取与统一输出
+- **Edge 层**：负责现场硬件能力探测、本地执行、结果回传
 
 ---
 
-## 🖼️ 系统截图
+## ⚙️ How It Works
 
-### Dashboard — 态势总览
+你可以把系统理解成一条标准化执行管线：
+
+`用户发起 -> 风险校验 -> 能力匹配 -> 选择执行平面 -> 运行 PoC -> 收集证据 -> 生成评估`
+
+更具体一点：
+
+1. 前端发起扫描或单个 PoC 执行
+2. 后端解析参数并读取 PoC 元数据
+3. 平台判断这个 PoC 是：
+   - ☁️ 云端可执行
+   - 📡 边端必需
+   - 🧍 需要人工确认
+4. 对高风险 PoC 先走审批链路
+5. 由本地 Runner 或 Edge Agent 执行 PoC
+6. 平台实时收集日志、提取结果、归一化证据
+7. 结果落库，生成历史记录、结构化评估和报告
+
+---
+
+## 🌐 Why Edge Matters
+
+很多 ICV PoC 天生不适合直接在云端跑。  
+例如：
+
+- USB 挂载 / USB OTG
+- PCAN / SocketCAN
+- 本地蓝牙适配器
+- Monitor 模式 Wi-Fi 网卡
+- HackRF / SDR
+- 私有实验网、车载以太网、客户内网
+
+因此系统采用 **Cloud + Edge** 模型：
+
+- ☁️ **Cloud**：控制面，负责 UI、用户、调度、审计、报告
+- 📡 **Edge**：执行面，负责贴近现场设备执行硬件敏感 PoC
+
+---
+
+## 🔥 Highlights
+
+### 🛡️ 安全优先
+
+高风险 PoC 不会“点一下就跑”，而是经过：
+
+- 前端审批确认
+- 后端二次强校验
+- 审计日志落库
+
+### 📡 云边一体
+
+支持云端统一控制，在边缘节点执行 CAN / 蓝牙 / Wi-Fi / SDR / USB 相关能力。
+
+### 🧱 工程化执行
+
+不是简单同步调用，而是：
+
+- `run_poc_stream` 实时日志回传
+- 统一结果结构
+- 扫描历史与证据沉淀
+
+### 🧩 PoC 可扩展
+
+所有 PoC 都遵循统一插件接口，新增 PoC 后可以自动接入：
+
+- PoC 列表
+- 参数校验
+- 风险识别
+- 日志输出
+- 边云调度
+
+### 🚗 面向 ICV 攻击面
+
+PoC 按车联网常见攻击面组织：
+
+- Reconnaissance
+- Network
+- CAN Bus
+- Wireless
+- Application
+- Advanced
+
+---
+
+## 🖼️ Screenshots
+
+### Dashboard
 
 <div align="center">
   <img src="assets/dashboard.png" width="92%" alt="Dashboard" />
 </div>
 
-### Scan Engine — 扫描引擎
+### Scan Engine
 
 <div align="center">
   <img src="assets/scan_engine.png" width="92%" alt="Scan Engine" />
 </div>
 
-### Agent Scan — 多 Agent 自主扫描
+### Agent Scan
 
 <div align="center">
   <img src="assets/agent_scan.png" width="92%" alt="Agent Scan" />
 </div>
+<div align="center">
+  <img src="assets/agent_scan_2.png" width="92%" alt="Agent Scan 2" />
+</div>
+<div align="center">
+  <img src="assets/agent_scan_3.png" width="92%" alt="Agent Scan 3" />
+</div>
+<div align="center">
+  <img src="assets/agent_scan_4.png" width="92%" alt="Agent Scan 4" />
+</div>
+<div align="center">
+  <img src="assets/agent_scan_5.png" width="92%" alt="Agent Scan 5" />
+</div>
 
-### PoC Database — 漏洞知识库
+### PoC Database
 
 <div align="center">
   <img src="assets/poc_database.png" width="92%" alt="PoC Database" />
 </div>
 
-### Scan History — 扫描记录与审计
+### Scan History
 
 <div align="center">
   <img src="assets/scan_history.png" width="92%" alt="Scan History" />
 </div>
+<div align="center">
+  <img src="assets/scan_history_content.png" width="92%" alt="Scan History 2" />
+</div>
+<div align="center">
+  <img src="assets/scan_history_content_2.png" width="92%" alt="Scan History 3" />
+</div>
+
+### Edge Control
+
+<div align="center">
+  <img src="assets/edge_control.png" width="92%" alt="Edge Control" />
+</div>
+<div align="center">
+  <img src="assets/edge_control_2.png" width="92%" alt="Edge Control 2" />
+</div>
 
 ---
 
-## 🌐 Edge Control 与边缘节点
+## 📦 Project Structure
 
-### 为什么需要 Edge
-
-云端服务通常无法直接访问：
-
-- USB 挂载
-- PCAN / SocketCAN
-- 本地蓝牙适配器
-- Monitor 模式 Wi-Fi 网卡
-- HackRF / SDR
-- 私网中的目标车机
-
-因此 Edge Agent 负责“贴近设备侧”执行，控制面仍留在云端。
-
-### Edge Agent 标准接入流程
-
-1. 启动云端后端 `server.py`
-2. 构建 edge runtime（优先 Nuitka，兼容 PyInstaller）
-3. 在前端生成一次性 enrollment 命令
-4. 边缘主机执行部署命令完成注册
-5. 启动 daemon 轮询任务并回传结果
-
-示例：
-
-```bash
-curl -fsSL "https://your-cloud.example.com/api/edge/install.sh?enrollment_token=<ONE_TIME_TOKEN>" | bash
-$HOME/.autosec-edge/autosec-edge --edge-api https://your-cloud.example.com --daemon
+```text
+.
+├── client/
+│   ├── components/              # 前端页面与核心交互
+│   ├── services/                # API 调用封装
+│   ├── data/                    # 前端数据源
+│   └── App.tsx
+├── server/
+│   ├── server.py                # 主 API 入口
+│   ├── config.py                # 配置加载
+│   ├── auth_service.py          # Bearer -> User 解析
+│   ├── poc_execution_service.py # 参数归一化
+│   ├── poc_security.py          # 风险识别与审批判定
+│   ├── poc_worker.py            # PoC 计划与执行调度
+│   ├── sandbox_runner.py        # 沙箱执行器
+│   ├── edge_*.py                # Edge 能力、部署与调度模块
+│   ├── benchmarks/
+│   └── pocs/                    # PoC 插件目录
+├── assets/
+├── docs/
+└── README.md
 ```
 
 ---
 
-## ⚙️ 配置说明
+## 🔧 Configuration
 
 `server/config.py` 会自动加载：
 
-- 项目根目录 `.env` / `.env.local`
-- `server/.env` / `server/.env.local`
+- 项目根目录 `.env`
+- 项目根目录 `.env.local`
+- `server/.env`
+- `server/.env.local`
 
 常用环境变量：
 
@@ -263,13 +366,14 @@ $HOME/.autosec-edge/autosec-edge --edge-api https://your-cloud.example.com --dae
 | `AUTOSEC_DB_URI` | 本地 SQLite | 数据库连接串 |
 | `AUTOSEC_API` | `http://localhost:5002` | 主 API 地址 |
 | `MCP_SERVER` | `http://localhost:5003` | MCP Server 地址 |
-| `AUTOSEC_EDGE_RUNTIME_PATH` | `build/edge_runtime/autosec-edge` | edge runtime 文件或目录 |
-| `AUTOSEC_EDGE_BUILD_DIR` | `build/edge_runtime` | edge 构建输出目录 |
+| `AUTOSEC_EDGE_RUNTIME_PATH` | 自动探测 | Edge Runtime 文件路径 |
+| `AUTOSEC_EDGE_BUILD_DIR` | `build/edge_runtime` | Edge 构建输出目录 |
+| `AUTOSEC_PUBLIC_HOST` | 空 | 强制指定 Edge 命令中的服务端地址 |
 | `AUTOSEC_HOST` | `0.0.0.0` | Flask 监听地址 |
 | `AUTOSEC_PORT` | `5002` | Flask 端口 |
-| `AUTOSEC_DEBUG` | `false` | Flask debug 开关 |
+| `AUTOSEC_DEBUG` | `false` | Debug 开关 |
 
-推荐本地配置：
+推荐开发配置：
 
 ```env
 AUTOSEC_SECRET_KEY=replace-with-a-long-random-string
@@ -281,14 +385,43 @@ AUTOSEC_PORT=5002
 AUTOSEC_DEBUG=false
 ```
 
-补充说明：
+如果服务器存在多块网卡、VPN、代理或虚拟网桥，建议明确指定：
 
-- AI 参数由用户在前端 `Profile Settings` 单独配置并加密存储
-- `server/autosec.db` 作为本地开发库，建议不纳入 Git，按需备份到 `server/backups/`
+```env
+AUTOSEC_PUBLIC_HOST=10.192.97.40
+```
+
+这样生成的 Edge 部署命令会始终使用你指定的地址。
 
 ---
 
-## 🔌 常用 API
+## 📡 Edge Agent Setup
+
+### 标准接入流程
+
+1. 启动后端 `server.py`
+2. 构建 Edge Runtime
+3. 在前端生成一次性部署命令
+4. 在边缘主机执行部署命令
+5. 让 Edge Agent 进入 daemon 模式持续轮询
+
+示例：
+
+```bash
+curl -fsSL "http://your-server:5002/api/edge/install.sh?enrollment_token=<TOKEN>" | bash
+$HOME/.autosec-edge/autosec-edge --edge-api http://your-server:5002 --daemon
+```
+
+### Edge Agent 负责什么
+
+- 上报节点硬件能力
+- 接收云端任务
+- 在本地执行 PoC
+- 回传结果和日志
+
+---
+
+## 🔌 API Overview
 
 ### 基础执行
 
@@ -332,72 +465,48 @@ AUTOSEC_DEBUG=false
 
 ---
 
-## 🗂️ 项目目录结构
+## ❓ FAQ
 
-```text
-.
-├── client/
-│   ├── components/              # UI 页面与主要交互逻辑
-│   ├── data/                    # 数据层导出（如 POC_DATABASE）
-│   ├── services/                # API 调用与前端服务
-│   ├── constants.ts             # 常量定义（逐步轻量化）
-│   └── vite.config.ts
-├── server/
-│   ├── server.py                # 主 API 入口（保持兼容）
-│   ├── config.py                # 配置加载与运行参数
-│   ├── auth_service.py          # Bearer -> User 解析
-│   ├── poc_security.py          # PoC 安全画像与审批判定
-│   ├── poc_execution_service.py # 执行参数归一化与 target 解析
-│   ├── poc_worker.py            # 执行计划与 Runner 调度
-│   ├── sandbox_runner.py        # 沙箱执行器
-│   ├── edge_*.py                # 云边调度能力模块
-│   ├── benchmarks/
-│   └── pocs/
-├── docs/
-│   └── internal/
-├── tools/
-│   └── legacy/
-├── build/
-│   └── edge_runtime/
-├── assets/
-└── README.md
+### 1) 为什么云端扫不到客户内网目标？
+
+因为云端不在客户私网内。  
+实验网、车间网、车载以太网、蓝牙、CAN、Wi-Fi Monitor、SDR 等场景请走 Edge。
+
+### 2) 为什么高风险 PoC 会被拒绝？
+
+因为系统默认开启了审批与后端强校验。  
+这不是 bug，而是安全策略。
+
+### 3) 为什么有些 PoC 只能生成样本，不能自动确认漏洞？
+
+部分 USB / OTA / 无线类 PoC 天生依赖：
+
+- 现场硬件
+- 实体接入
+- 人工观察
+- 目标系统侧日志
+
+它们更适合“现场验证工装”，不是“纯自动确认器”。
+
+### 4) 为什么 Edge 部署命令里的地址不对？
+
+如果服务器有多块网卡、VPN、虚拟网桥，建议显式设置：
+
+```env
+AUTOSEC_PUBLIC_HOST=<你的服务端实际地址>
 ```
 
----
-
-## ❓ 常见问题
-
-### 1. `/api/health` 正常，但 Edge 注册 404
-
-通常是旧进程占用了端口。请重启并确认运行的是当前仓库的：
-
-```bash
-python3 server/server.py
-```
-
-### 2. 为什么云端扫不到客户内网目标
-
-云端不在客户私网内。对实验网/车间网/台架网目标，请走 Edge 执行。
-
-### 3. 高风险 PoC 为什么仍可能被拒绝
-
-系统采用前端确认 + 后端强校验双重机制。请确认请求参数中包含 `allow_disruptive=true`。
-
-### 4. Agent Scan 不可用
+### 5) Agent Scan 不可用怎么办？
 
 请检查：
 
 - `server/mcp_server.py` 是否启动
-- 用户是否在 `Profile Settings` 中配置了模型参数
+- 用户是否已配置模型参数
 - 模型接口网络是否可达
-
-### 5. 某些 PoC 无法直接运行
-
-可能依赖特定硬件或权限（CAN、蓝牙、Wi-Fi Monitor、SDR 等）。建议迁移到具备能力的边缘节点执行。
 
 ---
 
-## ⚠️ 免责声明
+## ⚠️ Disclaimer
 
 本项目仅可用于：
 
@@ -410,10 +519,6 @@ python3 server/server.py
 
 ---
 
-## 📄 License
-
-本项目基于 [MIT License](LICENSE) 开源发布。
-
 <div align="center">
-  智驭安盾 · SmartDrive Shield · Built for ICV Security Research
+  SmartDrive Shield · Built for ICV Security Research & Authorized Testing
 </div>
