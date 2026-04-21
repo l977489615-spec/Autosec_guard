@@ -22,7 +22,17 @@ class IVIVulnerabilityPlugin(metaclass=abc.ABCMeta):
     智能网联汽车漏洞扫描插件基类 (Updated)
     强制执行标准化的漏洞验证生命周期：初始化 -> 环境检查 -> 执行利用 -> 结果反馈
     """
-    is_disruptive = False
+    # ====== PoC 元数据 (Metadata) ======
+    meta_poc_name: str = "Unknown PoC"
+    meta_cve_id: str = "Unknown CVE"
+    meta_severity: str = "Unknown"  # Low, Medium, High, Critical
+    meta_protocol: str = "Unknown"  # e.g., "tcp", "udp", "can", "someip"
+    meta_target_os: list = []       # e.g., ["qnx", "android", "linux", "all"]
+    meta_required_params: list = [] # e.g., ["target_ip", "port", "can_interface"]
+    
+    # 破坏性标志：若为 True，则 Agent 不会自动执行该 PoC，除非人工审核或在虚拟沙箱中
+    is_disruptive: bool = False
+    meta_destructive_level: str = "Safe" # Safe, Restart, DataLoss, Brick
 
     def __init__(self, target_config, logger=None):
         """
@@ -108,7 +118,8 @@ class IVIVulnerabilityPlugin(metaclass=abc.ABCMeta):
                  raise RuntimeError("前置条件检查返回失败")
             
             self.logger.info("前置条件满足。开始执行漏洞验证...")
-            self.exploit()
+            exploit_result = self.exploit()
+            self._merge_exploit_result(exploit_result)
             self.logger.info("漏洞验证流程结束。")
 
         except RuntimeError as re:
@@ -120,6 +131,26 @@ class IVIVulnerabilityPlugin(metaclass=abc.ABCMeta):
             self.results["evidence"] = f"Exception: {str(e)}"
         
         self._print_final_verdict()
+
+    def _merge_exploit_result(self, exploit_result):
+        """
+        兼容旧版 PoC 直接 return dict 的写法，把有效字段合并回 self.results。
+        """
+        if not isinstance(exploit_result, dict):
+            return
+
+        if "vulnerable" in exploit_result:
+            self.results["vulnerable"] = bool(exploit_result.get("vulnerable"))
+        if exploit_result.get("cve_id"):
+            self.results["cve_id"] = exploit_result.get("cve_id")
+        if exploit_result.get("description"):
+            self.results["description"] = exploit_result.get("description")
+
+        evidence = exploit_result.get("evidence")
+        if not evidence:
+            evidence = exploit_result.get("details")
+        if evidence:
+            self.results["evidence"] = str(evidence)
 
     def _print_final_verdict(self):
         poc_display_name = self.params.get('poc_id', self.__class__.__name__)

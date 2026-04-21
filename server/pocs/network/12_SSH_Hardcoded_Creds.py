@@ -16,6 +16,15 @@ import time
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class ToyotaHarmanSSHExploit(IVIVulnerabilityPlugin):
+    meta_poc_name = "SSH Hardcoded Creds"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "tcp"
+    meta_target_os = ["all"]
+    meta_required_params = ["target_ip"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         # 检查网络可达性
         if not self.target_ip:

@@ -12,92 +12,110 @@ Usage: python3 20_HTTPS_No_Cert_Pin.py <local_bind_ip>
 import sys
 import ssl
 import socket
-import time
-import _thread
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class CertPinningPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "HTTPS No Cert Pin"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "tcp"
+    meta_target_os = ["all"]
+    meta_required_params = ["target_ip"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         # target_ip 在这个上下文中，代表我们绑定的监听IP (也可以是 0.0.0.0)
         self.bind_ip = self.params.get("target_ip", "0.0.0.0")
+        self.listen_port = int(self.params.get("listen_port", 4443))
+        self.certfile = self.params.get("certfile")
+        self.keyfile = self.params.get("keyfile")
         if not self.bind_ip or self.bind_ip == "N/A":
              self.bind_ip = "0.0.0.0"
         return True
-        
-    def serve_https_proxy(self):
-        # 内部线程，扮演恶意假根证书中间人
-        import tempfile
-        import os
-        
-        # 临时生成一段自签名的密钥和证书链用于测试握手
-        # 因为这只是诊断工具运行15秒，我们直接拦截握手过程看客户端是否断开即可。
-        try:
-             # 生成证书的命令(如果需要的话), 此处我们假设系统中有默认蛇油证书，或者用原生 ssl 生成上下文
-             context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-             # 为避免依赖实际文件，由于安全扫描仅作演示，我们直接抓取 socket 的未加密初始套接字建立情况
-             # 真实高级检查需要结合 openssl
-             pass
-        except Exception:
-             pass
+
+    def _build_tls_context(self):
+        if not self.certfile or not self.keyfile:
+            return None
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(certfile=self.certfile, keyfile=self.keyfile)
+        return context
 
     def exploit(self):
         self.logger.info("准备检测目标客户端(IVI)在 OTA 等云端通信时是否存在证书固定(Pinning)漏洞...")
-        
-        # 为了演示，我们将直接使用 socket 服务器监听 443
-        # 然后等待车机发出连接。如果车机使用严苛的 TrustStore, 任何无正确证书链的响应都会导致客户端秒发 FIN 断开
-        
+
+        # 仅在目标完成真实 TLS 握手并继续发送 HTTP 应用层数据时，才能说明其接受了当前证书。
+        # 若未提供测试证书，则只能采集 ClientHello，无法证明“缺少证书固定”。
+        sock = None
         try:
-            listen_port = 4443 # 使用 4443 避免 root 权限需求
-            self.logger.info(f"启动恶意 TLS 分析代理端口监听 {self.bind_ip}:{listen_port} 模拟云端...")
+            tls_context = self._build_tls_context()
+            self.logger.info(f"启动 TLS 分析监听 {self.bind_ip}:{self.listen_port} 模拟云端...")
             self.logger.warning("注：需要预先使用 DNS 劫持 (例如 Dnsmasq) 将 OEM 升级域名指向本机。")
-            
+
+            if tls_context is None:
+                self.logger.warning(
+                    "未提供 certfile/keyfile。当前仅能被动抓取 ClientHello，不能据此判定缺少证书固定。"
+                )
+
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.bind((self.bind_ip, listen_port))
+            sock.bind((self.bind_ip, self.listen_port))
             sock.listen(1)
             sock.settimeout(10.0)
-            
+
             self.logger.info("等待车机发起 HTTPS (TCP) 握手连接 (超时 10s)...")
-            
+
             try:
                 conn, addr = sock.accept()
                 self.logger.info(f"[+] 捕获到目标流入的 HTTPS 会话拦截，源地址: {addr}")
-                
-                # 尝试用自签名包装套接字做 TLS Handshake 协商
-                self.logger.info("开始呈递不受信任的自签名服务端证书链...")
-                
-                try:
-                    # 使用标准库上下文封装
-                    # （在没有实体证书文件的情况下，直接进行 recv 可以捕获 ClientHello）
+
+                if tls_context is None:
+                    conn.settimeout(3.0)
                     client_hello = conn.recv(1024)
-                    if client_hello and client_hello[0] == 0x16:  # TLS Handshake flag
-                        self.logger.info(f"收到了 Client Hello: {len(client_hello)} bytes。说明目标主动发起了握手。")
-                        self.logger.info("如果我们在 TLS 交换阶段发送非法包，带有严苛安全固定的客户端会发来 Alert!")
-                        
-                        # 发送非法或损坏的 ServerHello + Certificate
-                        conn.sendall(b"\\x16\\x03\\x03" + b"A" * 50)
-                        
-                        try:
-                            # 观察车辆是否忽略错误继续发数据 (即 Vulnerable)
-                            conn.settimeout(3.0)
-                            next_data = conn.recv(1024)
-                            if next_data:
-                                self.logger.warning("[!] 车机似乎忽略了畸形/自签名的握手错误继续发包！")
-                                self.logger.warning("[!] 确认漏洞：车辆未实现端到端 HTTP 证书固定验证 (No Cert Pinning)。")
-                                return {"status": "success", "vulnerable": True, "details": "Client ignored bad cert structure."}
-                            else:
-                                self.logger.info("车机断开了套接字，握手合法失败。未发现漏洞。")
-                                return {"status": "success", "vulnerable": False, "details": "Handshake aborted properly by client."}
-                        except socket.timeout:
-                            self.logger.info("车机静默超时，可能也认为握手非法丢弃。")
-                            return {"status": "success", "vulnerable": False, "details": "Timeout from client after bad cert."}
-                            
-                except Exception as e:
-                     self.logger.info(f"SSL握手交换时发生异常: {e}")
-                
+                    if client_hello and client_hello[0] == 0x16:
+                        return {
+                            "status": "success",
+                            "vulnerable": False,
+                            "details": (
+                                f"Captured TLS ClientHello from {addr[0]}:{addr[1]}, but no test certificate was "
+                                "provided, so certificate pinning could not be verified."
+                            ),
+                        }
+                    return {
+                        "status": "success",
+                        "vulnerable": False,
+                        "details": "TCP connection captured, but no valid TLS handshake data received.",
+                    }
+
+                try:
+                    tls_conn = tls_context.wrap_socket(conn, server_side=True)
+                    tls_conn.settimeout(3.0)
+                    request = tls_conn.recv(1024)
+                    if request:
+                        self.logger.warning("[!] 目标完成了 TLS 握手并继续发送应用层数据。")
+                        return {
+                            "status": "success",
+                            "vulnerable": True,
+                            "details": (
+                                "Target completed TLS handshake and sent application data to the interception "
+                                "endpoint. This indicates it accepted the presented test certificate."
+                            ),
+                        }
+                    return {
+                        "status": "success",
+                        "vulnerable": False,
+                        "details": "TLS handshake completed but no HTTP request followed; result inconclusive.",
+                    }
+                except ssl.SSLError as e:
+                    self.logger.info(f"TLS 握手被客户端拒绝: {e}")
+                    return {
+                        "status": "success",
+                        "vulnerable": False,
+                        "details": f"Target rejected the presented certificate during TLS handshake: {e}",
+                    }
                 finally:
-                     conn.close()
-                
+                    conn.close()
+
             except socket.timeout:
                 self.logger.info("时限到达。10秒内未检测到来自车辆的通信连接请求。")
                 return {
@@ -110,11 +128,16 @@ class CertPinningPlugin(IVIVulnerabilityPlugin):
              self.logger.error(f"Execution Error: {str(e)}")
              return {"status": "error", "details": str(e)}
         finally:
-             sock.close()
+             if sock is not None:
+                 sock.close()
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 20_HTTPS_No_Cert_Pin.py <local_bind_ip>")
+        print("Usage: python3 20_HTTPS_No_Cert_Pin.py <local_bind_ip> [certfile keyfile]")
         sys.exit(1)
-    plugin = CertPinningPlugin({"target_ip": ip})
+    params = {"target_ip": sys.argv[1]}
+    if len(sys.argv) >= 4:
+        params["certfile"] = sys.argv[2]
+        params["keyfile"] = sys.argv[3]
+    plugin = CertPinningPlugin(params)
     plugin.run_verify()

@@ -14,6 +14,15 @@ import os
 import subprocess
 from iv_plugin_base import IVIVulnerabilityPlugin
 class TPMSSpoofPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "TPMS Signal Spoofing"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "rf"
+    meta_target_os = ["all"]
+    meta_required_params = ["frequency"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         return True
     def exploit(self):
@@ -25,13 +34,13 @@ class TPMSSpoofPlugin(IVIVulnerabilityPlugin):
         if has_hackrf:
             self.logger.info("[+] 检测到HackRF")
             self.logger.info("[*] TPMS有效载荷: Sensor_ID=0xDEADBEEF, Pressure=0, Temp=127")
-            self.logger.warning("[+] SDR设备可用,TPMS欺骗攻击可行")
-            self.results["vulnerable"] = True
-            self.results["evidence"] = "HackRF available for TPMS spoofing"
+            self.logger.warning("[*] SDR设备可用，但仍需在目标 TPMS 接收端观察是否接受伪造报文。")
+            self.results["vulnerable"] = False
+            self.results["evidence"] = "HackRF available; spoofing capability present, target acceptance unverified."
         elif has_rpitx:
             self.logger.info("[+] 检测到rpitx")
-            self.results["vulnerable"] = True
-            self.results["evidence"] = "rpitx available for TPMS spoofing"
+            self.results["vulnerable"] = False
+            self.results["evidence"] = "rpitx available; spoofing capability present, target acceptance unverified."
         else:
             self.logger.info("[-] 未检测到SDR工具(hackrf/rpitx)")
             self.logger.info("[*] 此攻击需要SDR发射设备")
@@ -42,5 +51,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 65_TPMS_Signal_Spoofing.py <frequency>")
         sys.exit(1)
-    plugin = TPMSSpoofPlugin({"target_ip": "N/A", "frequency": freq})
+    plugin = TPMSSpoofPlugin({"target_ip": "N/A", "frequency": sys.argv[1]})
     plugin.run_verify()

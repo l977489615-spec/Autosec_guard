@@ -14,6 +14,15 @@ import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class JeepDBusPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "DBus Anon Auth"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "tcp"
+    meta_target_os = ["all"]
+    meta_required_params = ["target_ip"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def __init__(self, target_config, logger=None):
         super().__init__(target_config, logger)
         self.target_port = 6667

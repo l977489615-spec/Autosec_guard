@@ -13,6 +13,15 @@ import sys
 import socket
 from iv_plugin_base import IVIVulnerabilityPlugin
 class BLUFFSPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "BT BLUFFS Key Downgrade"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "rf"
+    meta_target_os = ["all"]
+    meta_required_params = ["bd_addr"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         if not self.params.get("bd_addr"):
             raise RuntimeError("需要指定目标蓝牙MAC地址 (bd_addr)")
@@ -31,9 +40,9 @@ class BLUFFSPlugin(IVIVulnerabilityPlugin):
             self.logger.info("[*] 实际攻击需要在配对过程中拦截LMP包并强制entropy=1")
             self.logger.info("[*] 这需要修改的蓝牙固件或自定义HCI设备")
             # Check BT version via SDP for vulnerability
-            self.logger.warning("[+] 设备可达,Bluetooth 4.2-5.4版本可能存在BLUFFS漏洞")
-            self.results["vulnerable"] = True
-            self.results["evidence"] = f"L2CAP connection to {target} succeeded"
+            self.logger.warning("[*] 设备可达，但 BLUFFS 仍需在真实配对流程中验证是否接受降级密钥。")
+            self.results["vulnerable"] = False
+            self.results["evidence"] = f"L2CAP connection to {target} succeeded; key downgrade not yet demonstrated."
             s.close()
         except Exception as e:
             self.logger.info(f"蓝牙连接失败: {e}")

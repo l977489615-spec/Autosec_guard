@@ -36,6 +36,15 @@ class SOMEIPServiceDiscoveryPlugin(IVIVulnerabilityPlugin):
     
     参考标准: AUTOSAR R20-11 SOME/IP-SD 规范
     """
+    meta_poc_name = "SOMEIP Service Discovery"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "tcp"
+    meta_target_os = ["all"]
+    meta_required_params = ["target_ip"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
 
     # SOME/IP 魔数及常量
     SOMEIP_MAGIC = 0xFFFF
@@ -279,5 +288,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 21_SOMEIP_Service_Discovery.py <args>")
         sys.exit(1)
-    plugin = SOMEIPServiceDiscoveryPlugin(config)
+    plugin = SOMEIPServiceDiscoveryPlugin({"target_ip": sys.argv[1]})
     plugin.run_verify()

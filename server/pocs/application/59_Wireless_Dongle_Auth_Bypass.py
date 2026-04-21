@@ -13,6 +13,15 @@ import socket
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
 class CarlinKitBypassPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "Wireless Dongle Auth Bypass"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "unknown"
+    meta_target_os = ["all"]
+    meta_required_params = ["target_ip"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     WEAK_PASSWORDS = ["12345678", "88888888", "00000000", "autokit123"]
     def check_prerequisites(self):
         if not self.target_ip:

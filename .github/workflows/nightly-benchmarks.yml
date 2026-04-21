@@ -1,0 +1,74 @@
+name: Nightly Benchmarks
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  full-suite:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify benchmark suites are current
+        working-directory: server
+        run: |
+          python generate_benchmark_suite.py --check
+          python validate_benchmark_suite.py --suite-file benchmarks/default_suite.json
+          python validate_benchmark_suite.py --suite-file benchmarks/regression_suite.json
+          python audit_pocs.py > nightly-poc-audit.json
+          python smoke_test_pocs.py > nightly-poc-smoke.json
+          python generate_poc_capability_report.py --format markdown --output-file nightly-poc-capability-report.md
+
+      - name: Run full benchmark suite
+        working-directory: server
+        run: |
+          python run_benchmark_suite.py \
+            --fixture-dir benchmarks/fixtures \
+            --suite-file benchmarks/default_suite.json \
+            --min-pass-rate 1.0 \
+            --strict \
+            --output-file nightly-benchmark-report.json
+
+      - name: Run regression gate
+        working-directory: server
+        run: |
+          python run_benchmark_suite.py \
+            --fixture-dir benchmarks/fixtures \
+            --suite-file benchmarks/regression_suite.json \
+            --min-pass-rate 1.0 \
+            --strict \
+            --output-file nightly-regression-report.json
+
+      - name: Append benchmark summary
+        if: always()
+        working-directory: server
+        run: |
+          python -c "import json, pathlib; report = json.loads(pathlib.Path('nightly-benchmark-report.json').read_text()); summary = report['summary']; gate = report['gate']; print('## Nightly Benchmark Report'); print(); print(report['report']); print(); print(f\"- sessions: {summary['session_count']}\"); print(f\"- benchmarks: {summary['benchmark_count']}\"); print(f\"- passed: {summary['passed_count']}\"); print(f\"- failed: {summary['failed_count']}\"); print(f\"- threshold: {summary['threshold']:.3f}\"); print(f\"- gate passed: {str(gate['passed']).lower()}\"); print(f\"- failing benchmarks: {', '.join(gate['failing_benchmark_ids']) or 'none'}\")" >> "$GITHUB_STEP_SUMMARY"
+          python -c "import json, pathlib; report = json.loads(pathlib.Path('nightly-regression-report.json').read_text()); summary = report['summary']; gate = report['gate']; print(); print('## Nightly Regression Gate'); print(); print(report['report']); print(); print(f\"- sessions: {summary['session_count']}\"); print(f\"- benchmarks: {summary['benchmark_count']}\"); print(f\"- passed: {summary['passed_count']}\"); print(f\"- failed: {summary['failed_count']}\"); print(f\"- threshold: {summary['threshold']:.3f}\"); print(f\"- gate passed: {str(gate['passed']).lower()}\"); print(f\"- failing benchmarks: {', '.join(gate['failing_benchmark_ids']) or 'none'}\")" >> "$GITHUB_STEP_SUMMARY"
+          printf '\n## Nightly PoC Audit\n\n```json\n%s\n```\n' "$(cat nightly-poc-audit.json)" >> "$GITHUB_STEP_SUMMARY"
+          printf '\n## Nightly PoC Smoke\n\n```json\n%s\n```\n' "$(cat nightly-poc-smoke.json)" >> "$GITHUB_STEP_SUMMARY"
+          printf '\n## PoC Capability Report\n\n%s\n' "$(cat nightly-poc-capability-report.md)" >> "$GITHUB_STEP_SUMMARY"
+          printf '\n```json\n%s\n```\n' "$(cat nightly-benchmark-report.json)" >> "$GITHUB_STEP_SUMMARY"
+          printf '\n```json\n%s\n```\n' "$(cat nightly-regression-report.json)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-benchmark-reports
+          path: |
+            server/nightly-benchmark-report.json
+            server/nightly-regression-report.json
+            server/nightly-poc-audit.json
+            server/nightly-poc-smoke.json
+            server/nightly-poc-capability-report.md
+          if-no-files-found: error

@@ -33,6 +33,15 @@ class WiFiSSIDCloneAutoConnectPlugin(IVIVulnerabilityPlugin):
     
     安全性: 纯被动扫描，不发射任何 WiFi 信号。
     """
+    meta_poc_name = "WiFi SSID Clone AutoConnect"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "rf"
+    meta_target_os = ["all"]
+    meta_required_params = ["interface"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
 
     # 车机常见的默认 SSID 关键字（通用性较强的命名规律）
     IVI_SSID_PATTERNS = [
@@ -262,5 +271,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 49_WiFi_SSID_Clone_AutoConnect.py <args>")
         sys.exit(1)
-    plugin = WiFiSSIDCloneAutoConnectPlugin(config)
+    plugin = WiFiSSIDCloneAutoConnectPlugin({"interface": sys.argv[1]})
     plugin.run_verify()

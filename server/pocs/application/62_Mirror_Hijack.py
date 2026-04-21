@@ -27,6 +27,15 @@ class MirrorHijackPlugin(IVIVulnerabilityPlugin):
     基于用户提供的脚本，实现自动发现、建立本地 HTTP 回连服务
     并发送 SetAVTransportURI + Play 指令。
     """
+    meta_poc_name = "Mirror Hijack"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "unknown"
+    meta_target_os = ["all"]
+    meta_required_params = ["target_ip"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     
     LOCAL_PORT = 8000
     FILE_NAME = "img.jpg" # 占位符文件名

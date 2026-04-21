@@ -15,6 +15,15 @@ import time
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class BlueBorneBNEPPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "BlueBorne BNEP Overflow"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "rf"
+    meta_target_os = ["all"]
+    meta_required_params = ["bluetooth_mac"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         self.bt_mac = self.params.get("bluetooth_mac", "")
         if not self.bt_mac:
@@ -85,5 +94,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 46_BlueBorne_BNEP_Overflow.py <bluetooth_mac>")
         sys.exit(1)
-    plugin = BlueBorneBNEPPlugin({"bluetooth_mac": mac})
+    plugin = BlueBorneBNEPPlugin({"bluetooth_mac": sys.argv[1]})
     plugin.run_verify()

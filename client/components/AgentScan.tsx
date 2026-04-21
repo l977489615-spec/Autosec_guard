@@ -2,15 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { Bot, Shield, Network, Cpu, FileText, Play, Loader, CheckCircle, XCircle, Key, Sliders, Download, RotateCcw, AlertTriangle, ShieldCheck, Zap } from 'lucide-react';
 import { saveScanSession } from '../services/api';
 import ScanLogs from './ScanLogs';
-import { POC_DATABASE } from '../constants';
-import { Severity } from '../types';
+import { POC_DATABASE } from '../data/pocDatabase';
+import { PhaseRecord, PlannerStep, Severity, SupervisorAdjustment, SupervisorEvent, SupervisorMetrics } from '../types';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Environment, ContactShadows } from '@react-three/drei';
 import { CarModel } from './CarModel';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-
-const BACKEND_URL = 'http://localhost:5002';
+import AttackGraph from './AttackGraph';
+import { assessPhysicalImpact, buildAiConfigPayload, generateAttackGraph, generateStructuredReport, simulateRemediation, getBackendUrl, setBackendUrl } from '../services/api';
+import { AssessmentArtifacts } from '../types';
 
 interface AgentPhase {
   name: string;
@@ -21,15 +22,17 @@ interface AgentPhase {
 
 const PHASES: AgentPhase[] = [
   { name: 'recon', label: '侦察 Agent', icon: Network, description: '端口扫描 + 拓扑分析 + 服务指纹' },
-  { name: 'decision', label: '决策 Agent', icon: Cpu, description: '自适应 PoC 筛选 + 认证策略规划' },
+  { name: 'planner', label: '规划 Agent', icon: Sliders, description: '多级任务编排与攻击路径规划' },
+  { name: 'decision', label: '决策 Agent', icon: Cpu, description: '自适应 PoC 筛选 + 认证策略生成' },
   { name: 'weaponize', label: '开采 Agent', icon: Zap, description: '零日漏洞 (0-day) 动态载荷生成' },
   { name: 'execute', label: '执行 Agent', icon: Shield, description: 'PoC 自动化执行 + 响应反馈闭环' },
+  { name: 'reflector', label: '反思 Agent', icon: RotateCcw, description: '错误恢复与动态策略调整' },
   { name: 'assess', label: '评估 Agent', icon: FileText, description: 'ISO 21434 合规报告生成' },
 ];
 
 interface PhaseResult {
   phase: string;
-  status: 'idle' | 'running' | 'done' | 'error';
+  status: 'idle' | 'running' | 'done' | 'error' | 'retrying' | 'skipped';
   output: string;
 }
 
@@ -50,7 +53,105 @@ interface AdaptiveContext {
 
 interface AgentScanProps {
   token: string;
+  currentUser?: any;
+  onSessionComplete?: (session: any) => void;
+  engineUrl?: string;
 }
+
+const diagnosePhaseFailure = ({
+  backendUrl,
+  status,
+  errorMessage,
+  payload,
+}: {
+  backendUrl: string;
+  status?: number;
+  errorMessage?: string;
+  payload?: any;
+}) => {
+  const serverMessage = payload?.error || payload?.message || '';
+  const combined = `${errorMessage || ''} ${serverMessage}`.trim();
+
+  if (!status && /failed to fetch|networkerror|load failed|network request failed/i.test(combined)) {
+    return [
+      'Diagnosis: 后端地址错误或后端不可达',
+      `Backend: ${backendUrl}`,
+      'Action: 检查 Execution Engine URL，确认后端服务已启动且浏览器可访问。',
+    ].join('\n');
+  }
+
+  if (status === 401 || status === 403) {
+    return [
+      'Diagnosis: Token 失效或权限不足',
+      `HTTP Status: ${status}`,
+      'Action: 重新登录，或确认当前账号具备访问该接口的权限。',
+    ].join('\n');
+  }
+
+  if (/AI API key is required|API key 未配置|AI 报告功能未启用|base_url is required|base_url 未配置/i.test(combined)) {
+    return [
+      'Diagnosis: 当前用户未配置模型 API',
+      'Detail: 本次请求没有携带有效的 AI 配置，Agent 无法调用模型。',
+      'Action: 到 Profile Settings 填写 OpenAI-compatible Base URL、API Key 和模型名。',
+    ].join('\n');
+  }
+
+  if (/MCP Server 不可达|无法连接 MCP Server|Cannot connect to AutoSec API/i.test(combined)) {
+    return [
+      'Diagnosis: MCP Server 不可达',
+      'Detail: Agent 工具注册或工具调用链路未能连通 MCP / AutoSec API。',
+      'Action: 检查 MCP_SERVER 与 AUTOSEC_API 配置，确认相关服务已启动。',
+    ].join('\n');
+  }
+
+  if (status && status >= 500) {
+    return [
+      'Diagnosis: 后端 500 异常',
+      `HTTP Status: ${status}`,
+      `Detail: ${serverMessage || combined || 'Internal Server Error'}`,
+      'Action: 查看后端控制台日志，定位对应阶段的异常栈。',
+    ].join('\n');
+  }
+
+  return [
+    'Diagnosis: 未分类执行错误',
+    `Detail: ${serverMessage || combined || 'Unknown error'}`,
+    'Action: 查看控制台日志并核对当前阶段输入参数。',
+  ].join('\n');
+};
+
+const diagnosePhaseOutput = (output: string) => {
+  if (/AI API key is required|API key 未配置|AI 报告功能未启用|API 错误|请求失败或配额耗尽|base_url is required|base_url 未配置/i.test(output)) {
+    return {
+      isError: true,
+      output: [
+        'Diagnosis: 模型 API 或模型调用失败',
+        `Detail: ${output}`,
+        'Action: 检查当前用户的 API Key、模型名、额度和外网连通性。',
+      ].join('\n'),
+    };
+  }
+
+  if (/MCP Server 不可达|无法连接 MCP Server|Cannot connect to AutoSec API/i.test(output)) {
+    return {
+      isError: true,
+      output: [
+        'Diagnosis: MCP / AutoSec API 调用失败',
+        `Detail: ${output}`,
+        'Action: 检查 MCP Server、AutoSec API 与端口配置。',
+      ].join('\n'),
+    };
+  }
+
+  return { isError: false, output };
+};
+
+const stringifyPhaseContext = (label: string, output: string, structured?: any) => {
+  if (structured && Object.keys(structured).length > 0) {
+    return `\n\n${label} 结果(JSON):\n${JSON.stringify(structured, null, 2)}`;
+  }
+  return `\n\n${label} 结果:\n${output}`;
+};
 
 const LOAD_COLOR: Record<string, string> = {
   normal: 'text-emerald-400',
@@ -59,7 +160,34 @@ const LOAD_COLOR: Record<string, string> = {
   unknown: 'text-gray-400',
 };
 
-const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
+const buildIdlePhases = (): PhaseResult[] =>
+  PHASES.map(p => ({ phase: p.name, status: 'idle', output: '' }));
+
+const buildUiPhasesFromRecords = (records: PhaseRecord[] = [], previous?: PhaseResult[]): PhaseResult[] => {
+  const prior = previous || buildIdlePhases();
+  return PHASES.map((phase, index) => {
+    const record = records.find(item => item.phase === phase.name);
+    if (!record) return prior[index] || { phase: phase.name, status: 'idle', output: '' };
+    return {
+      phase: phase.name,
+      status: (record.status as PhaseResult['status']) || 'idle',
+      output: record.raw_output || record.error || prior[index]?.output || '',
+    };
+  });
+};
+
+const getResumablePhase = (records: PhaseRecord[] = []) => {
+  for (const phase of PHASES) {
+    const record = records.find(item => item.phase === phase.name);
+    if (!record) return phase.name;
+    if (record.status === 'error' || record.status === 'retrying' || record.status === 'pending') {
+      return phase.name;
+    }
+  }
+  return null;
+};
+
+const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComplete, engineUrl }) => {
   const [targetIp, setTargetIp] = useState('');
   const [targetName, setTargetName] = useState('IVI System');
   const [isFullMode, setIsFullMode] = useState(true);
@@ -83,8 +211,19 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
   const [riskScore, setRiskScore] = useState(0);
   const [results, setResults] = useState<any[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
+  const [assessment, setAssessment] = useState<AssessmentArtifacts>({});
+  const [phaseRecords, setPhaseRecords] = useState<PhaseRecord[]>([]);
+  const [structuredState, setStructuredState] = useState<Record<string, any>>({});
+  const [findings, setFindings] = useState<any[]>([]);
 
   const STORAGE_KEY = 'autosec_agent_scan_state';
+
+  useEffect(() => {
+    if (engineUrl) {
+      setBackendUrl(engineUrl);
+    }
+  }, [engineUrl]);
+  const resolveBackendUrl = () => (engineUrl ? engineUrl.replace(/\/$/, '') : getBackendUrl());
 
   // ── 从 localStorage 恢复状态 ──
   useEffect(() => {
@@ -94,7 +233,15 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
         const s = JSON.parse(saved);
         if (s.targetIp) setTargetIp(s.targetIp);
         if (s.targetName) setTargetName(s.targetName);
-        if (s.phases && s.phases.length === PHASES.length) setPhases(s.phases);
+        const restoredPhaseRecords = Array.isArray(s.phaseRecords) ? s.phaseRecords : [];
+        setPhaseRecords(restoredPhaseRecords);
+        setStructuredState(s.structuredState || {});
+        setFindings(Array.isArray(s.findings) ? s.findings : []);
+        setPhases(
+          Array.isArray(s.phases) && s.phases.length === PHASES.length
+            ? s.phases
+            : buildUiPhasesFromRecords(restoredPhaseRecords)
+        );
         if (s.finalReport) setFinalReport(s.finalReport);
         if (s.topology) setTopology(s.topology);
         if (s.adaptiveCtx) setAdaptiveCtx(s.adaptiveCtx);
@@ -103,10 +250,12 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
         if (s.bluetoothMac) setBluetoothMac(s.bluetoothMac);
         if (s.wifiInterface) setWifiInterface(s.wifiInterface);
         if (s.rfFrequency) setRfFrequency(s.rfFrequency);
-        if (typeof s.activeStep === 'number') setActiveStep(s.activeStep);
+        setActiveStep(-1);
         if (s.riskScore) setRiskScore(s.riskScore);
         if (s.results) setResults(s.results);
         if (s.logs) setLogs(s.logs);
+        if (s.assessment) setAssessment(s.assessment);
+        if (typeof s.activeStep === 'number') setActiveStep(s.activeStep);
       }
     } catch { }
   }, []);
@@ -119,6 +268,10 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
         topology, adaptiveCtx, scanTime, activeStep,
         canInterface, bluetoothMac, wifiInterface, rfFrequency,
         riskScore, results, logs,
+        assessment,
+        phaseRecords,
+        structuredState,
+        findings,
         ...override,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
@@ -129,11 +282,12 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${token}`,
   };
+  const aiConfig = buildAiConfigPayload(currentUser?.ai_config);
 
 
   const fetchAdaptiveContext = async (ip: string, openPorts: number[] = []) => {
     try {
-      const r = await fetch(`${BACKEND_URL}/api/adaptive-context`, {
+      const r = await fetch(`${resolveBackendUrl()}/api/adaptive-context`, {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ target_ip: ip, open_ports: openPorts, reset: true }),
@@ -178,7 +332,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
 
   const fetchTopology = async (ip: string) => {
     try {
-      const r = await fetch(`${BACKEND_URL}/api/topology`, {
+      const r = await fetch(`${resolveBackendUrl()}/api/topology`, {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ target_ip: ip }),
@@ -211,6 +365,10 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
     setRiskScore(0);
     setResults([]);
     setLogs([]);
+    setAssessment({});
+    setPhaseRecords([]);
+    setStructuredState({});
+    setFindings([]);
     localStorage.removeItem(STORAGE_KEY);
   };
 
@@ -218,45 +376,181 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
     setPhases(prev => prev.map((p, i) => i === idx ? { ...p, ...update } : p));
   };
 
-  const runFullAssessment = async () => {
+  const persistRunState = ({
+    nextLogs,
+    nextResults,
+    nextFindings,
+    nextPhaseRecords,
+    nextStructured,
+    nextAssessment,
+    nextFinalReport,
+    nextActiveStep,
+    nextPhases,
+  }: {
+    nextLogs?: any[];
+    nextResults?: any[];
+    nextFindings?: any[];
+    nextPhaseRecords?: PhaseRecord[];
+    nextStructured?: Record<string, any>;
+    nextAssessment?: AssessmentArtifacts;
+    nextFinalReport?: string;
+    nextActiveStep?: number;
+    nextPhases?: PhaseResult[];
+  }) => {
+    saveState({
+      logs: nextLogs ?? logs,
+      results: nextResults ?? results,
+      findings: nextFindings ?? findings,
+      phaseRecords: nextPhaseRecords ?? phaseRecords,
+      structuredState: nextStructured ?? structuredState,
+      assessment: nextAssessment ?? assessment,
+      finalReport: nextFinalReport ?? finalReport,
+      activeStep: nextActiveStep ?? activeStep,
+      phases: nextPhases ?? phases,
+    });
+  };
+
+  const runAssessment = async (resumeFrom?: string) => {
     if (!targetIp.trim()) return;
     const now = new Date().toLocaleString('zh-CN', { hour12: false });
     setScanTime(now);
     setIsRunning(true);
-    const resetPhases = PHASES.map(p => ({ phase: p.name, status: 'idle' as const, output: '' }));
-    setPhases(resetPhases);
-    setTopology(null);
-    setAdaptiveCtx(null);
-    setFinalReport('');
-    setActiveStep(-1);
-    setRiskScore(0);
-    setResults([]);
-    setLogs([]);
-    saveState({
-      phases: resetPhases, finalReport: '', topology: null,
-      adaptiveCtx: null, activeStep: -1, scanTime: now,
-      riskScore: 0, results: [], logs: []
-    });
+    const isResume = Boolean(resumeFrom);
+    const resetPhases = buildIdlePhases();
+    const initialPhaseRecords = isResume ? [...phaseRecords] : [];
+    const initialStructured = isResume ? { ...structuredState } : {};
+    const initialFindings = isResume ? [...findings] : [];
+    const initialResults = isResume ? [...results] : [];
+    const initialLogs = isResume
+      ? [...logs, { timestamp: new Date().toLocaleTimeString(), type: 'info', message: `[*] 从阶段 ${resumeFrom} 恢复执行任务: ${targetName}` }]
+      : [
+          { timestamp: new Date().toLocaleTimeString(), type: 'info', message: `[*] 启动自主渗透测试任务: ${targetName}` },
+          { timestamp: new Date().toLocaleTimeString(), type: 'info', message: `[*] 目标向量: ${targetIp}` }
+        ];
 
-    await fetchTopology(targetIp);
+    if (!isResume) {
+      setPhases(resetPhases);
+      setTopology(null);
+      setAdaptiveCtx(null);
+      setFinalReport('');
+      setActiveStep(-1);
+      setRiskScore(0);
+      setResults([]);
+      setLogs([]);
+      setAssessment({});
+      setPhaseRecords([]);
+      setStructuredState({});
+      setFindings([]);
+      saveState({
+        phases: resetPhases,
+        finalReport: '',
+        topology: null,
+        adaptiveCtx: null,
+        activeStep: -1,
+        scanTime: now,
+        riskScore: 0,
+        results: [],
+        logs: [],
+        assessment: {},
+        phaseRecords: [],
+        structuredState: {},
+        findings: [],
+      });
+      await fetchTopology(targetIp);
+    } else {
+      persistRunState({
+        nextLogs: initialLogs,
+        nextResults: initialResults,
+        nextFindings: initialFindings,
+        nextPhaseRecords: initialPhaseRecords,
+        nextStructured: initialStructured,
+        nextActiveStep: activeStep,
+      });
+    }
 
-    let currentFinalReport = '';
-    const collectedLogs: any[] = [
-      { timestamp: new Date().toLocaleTimeString(), type: 'info', message: `[*] 启动自主渗透测试任务: ${targetName}` },
-      { timestamp: new Date().toLocaleTimeString(), type: 'info', message: `[*] 目标向量: ${targetIp}` }
-    ];
-    const collectedResults: any[] = [];
+    let currentFinalReport = isResume ? finalReport : '';
+    let collectedLogs: any[] = initialLogs;
+    let collectedResults: any[] = initialResults;
+    let collectedFindings: any[] = initialFindings;
+    let collectedPhaseRecords: PhaseRecord[] = initialPhaseRecords;
+    let structuredPhases: Record<string, any> = initialStructured;
 
     try {
+      if (isResume) {
+        const activeBackendUrl = resolveBackendUrl();
+        const r = await fetch(`${activeBackendUrl}/api/agent-scan`, {
+          method: 'POST',
+          headers: authHeaders,
+            body: JSON.stringify({
+              target_ip: targetIp,
+              target_name: targetName,
+              resume_from: resumeFrom,
+              ai_config: aiConfig,
+              ...(canInterface && { can_interface: canInterface }),
+            ...(bluetoothMac && { bluetooth_mac: bluetoothMac }),
+            ...(wifiInterface && { wifi_interface: wifiInterface }),
+            ...(rfFrequency && { frequency: rfFrequency }),
+            state: {
+              logs: collectedLogs,
+              findings: collectedFindings,
+              phase_records: collectedPhaseRecords,
+              structured: structuredPhases,
+            },
+          }),
+        });
+        const data = await r.json();
+        if (!r.ok) {
+          throw new Error(diagnosePhaseFailure({
+            backendUrl: activeBackendUrl,
+            status: r.status,
+            payload: data,
+            errorMessage: data?.error || data?.message,
+          }));
+        }
+
+        currentFinalReport = data?.phases?.assessment_report || currentFinalReport;
+        collectedLogs = Array.isArray(data.logs) ? data.logs : collectedLogs;
+        collectedFindings = Array.isArray(data.findings) ? data.findings : collectedFindings;
+        collectedPhaseRecords = Array.isArray(data.phase_records) ? data.phase_records : collectedPhaseRecords;
+        structuredPhases = data.structured || structuredPhases;
+        if (collectedFindings.length > 0) {
+          collectedResults = collectedFindings.map((f: any) => ({
+            ...f,
+            id: f.id || `vuln-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            timestamp: f.detectedAt || new Date().toISOString(),
+          }));
+        }
+
+        setLogs(collectedLogs);
+        setFindings(collectedFindings);
+        setResults(collectedResults);
+        setPhaseRecords(collectedPhaseRecords);
+        setStructuredState(structuredPhases);
+        setFinalReport(currentFinalReport);
+        const nextPhases = buildUiPhasesFromRecords(collectedPhaseRecords, phases);
+        setPhases(nextPhases);
+        setActiveStep(PHASES.findIndex(phase => phase.name === 'assess'));
+        persistRunState({
+          nextLogs: collectedLogs,
+          nextResults: collectedResults,
+          nextFindings: collectedFindings,
+          nextPhaseRecords: collectedPhaseRecords,
+          nextStructured: structuredPhases,
+          nextFinalReport: currentFinalReport,
+          nextPhases,
+          nextActiveStep: PHASES.findIndex(phase => phase.name === 'assess'),
+        });
+      } else {
       // 统一使用逐阶段顺序执行，让每个 Agent 的结果依次显现
       let prevContext = '';
       for (let i = 0; i < PHASES.length; i++) {
         setActiveStep(i);
         updatePhase(i, { status: 'running', output: '执行中...' });
-        saveState({ activeStep: i });
+        persistRunState({ nextActiveStep: i });
 
         try {
-          const r = await fetch(`${BACKEND_URL}/api/agent-scan`, {
+          const activeBackendUrl = resolveBackendUrl();
+          const r = await fetch(`${activeBackendUrl}/api/agent-scan`, {
             method: 'POST',
             headers: authHeaders,
             body: JSON.stringify({
@@ -264,24 +558,61 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
               target_name: targetName,
               phase: PHASES[i].name,
               context: prevContext,
+              ai_config: aiConfig,
               ...(canInterface && { can_interface: canInterface }),
               ...(bluetoothMac && { bluetooth_mac: bluetoothMac }),
               ...(wifiInterface && { wifi_interface: wifiInterface }),
               ...(rfFrequency && { frequency: rfFrequency }),
+              state: {
+                logs: collectedLogs,
+                findings: collectedFindings,
+                phase_records: collectedPhaseRecords,
+                structured: structuredPhases,
+              },
             }),
           });
           const data = await r.json();
-          const output = data.result || data.error || JSON.stringify(data);
-          updatePhase(i, { status: r.ok ? 'done' : 'error', output });
+          const rawOutput = data.result || data.error || data.message || JSON.stringify(data);
+          const diagnosed = diagnosePhaseOutput(String(rawOutput));
+          const phaseStatus = r.ok && !diagnosed.isError ? 'done' : 'error';
+          const output = r.ok
+            ? diagnosed.output
+            : diagnosePhaseFailure({
+                backendUrl: activeBackendUrl,
+                status: r.status,
+                payload: data,
+                errorMessage: rawOutput,
+              });
+          updatePhase(i, { status: phaseStatus, output });
 
           // 集成后端返回的所有详细日志 (工具调用、PoC 详情及 Agent 步骤)
           if (data.logs && Array.isArray(data.logs)) {
             collectedLogs.push(...data.logs);
             setLogs([...collectedLogs]);
+            persistRunState({ nextLogs: [...collectedLogs] });
+          }
+
+          if (data.phase_records && Array.isArray(data.phase_records)) {
+            data.phase_records.forEach((record: any) => {
+              const idx = collectedPhaseRecords.findIndex((item) => item.phase === record.phase);
+              if (idx >= 0) collectedPhaseRecords[idx] = record;
+              else collectedPhaseRecords.push(record);
+            });
+            setPhaseRecords([...collectedPhaseRecords]);
+          }
+
+          if (data.structured_result) {
+            structuredPhases[PHASES[i].name] = data.structured_result;
+            setStructuredState({ ...structuredPhases });
           }
 
           // 集成结构化漏洞发现
           if (data.findings && Array.isArray(data.findings)) {
+            data.findings.forEach((f: any) => {
+              if (!collectedFindings.find(existing => existing.name === f.name)) {
+                collectedFindings.push(f);
+              }
+            });
             data.findings.forEach((f: any) => {
               if (!collectedResults.find(r => r.name === f.name)) {
                 collectedResults.push({
@@ -292,23 +623,38 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
               }
             });
             setResults([...collectedResults]);
+            setFindings([...collectedFindings]);
           }
 
-          prevContext += `\n\n${PHASES[i].label} 结果:\n${output}`;
-          if (i === PHASES.length - 1) {
+          prevContext += stringifyPhaseContext(PHASES[i].label, output, data.structured_result);
+          if (i === PHASES.length - 1 && phaseStatus === 'done') {
             currentFinalReport = output;
             setFinalReport(output);
           }
+          persistRunState({
+            nextLogs: [...collectedLogs],
+            nextResults: [...collectedResults],
+            nextFindings: [...collectedFindings],
+            nextPhaseRecords: [...collectedPhaseRecords],
+            nextStructured: { ...structuredPhases },
+            nextFinalReport: currentFinalReport,
+          });
         } catch (e: any) {
-          updatePhase(i, { status: 'error', output: e.message });
+          const errorMessage = diagnosePhaseFailure({
+            backendUrl: resolveBackendUrl(),
+            errorMessage: e?.message,
+          });
+          updatePhase(i, { status: 'error', output: errorMessage });
           const errorLog = {
             timestamp: new Date().toLocaleTimeString(),
             type: 'error',
-            message: `[!] ${PHASES[i].label} 执行异常: ${e.message}`
+            message: `[!] ${PHASES[i].label} 执行异常: ${errorMessage}`
           };
           collectedLogs.push(errorLog);
           setLogs([...collectedLogs]);
+          persistRunState({ nextLogs: [...collectedLogs] });
         }
+      }
       }
     } finally {
       setIsRunning(false);
@@ -345,6 +691,37 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
       calculatedRisk = Math.min(calculatedRisk, 100);
       setRiskScore(calculatedRisk);
 
+      const sessionBase = {
+        targetName: targetName,
+        connection: {
+          ip: targetIp,
+          bluetoothMac: bluetoothMac,
+          canInterface: canInterface,
+          interface: wifiInterface,
+          port: '', url: '', frequency: ''
+        },
+        results: collectedResults,
+        riskScore: calculatedRisk,
+      };
+
+      let artifacts: AssessmentArtifacts = {};
+      try {
+        const [attackGraph, physicalImpact, remediationPlan, structuredReport] = await Promise.all([
+          generateAttackGraph(sessionBase, token),
+          assessPhysicalImpact(sessionBase, token),
+          simulateRemediation(sessionBase, token),
+          generateStructuredReport(sessionBase, token),
+        ]);
+        artifacts = { attackGraph, physicalImpact, remediationPlan, structuredReport };
+        setAssessment(artifacts);
+      } catch (e: any) {
+        collectedLogs.push({
+          timestamp: new Date().toLocaleTimeString(),
+          type: 'warning',
+          message: `[!] 攻击路径与整改模拟生成失败: ${e.message}`,
+        });
+      }
+
       const sessionObj = {
         id: `SCAN-AGENT-${Date.now().toString().slice(-6)}`,
         targetName: targetName,
@@ -363,13 +740,37 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
         logs: collectedLogs,
         results: collectedResults,
         riskScore: calculatedRisk,
-        aiReport: currentFinalReport
+        aiReport: currentFinalReport,
+        assessment: artifacts,
+        findings: collectedFindings,
+        phase_records: collectedPhaseRecords,
+        structured: structuredPhases,
       };
       saveScanSession(sessionObj, token);
+      onSessionComplete?.(sessionObj);
 
       // 完成后保存所有状态到 localStorage
-      saveState({ activeStep: 3 });
+      setPhaseRecords(collectedPhaseRecords);
+      setStructuredState(structuredPhases);
+      setFindings(collectedFindings);
+      persistRunState({
+        nextActiveStep: 3,
+        nextAssessment: artifacts,
+        nextLogs: collectedLogs,
+        nextResults: collectedResults,
+        nextFindings: collectedFindings,
+        nextPhaseRecords: collectedPhaseRecords,
+        nextStructured: structuredPhases,
+        nextFinalReport: currentFinalReport,
+      });
     }
+  };
+
+  const runFullAssessment = async () => runAssessment();
+  const resumeAssessment = async () => {
+    const resumeFrom = getResumablePhase(phaseRecords);
+    if (!resumeFrom || isRunning) return;
+    await runAssessment(resumeFrom);
   };
 
   // ── PDF 导出 ──
@@ -455,7 +856,8 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
 
   const handleAutoDiscovery = async () => {
     try {
-      const resp = await fetch(`${BACKEND_URL}/api/auto_discovery`);
+      const activeBackendUrl = resolveBackendUrl();
+      const resp = await fetch(`${activeBackendUrl}/api/auto_discovery`);
       const data = await resp.json();
       if (data.status === 'success') {
         const { wifi, can, bluetooth_mac, target_ip } = data.interfaces;
@@ -466,9 +868,18 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
         setShowAdvanced(true);
       }
     } catch (e: any) {
-      console.error('Auto discovery failed:', e);
+      console.error(`Auto discovery failed at ${resolveBackendUrl()}:`, e);
     }
   };
+
+  const resumablePhase = getResumablePhase(phaseRecords);
+  const plannerSteps: PlannerStep[] = Array.isArray(structuredState?.planner?.steps) ? structuredState.planner.steps : [];
+  const plannerSummary = structuredState?.planner?.strategy_summary || '';
+  const plannerGuardrails: string[] = Array.isArray(structuredState?.planner?.guardrails) ? structuredState.planner.guardrails : [];
+  const supervisorEvents: SupervisorEvent[] = Array.isArray(structuredState?.supervisor?.events) ? structuredState.supervisor.events : [];
+  const supervisorMetrics = (structuredState?.supervisor?.metrics || {}) as Partial<SupervisorMetrics>;
+  const supervisorAdjustments: SupervisorAdjustment[] = Array.isArray(structuredState?.supervisor?.adjustments) ? structuredState.supervisor.adjustments : [];
+  const hasSupervisorData = supervisorEvents.length > 0 || supervisorAdjustments.length > 0 || Boolean(supervisorMetrics.total_events);
 
   return (
     <div className="flex flex-col gap-4 h-full overflow-y-auto p-4">
@@ -484,6 +895,17 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
         </div>
         <div className="flex-1" />
         <div className="flex gap-2 self-end sm:self-auto">
+          {resumablePhase && (
+            <button
+              onClick={resumeAssessment}
+              disabled={isRunning || !targetIp.trim()}
+              className="flex items-center gap-2 bg-emerald-950/50 border border-emerald-700 hover:border-emerald-500 hover:text-emerald-300 text-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed rounded px-3 py-1.5 text-xs font-semibold transition-colors"
+              title={`从 ${resumablePhase} 阶段继续执行`}
+            >
+              <Play className="w-3.5 h-3.5" />
+              继续执行
+            </button>
+          )}
           <button
             onClick={handleAutoDiscovery}
             disabled={isRunning}
@@ -538,14 +960,27 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
           </select>
         </div>
         <div className="flex flex-col justify-end">
-          <button
-            onClick={runFullAssessment}
-            disabled={isRunning || !targetIp.trim()}
-            className="w-full flex items-center justify-center gap-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded px-4 py-2 text-sm font-semibold transition-colors h-[38px]"
-          >
-            {isRunning ? <Loader className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-            {isRunning ? '运行中...' : '启动评估'}
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={runFullAssessment}
+              disabled={isRunning || !targetIp.trim()}
+              className="flex-1 flex items-center justify-center gap-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded px-4 py-2 text-sm font-semibold transition-colors h-[38px]"
+            >
+              {isRunning ? <Loader className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+              {isRunning ? '运行中...' : '启动评估'}
+            </button>
+            {resumablePhase && (
+              <button
+                onClick={resumeAssessment}
+                disabled={isRunning || !targetIp.trim()}
+                className="flex items-center justify-center gap-2 bg-emerald-700/20 hover:bg-emerald-700/30 disabled:bg-gray-700 disabled:text-gray-500 text-emerald-300 border border-emerald-700 rounded px-3 py-2 text-sm font-semibold transition-colors h-[38px]"
+                title={`从 ${resumablePhase} 阶段继续执行`}
+              >
+                <RotateCcw className="w-4 h-4" />
+                继续
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -769,6 +1204,127 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
         })}
       </div>
 
+      {(plannerSteps.length > 0 || hasSupervisorData) && (
+        <div className={`grid grid-cols-1 gap-4 ${hasSupervisorData ? 'xl:grid-cols-2' : ''}`}>
+          <div className="bg-black/30 border border-cyan-900/40 rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Cpu className="w-4 h-4 text-cyan-400" />
+              <span className="text-xs font-bold text-cyan-300 uppercase tracking-widest">Planner Blueprint</span>
+            </div>
+            {plannerSummary ? (
+              <p className="text-sm text-gray-300 mb-4 leading-relaxed">{plannerSummary}</p>
+            ) : (
+              <p className="text-xs text-gray-500 mb-4">尚未生成执行纲要。</p>
+            )}
+            {plannerSteps.length > 0 && (
+              <div className="space-y-2">
+                {plannerSteps.map((step) => (
+                  <div key={`${step.step}-${step.title}`} className="bg-black/40 border border-cyan-900/30 rounded p-3">
+                    <div className="flex items-center justify-between gap-3 mb-1">
+                      <div className="text-sm font-semibold text-white">
+                        {step.step}. {step.title}
+                      </div>
+                      {Array.isArray(step.depends_on) && step.depends_on.length > 0 ? (
+                        <span className="text-[10px] text-gray-400 font-mono">depends_on: {step.depends_on.join(', ')}</span>
+                      ) : null}
+                    </div>
+                    <div className="text-xs text-gray-300">目标: {step.objective || '未提供'}</div>
+                    <div className="text-xs text-cyan-300 mt-1">成功标准: {step.success_criteria || '未提供'}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {plannerGuardrails.length > 0 && (
+              <div className="mt-4 pt-3 border-t border-cyan-900/30">
+                <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">Guardrails</div>
+                <div className="flex flex-wrap gap-2">
+                  {plannerGuardrails.map((rule, index) => (
+                    <span key={`${rule}-${index}`} className="text-[11px] bg-cyan-950/20 text-cyan-300 border border-cyan-900/40 px-2 py-1 rounded">
+                      {rule}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {hasSupervisorData ? (
+            <div className="bg-black/30 border border-amber-900/40 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <AlertTriangle className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-bold text-amber-300 uppercase tracking-widest">Supervisor Events</span>
+              </div>
+              {(supervisorMetrics.total_events || supervisorAdjustments.length > 0) && (
+                <div className="grid grid-cols-2 gap-2 mb-4">
+                  <div className="bg-black/40 border border-amber-900/30 rounded p-2">
+                    <div className="text-[10px] text-gray-500 uppercase">Events</div>
+                    <div className="text-lg font-mono text-amber-300">{supervisorMetrics.total_events || 0}</div>
+                  </div>
+                  <div className="bg-black/40 border border-amber-900/30 rounded p-2">
+                    <div className="text-[10px] text-gray-500 uppercase">Pruned Steps</div>
+                    <div className="text-lg font-mono text-red-300">{supervisorMetrics.pruned_steps || 0}</div>
+                  </div>
+                  <div className="bg-black/40 border border-amber-900/30 rounded p-2">
+                    <div className="text-[10px] text-gray-500 uppercase">No Progress</div>
+                    <div className="text-lg font-mono text-amber-300">{supervisorMetrics.no_progress_events || 0}</div>
+                  </div>
+                  <div className="bg-black/40 border border-amber-900/30 rounded p-2">
+                    <div className="text-[10px] text-gray-500 uppercase">Execution Errors</div>
+                    <div className="text-lg font-mono text-red-300">{supervisorMetrics.execution_errors || 0}</div>
+                  </div>
+                </div>
+              )}
+              {supervisorAdjustments.length > 0 && (
+                <div className="mb-4 pt-3 border-t border-amber-900/30">
+                  <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">Automatic Adjustments</div>
+                  <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
+                    {supervisorAdjustments.map((adjustment, index) => (
+                      <div key={`${adjustment.type}-${adjustment.timestamp || index}`} className="bg-black/40 border border-amber-900/30 rounded p-2">
+                        <div className="text-xs font-semibold text-white">{adjustment.type}</div>
+                        <div className="text-[11px] text-gray-300 mt-1">{adjustment.message}</div>
+                        {adjustment.affected_steps && adjustment.affected_steps.length > 0 ? (
+                          <div className="text-[10px] text-gray-500 font-mono mt-1">steps: {adjustment.affected_steps.join(', ')}</div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {supervisorEvents.length > 0 ? (
+                <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                  {supervisorEvents.map((event, index) => (
+                    <div key={`${event.scope}-${event.timestamp || index}`} className="bg-black/40 border border-amber-900/30 rounded p-3">
+                      <div className="flex items-center justify-between gap-3 mb-2">
+                        <div className="text-sm font-semibold text-white">
+                          {event.phase ? `${event.phase.toUpperCase()} · ` : ''}{event.scope}
+                        </div>
+                        <span className={`text-[10px] uppercase px-2 py-0.5 rounded border ${
+                          event.severity === 'error'
+                            ? 'text-red-300 border-red-800 bg-red-950/30'
+                            : 'text-amber-300 border-amber-800 bg-amber-950/30'
+                        }`}>
+                          {event.severity}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-300 whitespace-pre-wrap">{event.message}</div>
+                      {event.timestamp ? (
+                        <div className="text-[11px] text-gray-500 font-mono mt-2">{event.timestamp}</div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="bg-black/20 border border-amber-900/20 rounded-lg px-4 py-2 flex items-center gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-500/80" />
+              <span className="text-[11px] font-bold text-amber-300 uppercase tracking-widest">Supervisor</span>
+              <span className="text-xs text-gray-500">当前未触发监督事件</span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Results & Console Row */}
       <div className="grid grid-cols-3 gap-4 h-[400px]">
         {/* Console - occupy 2/3 */}
@@ -824,6 +1380,14 @@ const AgentScan: React.FC<AgentScanProps> = ({ token }) => {
           </div>
         </div>
       </div>
+
+      {(assessment.attackGraph || assessment.physicalImpact || assessment.remediationPlan) && (
+        <AttackGraph
+          graph={assessment.attackGraph}
+          physicalImpact={assessment.physicalImpact}
+          remediationPlan={assessment.remediationPlan}
+        />
+      )}
 
       {/* Final Report */}
       {finalReport && (

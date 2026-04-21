@@ -14,6 +14,15 @@ import socket
 import struct
 from iv_plugin_base import IVIVulnerabilityPlugin
 class PerfektBlueL2CAPPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "BT PerfektBlue L2CAP"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "rf"
+    meta_target_os = ["all"]
+    meta_required_params = ["bd_addr"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         if not self.params.get("bd_addr"):
             raise RuntimeError("需要指定目标蓝牙MAC地址")

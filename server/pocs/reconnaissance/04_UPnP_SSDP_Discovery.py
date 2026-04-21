@@ -15,6 +15,15 @@ import time
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class UPnPSSDPPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "UPnP SSDP Discovery"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "unknown"
+    meta_target_os = ["all"]
+    meta_required_params = ["target_ip"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         return True
 
@@ -69,5 +78,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 04_UPnP_SSDP_Discovery.py <target_ip>")
         sys.exit(1)
-    plugin = UPnPSSDPPlugin({"target_ip": target})
+    plugin = UPnPSSDPPlugin({"target_ip": sys.argv[1]})
     plugin.run_verify()

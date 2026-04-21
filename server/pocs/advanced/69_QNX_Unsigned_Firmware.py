@@ -14,6 +14,15 @@ import os
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class QNXUnsignedFwPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "QNX Unsigned Firmware"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "rf"
+    meta_target_os = ["all"]
+    meta_required_params = ["firmware_path"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
          return True
 
@@ -56,8 +65,8 @@ class QNXUnsignedFwPlugin(IVIVulnerabilityPlugin):
              
              return {
                  "status": "success",
-                 "vulnerable": True,
-                 "details": f"Generated malicious QNX IFS package at {payload_dir}"
+                 "vulnerable": False,
+                 "details": f"已生成 QNX 固件样本 {payload_dir}，需在目标升级流程中确认是否接受未签名镜像。"
              }
              
         except Exception as e:
@@ -68,8 +77,5 @@ class QNXUnsignedFwPlugin(IVIVulnerabilityPlugin):
              }
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python3 68_QNX_Unsigned_Firmware.py")
-        sys.exit(1)
-    plugin = QNXUnsignedFwPlugin()
+    plugin = QNXUnsignedFwPlugin({})
     plugin.run_verify()

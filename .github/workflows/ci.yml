@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: client/package-lock.json
+
+      - name: Python syntax check
+        run: |
+          python -m py_compile \
+            server/server.py \
+            server/agent_orchestrator.py \
+            server/sandbox_runner.py \
+            server/poc_worker.py \
+            server/benchmark_suite.py \
+            server/run_benchmark_suite.py \
+            server/generate_benchmark_suite.py \
+            server/validate_benchmark_suite.py \
+            server/audit_pocs.py \
+            server/pocs/*.py \
+            server/pocs/**/*.py
+
+      - name: PoC audit gate
+        run: |
+          python server/audit_pocs.py > /tmp/poc-audit.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('/tmp/poc-audit.json').read_text(encoding='utf-8'))
+          if report['summary']['red'] > 0:
+              raise SystemExit(
+                  f"PoC audit failed: red={report['summary']['red']} yellow={report['summary']['yellow']}"
+              )
+          print(
+              f"PoC audit passed: green={report['summary']['green']} yellow={report['summary']['yellow']} red={report['summary']['red']}"
+          )
+          PY
+
+      - name: PoC smoke tests
+        run: python server/smoke_test_pocs.py
+
+      - name: Generate capability report
+        run: python server/generate_poc_capability_report.py --format markdown --output-file /tmp/poc-capability-report.md
+
+      - name: Benchmark suite freshness check
+        working-directory: server
+        run: python generate_benchmark_suite.py --check
+
+      - name: Benchmark suite schema validation
+        working-directory: server
+        run: |
+          python validate_benchmark_suite.py --suite-file benchmarks/default_suite.json
+          python validate_benchmark_suite.py --suite-file benchmarks/regression_suite.json
+
+      - name: Install client dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: TypeScript check
+        working-directory: client
+        run: npm exec tsc -- --noEmit
+
+      - name: Benchmark full fixture suite
+        working-directory: server
+        run: python run_benchmark_suite.py --fixture-dir benchmarks/fixtures --suite-file benchmarks/default_suite.json --min-pass-rate 1.0 --strict
+
+      - name: Benchmark regression gate
+        working-directory: server
+        run: python run_benchmark_suite.py --fixture-dir benchmarks/fixtures --suite-file benchmarks/regression_suite.json --min-pass-rate 1.0 --strict

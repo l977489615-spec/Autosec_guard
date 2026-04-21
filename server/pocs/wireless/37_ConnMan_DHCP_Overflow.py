@@ -14,6 +14,15 @@ import time
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class ConnManDHCPOKPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "ConnMan DHCP Overflow"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "rf"
+    meta_target_os = ["all"]
+    meta_required_params = ["interface"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         try:
             import scapy.all as scapy
@@ -86,5 +95,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 37_ConnMan_DHCP_Overflow.py <interface>")
         sys.exit(1)
-    plugin = ConnManDHCPOKPlugin({"interface": iface})
+    plugin = ConnManDHCPOKPlugin({"interface": sys.argv[1]})
     plugin.run_verify()

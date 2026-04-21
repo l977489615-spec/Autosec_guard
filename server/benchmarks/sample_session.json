@@ -1,0 +1,75 @@
+{
+  "session_id": "sample-network-session",
+  "risk_score": 42,
+  "findings": [
+    {
+      "name": "TCP Port Scan",
+      "pocId": "TCP Port Scan",
+      "severity": "Medium",
+      "domain": "network",
+      "details": "Sample session detected TCP exposure."
+    },
+    {
+      "name": "SSH Service",
+      "pocId": "SSH Service",
+      "severity": "Medium",
+      "domain": "network",
+      "details": "Sample session detected SSH service exposure."
+    }
+  ],
+  "phase_records": [
+    {
+      "phase": "recon",
+      "status": "done",
+      "attempt": 1,
+      "timestamp": "2026-04-07T00:00:00Z"
+    },
+    {
+      "phase": "decision",
+      "status": "done",
+      "attempt": 1,
+      "timestamp": "2026-04-07T00:00:01Z"
+    }
+  ],
+  "structured": {
+    "attack_plan": {
+      "items": [
+        {
+          "step": 1,
+          "poc_name": "TCP Port Scan",
+          "parameters": {},
+          "strategy": "default",
+          "status": "completed"
+        },
+        {
+          "step": 2,
+          "poc_name": "SSH Service",
+          "parameters": {},
+          "strategy": "default",
+          "status": "completed"
+        }
+      ]
+    },
+    "execution": {
+      "items": [
+        {
+          "step": 1,
+          "poc_name": "TCP Port Scan",
+          "status": "completed",
+          "vulnerable": false,
+          "strategy": "default",
+          "branch": "primary"
+        },
+        {
+          "step": 2,
+          "poc_name": "SSH Service",
+          "status": "completed",
+          "vulnerable": true,
+          "strategy": "default",
+          "branch": "primary",
+          "evidence": "Sample evidence"
+        }
+      ]
+    }
+  }
+}

@@ -14,6 +14,15 @@ import time
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class EvilTwinPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "WiFi Evil Twin"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "rf"
+    meta_target_os = ["all"]
+    meta_required_params = ["interface"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         try:
             import scapy.all as scapy
@@ -59,8 +68,8 @@ class EvilTwinPlugin(IVIVulnerabilityPlugin):
             
             return {
                 "status": "success",
-                "vulnerable": True,
-                "details": f"Successfully broadcasted Beacon frames for '{ssid}'."
+                "vulnerable": False,
+                "details": f"同名 Beacon 已广播，需确认目标车机是否自动连接到伪造热点后再判定漏洞。"
             }
 
         except Exception as e:
@@ -74,5 +83,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 34_WiFi_Evil_Twin.py <interface>")
         sys.exit(1)
-    plugin = EvilTwinPlugin({"interface": iface})
+    plugin = EvilTwinPlugin({"interface": sys.argv[1]})
     plugin.run_verify()

