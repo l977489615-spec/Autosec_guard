@@ -261,6 +261,41 @@ PoC 按车联网常见攻击面组织：
 
 ---
 
+## 🧩 PoC Matrix
+
+当前项目共内置 `71` 个 PoC，覆盖从基础侦察到高级无线与固件攻击面的完整研究链路。  
+下面这张表用于快速理解各类 PoC 的定位、覆盖范围和典型执行方式。
+
+| Category | Count | ID Range | Focus | Typical Examples | Execution |
+| --- | ---: | --- | --- | --- | --- |
+| Reconnaissance | 8 | `01-08` | 主机发现、端口扫描、服务枚举、基础资产摸排 | `ICMP Host Discovery` `TCP Port Scan` `mDNS/SSDP Discovery` | ☁️ Cloud / 📡 Edge |
+| Network | 13 | `09-21` | 车机网络服务与常见中间件风险验证 | `ADB Debug Port` `SSH Weak Creds` `MQTT Unauth` `SOME/IP SD` | ☁️ Cloud 为主，局域网场景可走 📡 Edge |
+| CAN Bus | 10 | `22-31` | CAN/UDS/OBD 相关协议交互、注入、重放、诊断访问 | `CAN Sniff` `CAN Injection` `UDS ReadMemory` `ECU Reset` | 📡 Edge |
+| Wireless | 18 | `32-49` | Wi-Fi、Bluetooth、QNX 无线面、协议层攻击与接入控制 | `WiFi Deauth` `KRACK` `BlueBorne` `PerfektBlue` | 📡 Edge |
+| Application | 13 | `50-62` | 车机应用、CarPlay/AirPlay、USB、WebView、媒体链路风险 | `AirPlay UAF` `USB SQLi` `WebView File Exfil` `Mirror Hijack` | ☁️ Cloud + 📡 Edge + 部分人工辅助 |
+| Advanced | 8 | `63-70` | OTA、RF、GPS、TPMS、V2X、固件与升级链路高级验证 | `OTA MITM` `GPS Spoofing` `TPMS Spoofing` `Unsigned Firmware` | 📡 Edge / 硬件依赖 |
+| Dynamic 0-Day | 1 | `99` | 面向未知服务的动态武器化探测与实验性扩展 | `Dynamic 0-Day Probe` | ☁️ Cloud / 📡 Edge |
+
+### 分类说明
+
+- `Reconnaissance` 负责前置侦察，通常作为 `Global Scan` 和 `Agent Scan` 的入口阶段。
+- `Network` 偏向车机系统和局域网服务面，适合验证开放服务、弱口令、匿名访问和服务发现风险。
+- `CAN Bus` 和 `Wireless` 强依赖现场接口与硬件能力，是边云协同架构存在的核心原因。
+- `Application` 覆盖车机生态中更接近用户侧和媒体链路侧的风险，部分场景需要人工配合完成最终验证。
+- `Advanced` 主要面向更高复杂度攻击链，如 OTA、中继、V2X、RF、GPS 与固件更新链路。
+- `99_Dynamic_0Day` 是实验性动态 PoC，用于在 `Agent Scan` 中补足未知服务场景，不等同于固定签名插件。
+
+### 当前 PoC 分布
+
+| Group | Count |
+| --- | ---: |
+| Cloud-friendly | 约 32 |
+| Edge-required | 约 32 |
+| Manual-assisted | 约 6 |
+| Dynamic / Experimental | 1 |
+
+---
+
 ## 🖼️ Screenshots
 
 ### Dashboard
