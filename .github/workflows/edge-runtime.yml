@@ -11,6 +11,11 @@ on:
         options:
           - nuitka
           - pyinstaller
+      deploy_to_server:
+        description: "Upload built runtimes to the AutoSec server over SSH after a successful build."
+        required: true
+        default: false
+        type: boolean
   push:
     tags:
       - "edge-v*"
@@ -76,3 +81,57 @@ jobs:
           name: autosec-edge-${{ matrix.target }}
           path: ${{ matrix.artifact_glob }}
           if-no-files-found: error
+
+  deploy:
+    name: Deploy Edge Runtimes
+    needs: build
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_to_server }}
+
+    steps:
+      - name: Download all Edge Runtime artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: autosec-edge-*
+          path: edge-runtime-artifacts
+          merge-multiple: true
+
+      - name: Verify deployment secrets
+        env:
+          EDGE_DEPLOY_HOST: ${{ secrets.EDGE_DEPLOY_HOST }}
+          EDGE_DEPLOY_USER: ${{ secrets.EDGE_DEPLOY_USER }}
+          EDGE_DEPLOY_SSH_KEY: ${{ secrets.EDGE_DEPLOY_SSH_KEY }}
+          EDGE_DEPLOY_PATH: ${{ secrets.EDGE_DEPLOY_PATH }}
+        run: |
+          test -n "$EDGE_DEPLOY_HOST" || (echo "EDGE_DEPLOY_HOST is required" >&2; exit 1)
+          test -n "$EDGE_DEPLOY_USER" || (echo "EDGE_DEPLOY_USER is required" >&2; exit 1)
+          test -n "$EDGE_DEPLOY_SSH_KEY" || (echo "EDGE_DEPLOY_SSH_KEY is required" >&2; exit 1)
+          test -n "$EDGE_DEPLOY_PATH" || (echo "EDGE_DEPLOY_PATH is required" >&2; exit 1)
+
+      - name: Configure SSH
+        env:
+          EDGE_DEPLOY_SSH_KEY: ${{ secrets.EDGE_DEPLOY_SSH_KEY }}
+          EDGE_DEPLOY_HOST: ${{ secrets.EDGE_DEPLOY_HOST }}
+          EDGE_DEPLOY_PORT: ${{ secrets.EDGE_DEPLOY_PORT || '22' }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$EDGE_DEPLOY_SSH_KEY" > ~/.ssh/autosec_edge_deploy
+          chmod 600 ~/.ssh/autosec_edge_deploy
+          ssh-keyscan -p "$EDGE_DEPLOY_PORT" "$EDGE_DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload runtimes to AutoSec server
+        env:
+          EDGE_DEPLOY_HOST: ${{ secrets.EDGE_DEPLOY_HOST }}
+          EDGE_DEPLOY_USER: ${{ secrets.EDGE_DEPLOY_USER }}
+          EDGE_DEPLOY_PORT: ${{ secrets.EDGE_DEPLOY_PORT || '22' }}
+          EDGE_DEPLOY_PATH: ${{ secrets.EDGE_DEPLOY_PATH }}
+        run: |
+          ssh -i ~/.ssh/autosec_edge_deploy -p "$EDGE_DEPLOY_PORT" \
+            "$EDGE_DEPLOY_USER@$EDGE_DEPLOY_HOST" \
+            "mkdir -p '$EDGE_DEPLOY_PATH'"
+          scp -i ~/.ssh/autosec_edge_deploy -P "$EDGE_DEPLOY_PORT" \
+            edge-runtime-artifacts/autosec-edge-* \
+            "$EDGE_DEPLOY_USER@$EDGE_DEPLOY_HOST:$EDGE_DEPLOY_PATH/"
+          ssh -i ~/.ssh/autosec_edge_deploy -p "$EDGE_DEPLOY_PORT" \
+            "$EDGE_DEPLOY_USER@$EDGE_DEPLOY_HOST" \
+            "chmod +x '$EDGE_DEPLOY_PATH'/autosec-edge-*"
