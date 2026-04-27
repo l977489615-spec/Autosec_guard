@@ -401,7 +401,7 @@ PoC 按车联网常见攻击面组织：
 | `AUTOSEC_DB_URI` | 本地 SQLite | 数据库连接串 |
 | `AUTOSEC_API` | `http://localhost:5002` | 主 API 地址 |
 | `MCP_SERVER` | `http://localhost:5003` | MCP Server 地址 |
-| `AUTOSEC_EDGE_RUNTIME_PATH` | 自动探测 | Edge Runtime 文件路径 |
+| `AUTOSEC_EDGE_RUNTIME_PATH` | 自动探测 | Edge Runtime 文件路径或多平台产物目录 |
 | `AUTOSEC_EDGE_BUILD_DIR` | `build/edge_runtime` | Edge 构建输出目录 |
 | `AUTOSEC_PUBLIC_HOST` | 空 | 强制指定 Edge 命令中的服务端地址 |
 | `AUTOSEC_HOST` | `0.0.0.0` | Flask 监听地址 |
@@ -446,6 +446,29 @@ AUTOSEC_PUBLIC_HOST=10.192.97.40
 curl -fsSL "http://your-server:5002/api/edge/install.sh?enrollment_token=<TOKEN>" | bash
 $HOME/.autosec-edge/autosec-edge --edge-api http://your-server:5002 --daemon
 ```
+
+Windows PowerShell：
+
+```powershell
+powershell -ExecutionPolicy Bypass -Command "iwr 'http://your-server:5002/api/edge/install.ps1?enrollment_token=<TOKEN>' -UseBasicParsing | iex"
+$env:USERPROFILE\.autosec-edge\autosec-edge.exe --edge-api http://your-server:5002 --daemon
+```
+
+### 产品化多平台构建
+
+Edge Runtime 是平台相关二进制，不能在 macOS 上直接生成可用于 Linux 或 Windows 的产物。生产环境建议使用私有 CI 在目标系统 runner 上分别构建，并将产物放入 `AUTOSEC_EDGE_RUNTIME_PATH` 指向的目录或默认 `build/edge_runtime` 目录。
+
+标准产物命名：
+
+```text
+autosec-edge-linux-x86_64
+autosec-edge-linux-arm64
+autosec-edge-windows-x86_64.exe
+autosec-edge-darwin-arm64
+autosec-edge-darwin-x86_64
+```
+
+仓库内置 `.github/workflows/edge-runtime.yml`，可手动触发多平台构建。商业分发优先使用 `nuitka` backend；`pyinstaller` backend 仅建议用于快速诊断。Linux ARM64 产物需要 ARM64 runner，例如 GitHub hosted ARM runner 或私有树莓派/ARM 云主机 self-hosted runner。
 
 ### Edge Agent 负责什么
 
@@ -494,6 +517,8 @@ $HOME/.autosec-edge/autosec-edge --edge-api http://your-server:5002 --daemon
 - `GET /api/edge/agents`
 - `POST /api/edge/enrollment-tokens`
 - `GET /api/edge/install.sh`
+- `GET /api/edge/install.ps1`
+- `GET /api/edge/runtime/download`
 - `POST /api/edge/tasks`
 - `GET /api/edge/tasks/next`
 - `POST /api/edge/tasks/<task_id>/result`

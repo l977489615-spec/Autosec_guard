@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from edge_deployment import edge_runtime_filename, normalize_edge_arch, normalize_edge_os
+
 
 SERVER_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SERVER_DIR.parent
@@ -22,26 +24,9 @@ def main() -> int:
     DIST_DIR.mkdir(parents=True, exist_ok=True)
     _generate_poc_registry()
 
-    # Determine OS and Arch
-    raw_os = platform.system().lower()
-    if raw_os == "darwin" or raw_os == "mac":
-        os_type = "darwin"
-    elif raw_os == "windows":
-        os_type = "windows"
-    else:
-        os_type = raw_os
-
-    raw_arch = platform.machine().lower()
-    if raw_arch in ("x86_64", "amd64"):
-        arch_type = "x86_64"
-    elif raw_arch in ("aarch64", "arm64", "arm"):
-        arch_type = "arm64"
-    else:
-        arch_type = raw_arch
-
-    output_filename = f"autosec-edge-{os_type}-{arch_type}"
-    if os_type == "windows":
-        output_filename += ".exe"
+    os_type = normalize_edge_os(platform.system())
+    arch_type = normalize_edge_arch(platform.machine())
+    output_filename = edge_runtime_filename(os_type, arch_type)
 
     cmd = [
         sys.executable,
@@ -50,6 +35,7 @@ def main() -> int:
         "--standalone",
         "--onefile",
         "--assume-yes-for-downloads",
+        "--disable-cache=all",
         f"--output-dir={DIST_DIR}",
         f"--output-filename={output_filename}",
         "--include-module=sandbox_runner",

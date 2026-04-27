@@ -6,6 +6,37 @@ from pathlib import Path
 from urllib.parse import quote, urlparse
 
 
+def normalize_edge_os(value: str) -> str:
+    normalized = (value or "").strip().lower()
+    if normalized in {"darwin", "mac", "macos", "osx"} or "mac" in normalized:
+        return "darwin"
+    if normalized in {"win", "windows", "mingw", "msys", "cygwin"} or normalized.startswith("windows"):
+        return "windows"
+    if normalized in {"linux", "gnu/linux"}:
+        return "linux"
+    return normalized or "unknown"
+
+
+def normalize_edge_arch(value: str) -> str:
+    normalized = (value or "").strip().lower()
+    if normalized in {"x86_64", "amd64", "x64"}:
+        return "x86_64"
+    if normalized in {"aarch64", "arm64", "armv8", "armv8l"}:
+        return "arm64"
+    if normalized in {"armv7l", "armv7", "armhf"}:
+        return "armv7"
+    return normalized or "unknown"
+
+
+def edge_runtime_filename(os_type: str, arch_type: str) -> str:
+    normalized_os = normalize_edge_os(os_type)
+    normalized_arch = normalize_edge_arch(arch_type)
+    filename = f"autosec-edge-{normalized_os}-{normalized_arch}"
+    if normalized_os == "windows":
+        filename += ".exe"
+    return filename
+
+
 def _looks_local(base: str) -> bool:
     normalized = (base or "").strip().lower()
     return (
@@ -206,9 +237,7 @@ def edge_runtime_download_path(
     edge_build_dir: Path,
     edge_dist_dir: Path,
 ) -> Path:
-    filename = f"autosec-edge-{requested_os}-{requested_arch}"
-    if requested_os == "windows":
-        filename += ".exe"
+    filename = edge_runtime_filename(requested_os, requested_arch)
 
     search_roots = []
     configured = (configured_path or "").strip()

@@ -54,7 +54,10 @@ from edge_requirements import (
 )
 from edge_deployment import (
     build_edge_install_command,
+    edge_runtime_filename,
     edge_runtime_download_path,
+    normalize_edge_arch,
+    normalize_edge_os,
     resolve_public_edge_api_base,
 )
 from edge_task_payload import attach_poc_code_to_task_payload
@@ -1400,13 +1403,82 @@ EOF
         return _shell_error(f"Failed to generate edge install script: {exc}", 500)
 
 
+@app.route('/api/edge/install.ps1', methods=['GET'])
+def edge_install_powershell_script():
+    def _powershell_error(message: str, status: int = 500) -> Response:
+        body = (
+            "Write-Error " + json.dumps(message) + "\n"
+            "exit 1\n"
+        )
+        return Response(body, mimetype='text/plain', status=status)
+
+    try:
+        enrollment_token = (request.args.get('enrollment_token') or '').strip()
+        enrollment_mode, _ = _validate_enrollment_secret(enrollment_token)
+        if not enrollment_mode:
+            return _powershell_error("Invalid or expired enrollment token.", 401)
+
+        base = resolve_public_edge_api_base(
+            CONFIG.autosec_api,
+            request.host_url,
+            forwarded_host=request.headers.get('X-Forwarded-Host', ''),
+            forwarded_proto=request.headers.get('X-Forwarded-Proto', ''),
+        )
+
+        script = f"""$ErrorActionPreference = "Stop"
+
+$EdgeApi = $env:EDGE_API
+if ([string]::IsNullOrWhiteSpace($EdgeApi)) {{
+  $EdgeApi = "{base}"
+}}
+
+$EnrollmentToken = "{enrollment_token}"
+$InstallDir = $env:AUTOSEC_EDGE_INSTALL_DIR
+if ([string]::IsNullOrWhiteSpace($InstallDir)) {{
+  $InstallDir = Join-Path $env:USERPROFILE ".autosec-edge"
+}}
+
+$BinPath = Join-Path $InstallDir "autosec-edge.exe"
+$RuntimeUrl = "$EdgeApi/api/edge/runtime/download?os=windows&arch=x86_64"
+
+New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+
+Write-Host "[+] Detecting platform: windows (x86_64)"
+Write-Host "[+] Fetching secure Edge Agent binary from: $RuntimeUrl"
+
+try {{
+  Invoke-WebRequest -Uri $RuntimeUrl -OutFile $BinPath -UseBasicParsing
+}} catch {{
+  if (Test-Path $BinPath) {{
+    Remove-Item $BinPath -Force
+  }}
+  Write-Error "Download failed. Windows x86_64 binary may not be generated yet. $($_.Exception.Message)"
+  exit 1
+}}
+
+Write-Host "[+] Edge Agent acquired. Initiating isolated setup..."
+& $BinPath --register --edge-api $EdgeApi --enrollment-token=$EnrollmentToken
+
+Write-Host "--------------------------------------------------"
+Write-Host "Edge runtime installed: $BinPath"
+Write-Host "Status: NATIVE WINDOWS BINARY DEPLOYED"
+Write-Host ""
+Write-Host "Start once:"
+Write-Host "  $BinPath --edge-api $EdgeApi"
+Write-Host "Run continuously:"
+Write-Host "  $BinPath --edge-api $EdgeApi --daemon"
+Write-Host "--------------------------------------------------"
+"""
+        return Response(script, mimetype='text/plain')
+    except Exception as exc:
+        logger.exception(f"Failed to generate edge PowerShell install script: {exc}")
+        return _powershell_error(f"Failed to generate edge PowerShell install script: {exc}", 500)
+
+
 @app.route('/api/edge/runtime/download', methods=['GET'])
 def download_edge_runtime():
-    requested_os = request.args.get('os', 'darwin').strip().lower()
-    requested_arch = request.args.get('arch', 'arm64').strip().lower()
-
-    if requested_os == "mac" or "mac" in requested_os:
-        requested_os = "darwin"
+    requested_os = normalize_edge_os(request.args.get('os', 'darwin'))
+    requested_arch = normalize_edge_arch(request.args.get('arch', 'arm64'))
 
     runtime_path = edge_runtime_download_path(
         os.environ.get('AUTOSEC_EDGE_RUNTIME_PATH', ''),
@@ -1424,8 +1496,12 @@ def download_edge_runtime():
             "expected_path": str(runtime_path),
             "hint": "Build this target on a matching host/CI runner, for example on Linux ARM64 for linux/arm64.",
         }), 404
-        
-    return send_file(runtime_path, as_attachment=True, download_name='autosec-edge')
+
+    return send_file(
+        runtime_path,
+        as_attachment=True,
+        download_name=edge_runtime_filename(requested_os, requested_arch),
+    )
 
 
 @app.route('/api/edge/recommendations', methods=['POST'])
