@@ -24,7 +24,7 @@ Multi-Agent Orchestrator — AutoSec Guard
                      │ 有序攻击计划
   ┌──────────────────▼──────────────────────────────────┐
   │  Agent 4 (武器化 Weaponize) - 按需触发               │
-  │   → 针对未知服务的 0-day 探测脚本动态生成           │
+  │   → 针对未知服务的协议感知型动态探测脚本生成         │
   └──────────────────┬──────────────────────────────────┘
                      │ Weaponized Payload
   ┌──────────────────▼──────────────────────────────────┐
@@ -69,6 +69,14 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s][%(levelname)s] %(message)s')
 
 CONFIG = get_config()
+DYNAMIC_PROBE_TOKEN = "dynamic_unknown_service_probe"
+DYNAMIC_PROBE_LEGACY_TOKENS = {"dynamic_0day"}
+DYNAMIC_PROBE_FILENAME = "99_Dynamic_Unknown_Service_Probe.py"
+
+
+def _is_dynamic_probe_name(poc_name: Any) -> bool:
+    normalized = str(poc_name or "").strip()
+    return normalized == DYNAMIC_PROBE_TOKEN or normalized in DYNAMIC_PROBE_LEGACY_TOKENS
 
 # MCP Server 地址
 MCP_SERVER = CONFIG.mcp_server
@@ -95,6 +103,7 @@ SUPERVISOR_LIMITS = {
     "max_consecutive_stalled_result": 2,
     "max_cascading_errors": 3,
 }
+REFLECTOR_MAX_REENTRY = 2
 
 
 def _utc_now() -> datetime.datetime:
@@ -190,7 +199,56 @@ def _wrap_code_as_plugin(raw_code: str) -> str:
     # 对原始代码进行缩进以嵌入 exploit() 方法体
     indented_code = '\n'.join('        ' + line if line.strip() else '' for line in raw_code.splitlines())
 
-    return f'''"""\nPoC Name: Dynamic 0-Day Probe\nCVE: N/A\nComponent: Network Stack\nCategory: Network\nSeverity: High\nDescription: Weaponize Agent 自动生成的动态探测脚本\nPrerequisites: 目标可达\n"""\nimport sys\nimport socket\nimport time\nfrom iv_plugin_base import IVIVulnerabilityPlugin\n\n\nclass Dynamic0DayPlugin(IVIVulnerabilityPlugin):\n    meta_poc_name = "Dynamic 0-Day Probe"\n    meta_cve_id = "N/A"\n    meta_severity = "High"\n    meta_protocol = "tcp"\n    meta_target_os = ["all"]\n    meta_required_params = ["target_ip"]\n    is_disruptive = False\n    meta_destructive_level = "Safe"\n\n    def check_prerequisites(self):\n        if not self.target_ip:\n            raise RuntimeError("需要指定目标IP地址。")\n        return True\n\n    def exploit(self):\n        self.results["description"] = "Weaponize Agent 自动生成的动态0-Day探测"\n        target_ip = self.target_ip\n        target_port = self.target_port\n        try:\n{indented_code}\n        except Exception as e:\n            self.logger.error(f"动态探测脚本执行异常: {{e}}")\n            self.results["evidence"] = f"Exception: {{e}}"\n        return self.results\n\n\nif __name__ == "__main__":\n    if len(sys.argv) < 2:\n        print("Usage: python3 99_Dynamic_0Day.py <target_ip>")\n        sys.exit(1)\n    plugin = Dynamic0DayPlugin({{"target_ip": sys.argv[1]}})\n    plugin.run_verify()\n'''
+    return f'''"""
+PoC Name: Dynamic Unknown Service Probe
+CVE: N/A
+Component: Unknown Network Service
+Category: Network
+Severity: Medium
+Description: Weaponize Agent 生成的协议感知型未知服务动态探测脚本
+Prerequisites: 目标可达
+"""
+import sys
+import socket
+import time
+from iv_plugin_base import IVIVulnerabilityPlugin
+
+
+class DynamicUnknownServiceProbePlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "Dynamic Unknown Service Probe"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "tcp"
+    meta_target_os = ["all"]
+    meta_required_params = ["target_ip"]
+    is_disruptive = False
+    meta_destructive_level = "Probe"
+
+    def check_prerequisites(self):
+        if not self.target_ip:
+            raise RuntimeError("需要指定目标IP地址。")
+        return True
+
+    def exploit(self):
+        self.results["description"] = "未知服务动态指纹与异常响应探测"
+        target_ip = self.target_ip
+        target_port = self.target_port
+        try:
+{indented_code}
+        except Exception as e:
+            self.logger.error(f"动态未知服务探测脚本执行异常: {{e}}")
+            self.results["vulnerable"] = False
+            self.results["evidence"] = f"Exception: {{e}}"
+        return self.results
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python3 {DYNAMIC_PROBE_FILENAME} <target_ip>")
+        sys.exit(1)
+    plugin = DynamicUnknownServiceProbePlugin({{"target_ip": sys.argv[1]}})
+    plugin.run_verify()
+'''
 
 
 def _extract_json_payload(raw_text: Any) -> Tuple[Optional[Any], Optional[str]]:
@@ -864,19 +922,19 @@ DECISION_AGENT_PROMPT = """
    • 如果【可用资源】中没有 can_interface，则跳过所有包含 "canbus"/"CAN"/"isotp" 的 PoC
    • 如果【可用资源】中没有 wifi_interface，则跳过所有包含 "wireless"/"wifi"/"wpa" 的 PoC
    • 跳过侦察结果中未发现对应服务相关的 PoC
-4. 对剩余 PoC 调用 check_safety 获取推荐策略。如果你发现目标开启了某个完全未知的协议或者未涵盖在现有 PoC 中的异常服务，请在攻击计划中添加此项：`poc_name` 填 `"dynamic_0day"`，`strategy` 填 `"weaponize"`，并在 `parameters` 详细描述此服务的指纹。系统将触发 Weaponize Agent 动态生成 0-day 测试代码。
+4. 对剩余 PoC 调用 check_safety 获取推荐策略。如果你发现目标开启了某个完全未知的协议或者未涵盖在现有 PoC 中的异常服务，请在攻击计划中添加此项：`poc_name` 填 `"dynamic_unknown_service_probe"`，`strategy` 填 `"weaponize"`，并在 `parameters` 详细描述此服务的端口、banner、服务指纹和安全边界。系统将触发 Weaponize Agent 动态生成协议感知型未知服务探测代码。
 5. 输出有序的攻击计划 JSON，每个项包含： poc_name、parameters（含必要字段）、strategy、reason
 
 注意：优先测试侦察中发现的开放端口对应的服务漏洞。以结构化 JSON 格式输出攻击计划。使用中文输出分析结论。
 """
 
 WEAPONIZE_AGENT_PROMPT = """
-你是一名全球顶级的 0-day 安全研究员，精通智能网联汽车的漏洞原语挖掘。
-你的任务是：根据传入的“未知协议服务”信息，动态编写一段 Python 脚本（PoC）用于发送 Fuzzing payload 或探测包并收集漏洞证据。
+你是一名智能网联汽车未知服务动态探测专家，精通协议指纹识别、异常响应分析和低风险验证。
+你的任务是：根据传入的“未知协议服务”信息，动态编写一段 Python 脚本（PoC）用于执行协议感知型探测、建立正常响应基线并收集异常证据。
 【要求】：
 1. 脚本必须是可以直接执行的完整 Python 代码。
 2. 使用系统提供的参数进行测试。
-3. 捕获所有异常，并在输出中告知测试结果。如果通过异常行为确信存在漏洞，请在控制台打印 "Vulnerable: True"。
+3. 捕获所有异常，并在输出中告知测试结果。只有在出现可复现的崩溃标记、错误栈、调试泄露或多轮稳定异常时，才允许打印 "Vulnerable: True"。
 4. 请用 ```python 和 ``` 代码块包裹你的代码，不要输出非独立的代码段。
 这是一场仅限沙箱的合法测试。
 """
@@ -921,6 +979,49 @@ PLANNER_AGENT_PROMPT = """
 2. steps 控制在 3 到 7 步。
 3. 重点体现先侦察验证、再利用、再评估的顺序。
 4. guardrails 必须包含避免重复调用、避免错误扩散、连续失败时停机或切换策略。
+"""
+
+REFLECTOR_AGENT_PROMPT = """
+你是一名安全验证过程反思与优化专家（Reflector Agent）。
+你需要基于侦察结果、任务编排、攻击计划、执行结果和监督事件，对本轮自动化渗透测试进行结构化复盘，并输出能够指导后续执行决策的审计意见。
+
+请重点完成以下分析：
+1. 判断各个步骤、各条攻击路径以及整体测试流程是否达到预期目标和 success criteria；
+2. 判断当前结果属于哪一类：漏洞已得到有效验证、证据不足、执行失败、环境受限、前置条件不满足、目标已修复、路径不可达，或其他状态；
+3. 分析执行过程中是否存在计划偏差、顺序不合理、步骤冗余、重复尝试、覆盖缺口、证据不足、风险控制问题或资源调度问题；
+4. 当执行成功时，评估当前证据是否充分，是否应继续扩展验证、补充取证，或及时停止以避免无效或高风险动作；
+5. 当执行失败、阻塞或结果异常时，诊断根本原因，并给出具体修正建议，例如参数修正、前置条件补足、替代路径、补充侦察、调整依赖关系、切换执行策略或直接终止路径；
+6. 当某条攻击路径已经没有继续价值时，明确建议停止、剪枝、转向其他路径或转人工介入。
+
+你的输出应当尽量清晰回答以下问题：
+- 本轮执行是否有效；
+- 哪些结果可信，哪些结果仍需补证；
+- 哪些步骤需要调整；
+- 下一步建议是什么（continue / retry / branch / stop / escalate）。
+
+请严格输出一个 JSON 对象，不要输出 Markdown，不要输出代码块，也不要补充 JSON 之外的解释。输出字段如下：
+{
+  "summary": "对本轮执行的总体结论",
+  "execution_effective": true,
+  "evidence_sufficient": false,
+  "outcome_status": "validated | evidence_insufficient | execution_failed | environment_limited | prerequisite_missing | target_hardened | path_unreachable | partial_success | other",
+  "issues": [
+    {
+      "category": "coverage_gap | evidence_gap | plan_deviation | execution_failure | risk_control | resource_issue | other",
+      "severity": "low | medium | high",
+      "reason": "问题原因",
+      "impact": "问题影响",
+      "suggestion": "修正建议"
+    }
+  ],
+  "next_action": "continue | retry | branch | stop | escalate",
+  "next_phase": "recon | planner | decision | weaponize | execute | assess | none",
+  "rerun_mode": "targeted | from_phase",
+  "focus_steps": [1, 2],
+  "focus_pocs": ["network/10_SSH_Service.py"],
+  "reentry_required": false,
+  "reason": "触发该下一步动作的直接原因"
+}
 """
 
 ASSESSMENT_AGENT_PROMPT = """
@@ -1031,16 +1132,6 @@ def generate_assessment_report(
         context=assessment_input["context"],
     )
 
-
-
-REFLECTOR_AGENT_PROMPT = """
-你是一名安全验证策略反思专家（Reflector Agent）。
-当前自动化渗透测试在执行特定攻击计划时遭遇了连续错误或阻塞。
-你需要分析侦察数据、当前攻击计划以及最近几次失败的执行日志，诊断出失败的根本原因（例如：参数配置错误、前置条件不满足、环境限制、拦截等），并提出具体的修正建议。
-如果该条攻击路径已经确定不可达，请明确指出放弃。
-你的输出应当指导执行引擎如何调整接下来的测试。
-"""
-
 # ──────────────────────────────────────────────
 # 主协作编排器
 # ──────────────────────────────────────────────
@@ -1132,6 +1223,8 @@ class AgentOrchestrator:
         # PoC 文件名到 ID 的映射，用于完善 findings
         self.poc_filename_to_id = {}
         self._finding_names = set()
+        self.reflector_reentry_count = 0
+        self.reflector_reentry_history: List[Dict[str, Any]] = []
 
         tool_state = {"poc_filename_to_id": self.poc_filename_to_id, "auth_token": auth_token}
         self.recon_agent.tool_state = tool_state
@@ -1348,6 +1441,114 @@ class AgentOrchestrator:
             result["guardrails"] = payload.get("guardrails") or payload.get("constraints") or []
         return result
 
+    def _normalize_reflector_phase(self, phase: Any) -> str:
+        normalized = str(phase or "").strip().lower()
+        aliases = {
+            "": "",
+            "none": "",
+            "recon": "recon",
+            "reconnaissance": "recon",
+            "planner": "planner",
+            "plan": "planner",
+            "planning": "planner",
+            "decision": "decision",
+            "decider": "decision",
+            "weaponize": "weaponize",
+            "weaponization": "weaponize",
+            "weaponizer": "weaponize",
+            "execute": "execute",
+            "executor": "execute",
+            "execution": "execute",
+            "reflector": "reflector",
+            "reflect": "reflector",
+            "assess": "assess",
+            "assessment": "assess",
+            "assessment_agent": "assess",
+        }
+        return aliases.get(normalized, "")
+
+    def _normalize_reflector_result(self, raw_text: str) -> Dict[str, Any]:
+        payload, parse_error = _extract_json_payload(raw_text)
+        result = {
+            "summary": str(raw_text).strip(),
+            "execution_effective": True,
+            "evidence_sufficient": True,
+            "outcome_status": "other",
+            "issues": [],
+            "next_action": "continue",
+            "next_phase": "",
+            "rerun_mode": "from_phase",
+            "focus_steps": [],
+            "focus_pocs": [],
+            "reentry_required": False,
+            "reason": "",
+            "parse_error": parse_error,
+        }
+        if isinstance(payload, dict):
+            result["summary"] = str(payload.get("summary") or result["summary"]).strip()
+            result["execution_effective"] = bool(payload.get("execution_effective", result["execution_effective"]))
+            result["evidence_sufficient"] = bool(payload.get("evidence_sufficient", result["evidence_sufficient"]))
+            result["outcome_status"] = str(payload.get("outcome_status") or result["outcome_status"]).strip().lower()
+            raw_issues = payload.get("issues") or []
+            issues: List[Dict[str, Any]] = []
+            if isinstance(raw_issues, list):
+                for issue in raw_issues:
+                    if isinstance(issue, dict):
+                        issues.append({
+                            "category": str(issue.get("category") or "other").strip().lower(),
+                            "severity": str(issue.get("severity") or "medium").strip().lower(),
+                            "reason": str(issue.get("reason") or "").strip(),
+                            "impact": str(issue.get("impact") or "").strip(),
+                            "suggestion": str(issue.get("suggestion") or "").strip(),
+                        })
+                    elif isinstance(issue, str) and issue.strip():
+                        issues.append({
+                            "category": "other",
+                            "severity": "medium",
+                            "reason": issue.strip(),
+                            "impact": "",
+                            "suggestion": "",
+                        })
+            result["issues"] = issues
+            result["next_action"] = str(payload.get("next_action") or result["next_action"]).strip().lower()
+            result["next_phase"] = self._normalize_reflector_phase(payload.get("next_phase"))
+            result["rerun_mode"] = str(payload.get("rerun_mode") or result["rerun_mode"]).strip().lower()
+            raw_focus_steps = payload.get("focus_steps") or []
+            if isinstance(raw_focus_steps, list):
+                focus_steps: List[int] = []
+                for step in raw_focus_steps:
+                    try:
+                        focus_steps.append(int(step))
+                    except Exception:
+                        continue
+                result["focus_steps"] = sorted(set(focus_steps))
+            raw_focus_pocs = payload.get("focus_pocs") or []
+            if isinstance(raw_focus_pocs, list):
+                result["focus_pocs"] = sorted({
+                    str(poc).strip() for poc in raw_focus_pocs if str(poc).strip()
+                })
+            result["reentry_required"] = bool(payload.get("reentry_required", result["reentry_required"]))
+            result["reason"] = str(payload.get("reason") or "").strip()
+
+        if result["next_phase"] == "execute" and (result["focus_steps"] or result["focus_pocs"]):
+            result["rerun_mode"] = "targeted"
+
+        if (
+            not result["reentry_required"]
+            and result["next_action"] in {"retry", "branch"}
+            and result["next_phase"] in {"recon", "planner", "decision", "weaponize", "execute"}
+        ):
+            result["reentry_required"] = True
+
+        if (
+            not result["reentry_required"]
+            and (not result["execution_effective"] or not result["evidence_sufficient"])
+            and result["next_phase"] in {"recon", "planner", "decision", "weaponize", "execute"}
+        ):
+            result["reentry_required"] = True
+
+        return result
+
     def _fallback_planner_result(self) -> Dict[str, Any]:
         recon = self.structured_results.get("recon", {})
         services = recon.get("services") or []
@@ -1513,11 +1714,11 @@ class AgentOrchestrator:
         for item in plan_items:
             step = item.get("step")
             poc_name = item.get("poc_name")
-            if item.get("status") == "skipped_by_supervisor":
+            if item.get("status") in {"skipped_by_supervisor", "skipped_by_reflector_reentry"}:
                 execution_items.append(asdict(ExecutionResultItem(
                     step=step or len(execution_items) + 1,
                     poc_name=poc_name or f"step_{len(execution_items) + 1}",
-                    status="skipped_by_supervisor",
+                    status=item.get("status") or "skipped",
                     vulnerable=False,
                     evidence="",
                     error=item.get("reason", ""),
@@ -1752,6 +1953,7 @@ class AgentOrchestrator:
         recon = self.structured_results.get("recon", {})
         open_ports = recon.get("open_ports") or []
         services = recon.get("services") or []
+        reflector_focus_ctx = self._build_reflector_focus_context()
         
         # 确保侦察结果不为空
         if not recon or not any([open_ports, services, recon.get("topology")]):
@@ -1765,10 +1967,17 @@ class AgentOrchestrator:
             recon_summary = f"侦察阶段已成功，发现以下开放端口: {open_ports}。检测到服务: {services}。"
             
         planner_raw = self.planner_agent.call(
-            f"为目标 {self.target_ip} 生成执行纲要。提示: {recon_summary} 请基于这些发现编排具体的渗透路径。",
+            (
+                f"为目标 {self.target_ip} 生成执行纲要。提示: {recon_summary} 请基于这些发现编排具体的渗透路径。"
+                + (
+                    " 当前为 Reflector 触发的局部重规划，请尽量保留既有合理阶段，只补充或修正必要步骤。"
+                    if reflector_focus_ctx else ""
+                )
+            ),
             context=(
                 f"{self._build_available_params_context()}\n\n"
                 f"侦察结果(详细JSON):\n{_safe_json_dumps(recon)}"
+                + (f"\n\n{reflector_focus_ctx}" if reflector_focus_ctx else "")
             ),
         )
         planner_structured = self._normalize_planner_result(planner_raw)
@@ -1892,11 +2101,123 @@ class AgentOrchestrator:
             parts.append("wifi_interface=未提供（跳过所有无线嗅探相关 PoC）")
         return "【可用资源】\n" + "\n".join(f"  - {p}" for p in parts)
 
+    def _build_reflector_focus_context(self) -> str:
+        reflector = self.structured_results.get("reflector", {}) or {}
+        if not reflector.get("reentry_required"):
+            return ""
+        issues = reflector.get("issues") or []
+        issue_lines = []
+        for issue in issues[:5]:
+            if not isinstance(issue, dict):
+                continue
+            issue_lines.append(
+                f"- {issue.get('category', 'other')}: {issue.get('reason', '')} | 建议: {issue.get('suggestion', '')}"
+            )
+        return (
+            "【Reflector 重入指令】\n"
+            f"- next_action={reflector.get('next_action')}\n"
+            f"- next_phase={reflector.get('next_phase')}\n"
+            f"- rerun_mode={reflector.get('rerun_mode')}\n"
+            f"- focus_steps={reflector.get('focus_steps') or []}\n"
+            f"- focus_pocs={reflector.get('focus_pocs') or []}\n"
+            f"- reason={reflector.get('reason') or ''}\n"
+            + ("- issues:\n" + "\n".join(issue_lines) if issue_lines else "")
+        ).strip()
+
+    def _merge_recon_result(self, existing: Dict[str, Any], new_data: Dict[str, Any]) -> Dict[str, Any]:
+        merged = dict(existing or {})
+        merged["summary"] = new_data.get("summary") or existing.get("summary") or ""
+
+        existing_ports = list(existing.get("open_ports") or [])
+        new_ports = list(new_data.get("open_ports") or [])
+        merged["open_ports"] = sorted({*existing_ports, *new_ports})
+
+        def _service_signature(item: Any) -> str:
+            if isinstance(item, dict):
+                return json.dumps(item, ensure_ascii=False, sort_keys=True)
+            return str(item)
+
+        services = []
+        seen_services = set()
+        for item in list(existing.get("services") or []) + list(new_data.get("services") or []):
+            sig = _service_signature(item)
+            if sig in seen_services:
+                continue
+            seen_services.add(sig)
+            services.append(item)
+        merged["services"] = services
+
+        topology = dict(existing.get("topology") or {})
+        topology.update(new_data.get("topology") or {})
+        merged["topology"] = topology
+
+        adaptive_context = dict(existing.get("adaptive_context") or {})
+        adaptive_context.update(new_data.get("adaptive_context") or {})
+        merged["adaptive_context"] = adaptive_context
+        merged["parse_error"] = new_data.get("parse_error")
+        return merged
+
+    def _merge_attack_plan_items(
+        self,
+        existing_items: List[Dict[str, Any]],
+        new_items: List[Dict[str, Any]],
+        target_steps: Optional[List[int]] = None,
+        target_pocs: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        target_steps_set = set(target_steps or [])
+        target_pocs_set = set(target_pocs or [])
+
+        preserved: List[Dict[str, Any]] = []
+        for item in existing_items or []:
+            if target_steps_set or target_pocs_set:
+                if item.get("step") in target_steps_set or item.get("poc_name") in target_pocs_set:
+                    continue
+            preserved.append(dict(item))
+
+        combined = preserved + [dict(item) for item in (new_items or [])]
+        deduped: List[Dict[str, Any]] = []
+        seen = set()
+        for item in combined:
+            signature = (
+                item.get("poc_name"),
+                json.dumps(item.get("parameters") or {}, sort_keys=True, ensure_ascii=False),
+            )
+            if signature in seen:
+                continue
+            seen.add(signature)
+            deduped.append(item)
+
+        for index, item in enumerate(deduped, start=1):
+            item["step"] = index
+            item.setdefault("status", "pending")
+        return deduped
+
+    def _prepare_decision_reentry_targets(self, reflector: Dict[str, Any]) -> Dict[str, Any]:
+        attack_plan = self.structured_results.get("attack_plan", {})
+        existing_items = list(attack_plan.get("items") or [])
+        focus_steps = list(reflector.get("focus_steps") or [])
+        focus_pocs = list(reflector.get("focus_pocs") or [])
+
+        self.structured_results.setdefault("attack_plan_archive", []).append(attack_plan)
+        self.structured_results["decision_reentry"] = {
+            "mode": reflector.get("rerun_mode") or "from_phase",
+            "focus_steps": focus_steps,
+            "focus_pocs": focus_pocs,
+            "preserved_items": existing_items,
+        }
+        return {
+            "focus_steps": focus_steps,
+            "focus_pocs": focus_pocs,
+            "existing_item_count": len(existing_items),
+        }
+
     def hydrate_state(self, state: Dict[str, Any]):
         self.current_logs = state.get("logs", []) or []
         self.phase_records = state.get("phase_records", []) or []
         self.findings = state.get("findings", []) or []
         self._finding_names = {item.get("name") for item in self.findings if item.get("name")}
+        self.reflector_reentry_count = state.get("reflector_reentry_count", self.reflector_reentry_count)
+        self.reflector_reentry_history = state.get("reflector_reentry_history", self.reflector_reentry_history) or []
         structured = state.get("structured", {}) or {}
         self.structured_results["recon"] = structured.get("recon", self.structured_results["recon"])
         self.structured_results["planner"] = structured.get("planner", self.structured_results["planner"])
@@ -1940,23 +2261,30 @@ class AgentOrchestrator:
             f"监督调整(JSON):\n{_safe_json_dumps(supervisor.get('adjustments', []))}"
         )
 
-        # Reflector should always audit the run; when there are no errors it should explicitly explain why no recovery was needed.
-        reflector_result = self.reflector_agent.call(
-            (
+        reflector_result, structured = self._call_agent_with_validation(
+            phase="reflector",
+            agent=self.reflector_agent,
+            user_message=(
                 "请审计本次自动化渗透测试流程。"
-                "如果存在执行失败、计划偏差、覆盖缺口或可以改进的地方，请明确指出原因、影响和修复建议；"
-                "如果没有触发恢复动作，也要说明为什么没有触发。"
+                "请根据执行成效、证据充分性、计划偏差和后续动作建议，严格输出 JSON 审计结果。"
+                "如果需要补证、重跑或切换路径，请明确给出 next_action、next_phase 和 reentry_required。"
             ),
             context=reflection_context,
+            normalizer=self._normalize_reflector_result,
+            validator=self._validate_reflector_result,
+            correction_hint=(
+                "输出必须是一个合法 JSON 对象，必须包含 summary、execution_effective、"
+                "evidence_sufficient、outcome_status、issues、next_action、next_phase、"
+                "rerun_mode、focus_steps、focus_pocs、reentry_required、reason 字段。"
+            ),
         )
-
-        structured = {
+        structured.update({
             "status": "success",
-            "summary": reflector_result,
+            "raw_summary": reflector_result,
             "error_count": len(error_items),
             "finding_count": len(vulnerable_items),
             "adjustments": supervisor.get("adjustments", []),
-        }
+        })
         self.structured_results["reflector"] = structured
         return reflector_result, structured
 
@@ -1982,6 +2310,145 @@ class AgentOrchestrator:
         if structured.get("parse_error"):
             return False, f"执行结果无法解析为 JSON: {structured['parse_error']}"
         return True, ""
+
+    def _validate_reflector_result(self, structured: Dict[str, Any]) -> Tuple[bool, str]:
+        if structured.get("parse_error"):
+            return False, f"Reflector 输出无法解析为 JSON: {structured['parse_error']}"
+        next_action = structured.get("next_action")
+        if next_action not in {"continue", "retry", "branch", "stop", "escalate"}:
+            return False, f"Reflector 返回了未知 next_action: {next_action}"
+        next_phase = structured.get("next_phase") or ""
+        if next_phase and next_phase not in PHASE_SEQUENCE:
+            return False, f"Reflector 返回了未知 next_phase: {next_phase}"
+        rerun_mode = structured.get("rerun_mode") or "from_phase"
+        if rerun_mode not in {"targeted", "from_phase"}:
+            return False, f"Reflector 返回了未知 rerun_mode: {rerun_mode}"
+        if structured.get("reentry_required") and next_phase not in {"recon", "planner", "decision", "weaponize", "execute"}:
+            return False, "Reflector 要求重入执行，但 next_phase 不是可回跳的执行阶段"
+        if structured.get("reentry_required") and rerun_mode == "targeted" and next_phase != "execute":
+            return False, "定向重跑当前仅支持 execute 阶段"
+        return True, ""
+
+    def _prepare_execute_reentry_targets(self, reflector: Dict[str, Any]) -> Dict[str, Any]:
+        plan_items = self.structured_results.get("attack_plan", {}).get("items") or []
+        execution_items = self.structured_results.get("execution", {}).get("items") or []
+        focus_steps = set(reflector.get("focus_steps") or [])
+        focus_pocs = set(reflector.get("focus_pocs") or [])
+        targeted_steps: List[int] = []
+        targeted_pocs: List[str] = []
+        skipped_steps: List[int] = []
+
+        latest_by_step: Dict[int, Dict[str, Any]] = {}
+        latest_by_poc: Dict[str, Dict[str, Any]] = {}
+        for item in execution_items:
+            step = item.get("step")
+            poc_name = item.get("poc_name")
+            if isinstance(step, int):
+                latest_by_step[step] = item
+            if poc_name:
+                latest_by_poc[poc_name] = item
+
+        def should_target(item: Dict[str, Any]) -> bool:
+            step = item.get("step")
+            poc_name = item.get("poc_name")
+            exec_item = latest_by_step.get(step) or latest_by_poc.get(poc_name or "")
+            if focus_steps or focus_pocs:
+                return bool((step in focus_steps) or (poc_name in focus_pocs))
+            if exec_item is None:
+                return True
+            if exec_item.get("status") in {"error", "blocked", "pending"} or exec_item.get("error"):
+                return True
+            if not reflector.get("evidence_sufficient") and not str(exec_item.get("evidence") or "").strip():
+                return True
+            if not reflector.get("execution_effective") and exec_item.get("status") == "completed":
+                return True
+            return False
+
+        execution_archive = self.structured_results.setdefault("execution_archive", [])
+        if self.structured_results.get("execution", {}).get("items"):
+            execution_archive.append(self.structured_results.get("execution"))
+
+        for item in plan_items:
+            step = item.get("step")
+            poc_name = item.get("poc_name")
+            if should_target(item):
+                item["status"] = "pending"
+                item.pop("reason", None)
+                if isinstance(step, int):
+                    targeted_steps.append(step)
+                if poc_name:
+                    targeted_pocs.append(poc_name)
+            else:
+                item["status"] = "skipped_by_reflector_reentry"
+                item["reason"] = "Reflector 指定本轮仅补证/重跑目标步骤，当前步骤暂不重复执行"
+                if isinstance(step, int):
+                    skipped_steps.append(step)
+
+        self.structured_results["attack_plan"]["item_count"] = len(plan_items)
+        self.attack_plan = _safe_json_dumps(self.structured_results["attack_plan"])
+        self.structured_results["execution"] = {"items": [], "summary": "等待 Reflector 定向重跑", "parse_error": None, "item_count": 0}
+        return {
+            "targeted_steps": sorted(set(targeted_steps)),
+            "targeted_pocs": sorted(set(targeted_pocs)),
+            "skipped_steps": sorted(set(skipped_steps)),
+        }
+
+    def _maybe_resume_from_reflector(self) -> Optional[Dict[str, Any]]:
+        reflector = self.structured_results.get("reflector", {}) or {}
+        if not reflector.get("reentry_required"):
+            return None
+
+        next_action = reflector.get("next_action")
+        next_phase = reflector.get("next_phase")
+        if next_action not in {"retry", "branch"} or next_phase not in {"recon", "planner", "decision", "weaponize", "execute"}:
+            return None
+
+        if self.reflector_reentry_count >= REFLECTOR_MAX_REENTRY:
+            message = (
+                f"Reflector 已连续请求回跳 {self.reflector_reentry_count} 次，"
+                "达到保护上限，停止自动重入并继续生成最终报告。"
+            )
+            reflector["reentry_required"] = False
+            reflector["next_action"] = "escalate"
+            reflector["reason"] = reflector.get("reason") or message
+            reflector["reentry_suppressed"] = True
+            self._record_supervisor_event("reflector_reentry_limit", message, severity="error", phase="reflector")
+            return None
+
+        self.reflector_reentry_count += 1
+        reroute_reason = reflector.get("reason") or reflector.get("summary") or "Reflector 要求补证或调整路径"
+        reroute_message = (
+            f"Reflector 判定当前结果需要补证或未达预期，准备回跳到阶段 {next_phase} 重新执行。"
+            f"原因: {reroute_reason}"
+        )
+        reroute_detail: Dict[str, Any] = {}
+        if next_phase == "decision" and reflector.get("rerun_mode") == "targeted":
+            reroute_detail = self._prepare_decision_reentry_targets(reflector)
+            reroute_message += (
+                f" 本次仅局部重规划 focus_steps={reroute_detail.get('focus_steps') or []}"
+                f"，focus_pocs={reroute_detail.get('focus_pocs') or []}。"
+            )
+        if next_phase == "execute" and reflector.get("rerun_mode") == "targeted":
+            reroute_detail = self._prepare_execute_reentry_targets(reflector)
+            reroute_message += (
+                f" 本次仅重跑步骤 {reroute_detail.get('targeted_steps') or []}"
+                f"，跳过步骤 {reroute_detail.get('skipped_steps') or []}。"
+            )
+        self.reflector_reentry_history.append({
+            "count": self.reflector_reentry_count,
+            "next_phase": next_phase,
+            "next_action": next_action,
+            "reason": reroute_reason,
+            "rerun_mode": reflector.get("rerun_mode") or "from_phase",
+            "focus_steps": reflector.get("focus_steps") or [],
+            "focus_pocs": reflector.get("focus_pocs") or [],
+            "detail": reroute_detail,
+            "timestamp": _utc_timestamp(),
+        })
+        self._record_supervisor_event("reflector_reroute", reroute_message, severity="warning", phase="reflector")
+        self._record_supervisor_adjustment("reflector_reroute", reroute_message)
+        self._add_log({"type": "warning", "message": f"[Reflector Agent] {reroute_message}"})
+        return self.run_from_phase(next_phase)
 
     def _call_agent_with_validation(
         self,
@@ -2108,7 +2575,7 @@ class AgentOrchestrator:
         from mcp_server import MCP_TOOLS
         return MCP_TOOLS
 
-    def run_full_assessment(self) -> Dict[str, Any]:
+    def run_full_assessment(self, reset_reentry_state: bool = True) -> Dict[str, Any]:
         """
         执行完整的 7-Agent 协作渗透测试评估
         返回包含所有阶段结果的综合报告字典
@@ -2117,6 +2584,10 @@ class AgentOrchestrator:
         self.phase_records = []
         self.execution_trace = []
         self.structured_results["supervisor"] = {"events": [], "metrics": {}, "adjustments": []}
+        if reset_reentry_state:
+            self.reflector_reentry_count = 0
+            self.reflector_reentry_history = []
+            self.structured_results.pop("decision_reentry", None)
         for phase_name in PHASE_SEQUENCE:
             self._upsert_phase_record(phase=phase_name, status="pending")
 
@@ -2135,19 +2606,28 @@ class AgentOrchestrator:
         else:
             _params_desc_parts.append("wifi_interface=未提供（跳过所有无线嗅探相关 PoC）")
         _available_params_ctx = "【可用资源】\n" + "\n".join(f"  - {p}" for p in _params_desc_parts)
+        reflector_focus_ctx = self._build_reflector_focus_context()
 
         # ── Phase 1/7: 侦察 Agent ──
         logger.info("[Orchestrator] Phase 1/7: 侦察 Agent 开始执行...")
-        self.recon_result, self.structured_results["recon"] = self._call_agent_with_validation(
-            phase="recon",
-            agent=self.recon_agent,
-            user_message=(
+        previous_recon = dict(self.structured_results.get("recon") or {})
+        recon_user_message = (
             f"对目标 {self.target_ip}（{self.target_name}）执行完整侦察。"
             f"使用 scan_ports 发现开放服务，使用 get_topology 建立网络拓扑图，"
             f"使用 get_adaptive_context 获取目标服务指纹和认证机制。"
             f"输出 JSON 格式的侦察摘要。"
-            ),
-            context=_available_params_ctx,
+        )
+        if reflector_focus_ctx and (self.structured_results.get("reflector", {}) or {}).get("next_phase") == "recon":
+            recon_user_message = (
+                f"对目标 {self.target_ip}（{self.target_name}）执行补充侦察。"
+                "请优先围绕 Reflector 指出的证据缺口、覆盖缺口或异常点补充信息，"
+                "只扩展必要的侦察内容，并输出 JSON 格式的侦察摘要。"
+            )
+        self.recon_result, recon_structured = self._call_agent_with_validation(
+            phase="recon",
+            agent=self.recon_agent,
+            user_message=recon_user_message,
+            context=_available_params_ctx + (f"\n\n{reflector_focus_ctx}" if reflector_focus_ctx else ""),
             normalizer=self._normalize_recon_result,
             validator=self._validate_recon_result,
             correction_hint=(
@@ -2161,6 +2641,9 @@ class AgentOrchestrator:
                 "}"
             ),
         )
+        if reflector_focus_ctx and previous_recon:
+            recon_structured = self._merge_recon_result(previous_recon, recon_structured)
+        self.structured_results["recon"] = recon_structured
         self._require_phase_success("recon")
         self._merge_agent_supervisor_events(self.recon_agent, "recon")
         logger.info(f"[Orchestrator] Phase 1 完成:\n{self.recon_result[:300]}...")
@@ -2185,20 +2668,33 @@ class AgentOrchestrator:
         poc_inventory = self._get_poc_inventory_context()
         recon_data = self.structured_results.get("recon", {})
         open_ports = recon_data.get("open_ports") or []
-        
-        self.attack_plan, self.structured_results["attack_plan"] = self._call_agent_with_validation(
-            phase="decision",
-            agent=self.decision_agent,
-            user_message=(
+        decision_reentry = self.structured_results.get("decision_reentry", {}) or {}
+        decision_user_message = (
             f"基于侦察结果和以下可用资源，从【可用 PoC 脚本库】中挑选合适的脚本执行。"
             f"针对 {self.target_ip} 的开放端口 {open_ports} 规划渗透路径。"
             f"输出 JSON 攻击计划，每项包含精确的 poc_name (如 'network/10_SSH_Service.py')。"
-            ),
+        )
+        if decision_reentry.get("mode") == "targeted":
+            decision_user_message = (
+                f"请针对目标 {self.target_ip} 执行局部重规划。"
+                "仅围绕 Reflector 指出的缺口、异常步骤或目标 PoC 补充/替换必要攻击步骤，"
+                "避免重复输出已经合理且无需调整的既有路径。"
+            )
+        
+        self.attack_plan, decision_structured = self._call_agent_with_validation(
+            phase="decision",
+            agent=self.decision_agent,
+            user_message=decision_user_message,
             context=(
                 f"{_available_params_ctx}\n\n"
                 f"{poc_inventory}\n\n"
                 f"侦察结果(JSON):\n{_safe_json_dumps(self.structured_results['recon'])}\n\n"
                 f"任务编排(JSON):\n{_safe_json_dumps(self.structured_results['planner'])}"
+                + (f"\n\n{reflector_focus_ctx}" if reflector_focus_ctx else "")
+                + (
+                    f"\n\n既有攻击计划(JSON):\n{_safe_json_dumps(decision_reentry.get('preserved_items') or [])}"
+                    if decision_reentry.get("mode") == "targeted" else ""
+                )
             ),
             normalizer=self._normalize_attack_plan,
             validator=self._validate_attack_plan,
@@ -2211,6 +2707,19 @@ class AgentOrchestrator:
                 "}"
             ),
         )
+        if decision_reentry.get("mode") == "targeted":
+            merged_items = self._merge_attack_plan_items(
+                decision_reentry.get("preserved_items") or [],
+                decision_structured.get("items") or [],
+                decision_reentry.get("focus_steps") or [],
+                decision_reentry.get("focus_pocs") or [],
+            )
+            decision_structured["items"] = merged_items
+            decision_structured["item_count"] = len(merged_items)
+            decision_structured["summary"] = self.attack_plan
+            self.attack_plan = _safe_json_dumps(decision_structured)
+            self.structured_results.pop("decision_reentry", None)
+        self.structured_results["attack_plan"] = decision_structured
         self._require_phase_success("decision")
         
         # Self-Correction: If recon found ports but decision agent scheduled nothing, retry once
@@ -2240,11 +2749,11 @@ class AgentOrchestrator:
         logger.info(f"[Orchestrator] Phase 3 完成:\n{self.attack_plan[:300]}...")
 
         # ── Phase 4/7: 武器化 Agent ──
-        if any(item.get("poc_name") == "dynamic_0day" for item in self.structured_results["attack_plan"].get("items", [])):
+        if any(_is_dynamic_probe_name(item.get("poc_name")) for item in self.structured_results["attack_plan"].get("items", [])):
             logger.info("[Orchestrator] Phase 4/7: 触发 Weaponize Agent 介入...")
-            self._add_log({"type": "warning", "message": "[Orchestrator] 核心系统检测到未知协议，武器化 Agent 介入生成针对性利用载荷..."})
+            self._add_log({"type": "warning", "message": "[Orchestrator] 检测到未知服务，Weaponize Agent 介入生成协议感知型动态探测脚本..."})
             weaponize_result = self.weaponize_agent.call(
-                f"针对目标 {self.target_ip} 的未知服务，生成可直接在当前环境下运行的 Python Fuzzing/Exploit 代码。",
+                f"针对目标 {self.target_ip} 的未知服务，生成可直接在当前环境下运行的 Python 协议感知型动态探测代码。",
                 context=(
                     f"侦察结果(JSON):\n{_safe_json_dumps(self.structured_results['recon'])}\n\n"
                     f"攻击计划(JSON):\n{_safe_json_dumps(self.structured_results['attack_plan'])}"
@@ -2255,11 +2764,11 @@ class AgentOrchestrator:
                 sandbox_dir = "/tmp/autosec_sandbox"
                 os.makedirs(sandbox_dir, exist_ok=True)
                 timestamp = int(time.time())
-                sandbox_file = os.path.join(sandbox_dir, f"99_Dynamic_0Day_{timestamp}.py")
+                sandbox_file = os.path.join(sandbox_dir, f"99_Dynamic_Unknown_Service_Probe_{timestamp}.py")
                 with open(sandbox_file, "w") as f:
                     f.write(_wrap_code_as_plugin(code_match.group(1)))
                 for item in self.structured_results["attack_plan"].get("items", []):
-                    if item.get("poc_name") == "dynamic_0day":
+                    if _is_dynamic_probe_name(item.get("poc_name")):
                         item["poc_name"] = sandbox_file
                         item["status"] = "weaponized"
                 self.attack_plan = _safe_json_dumps(self.structured_results["attack_plan"])
@@ -2269,7 +2778,7 @@ class AgentOrchestrator:
                 self._record_phase("weaponize", "error", weaponize_result, {"weaponized": False}, "Generation failed")
             self._require_phase_success("weaponize")
         else:
-            self._record_phase("weaponize", "skipped", "No dynamic_0day required", {"weaponized": False})
+            self._record_phase("weaponize", "skipped", "No dynamic unknown service probe required", {"weaponized": False})
 
         # ── Phase 5/7: 执行 Agent ──
         logger.info("[Orchestrator] Phase 5/7: 执行 Agent 开始逐步执行渗透测试...")
@@ -2301,6 +2810,9 @@ class AgentOrchestrator:
             structured_output=reflector_structured
         )
         logger.info(f"[Orchestrator] Phase 6 结论: {reflector_result}")
+        rerouted = self._maybe_resume_from_reflector()
+        if rerouted is not None:
+            return rerouted
 
         # ── Phase 7/7: 评估 Agent ──
         logger.info("[Orchestrator] Phase 7/7: 评估 Agent 生成安全报告...")
@@ -2309,7 +2821,8 @@ class AgentOrchestrator:
                 f"侦察结果:\n{self.recon_result}\n\n"
                 f"攻击计划(JSON):\n{_safe_json_dumps(self.structured_results['attack_plan'])}\n\n"
                 f"执行结果(JSON):\n{_safe_json_dumps(self.structured_results['execution'])}\n\n"
-                f"漏洞发现(JSON):\n{_safe_json_dumps(self.findings)}"
+                f"漏洞发现(JSON):\n{_safe_json_dumps(self.findings)}\n\n"
+                f"反思审计(JSON):\n{_safe_json_dumps(self.structured_results.get('reflector', {}))}"
             )
         )
         self.final_report = self.assessment_agent.call(
@@ -2334,6 +2847,8 @@ class AgentOrchestrator:
             "logs": self.current_logs,
             "phase_records": self.phase_records,
             "findings": self.findings,
+            "reflector_reentry_count": self.reflector_reentry_count,
+            "reflector_reentry_history": self.reflector_reentry_history,
             "structured": self.structured_results,
             "phases": {
                 "recon": self.recon_result,
@@ -2349,10 +2864,11 @@ class AgentOrchestrator:
 
         logger.info(f"[Orchestrator] ===== 从阶段 {start_phase} 恢复执行: {self.target_name} ({self.target_ip}) =====")
         available_params_ctx = self._build_available_params_context()
+        reflector_focus_ctx = self._build_reflector_focus_context()
         start_index = PHASE_SEQUENCE.index(start_phase)
 
         if start_index <= PHASE_SEQUENCE.index("recon"):
-            return self.run_full_assessment()
+            return self.run_full_assessment(reset_reentry_state=False)
 
         if start_index <= PHASE_SEQUENCE.index("planner"):
              # For planner, we just run it directly as it's a rule/prompt based orchestration
@@ -2364,32 +2880,58 @@ class AgentOrchestrator:
         if start_index <= PHASE_SEQUENCE.index("decision"):
              if not self.structured_results.get("planner", {}).get("steps"):
                  self._run_planner()
-             self.attack_plan, self.structured_results["attack_plan"] = self._call_agent_with_validation(
+             decision_reentry = self.structured_results.get("decision_reentry", {}) or {}
+             decision_user_message = (
+                 f"基于侦察结果和以下可用资源，规划针对 {self.target_ip} 的渗透测试计划。"
+                 f"严格按照【可用资源】中的参数过滤 PoC：缺少 bluetooth_mac 则不选择蓝牙 PoC，"
+                 f"缺少 can_interface 则不选择 CAN 总线 PoC，缺少 wifi_interface 则不选择无线嗅探 PoC。"
+                 f"输出有序的 JSON 攻击计划，每项包含 poc_name 和 parameters 字段（parameters 中包含实际参数值）。"
+             )
+             if decision_reentry.get("mode") == "targeted":
+                 decision_user_message = (
+                     f"请针对目标 {self.target_ip} 执行局部重规划。"
+                     "仅围绕 Reflector 指出的缺口、异常步骤或目标 PoC 补充/替换必要攻击步骤，"
+                     "避免重复输出已经合理且无需调整的既有路径。"
+                 )
+             self.attack_plan, decision_structured = self._call_agent_with_validation(
                  phase="decision",
                  agent=self.decision_agent,
-                 user_message=(
-                     f"基于侦察结果和以下可用资源，规划针对 {self.target_ip} 的渗透测试计划。"
-                     f"严格按照【可用资源】中的参数过滤 PoC：缺少 bluetooth_mac 则不选择蓝牙 PoC，"
-                     f"缺少 can_interface 则不选择 CAN 总线 PoC，缺少 wifi_interface 则不选择无线嗅探 PoC。"
-                     f"输出有序的 JSON 攻击计划，每项包含 poc_name 和 parameters 字段（parameters 中包含实际参数值）。"
-                 ),
+                 user_message=decision_user_message,
                  context=(
                      f"{available_params_ctx}\n\n"
                      f"侦察结果(JSON):\n{_safe_json_dumps(self.structured_results['recon'])}\n\n"
                      f"任务编排(JSON):\n{_safe_json_dumps(self.structured_results['planner'])}"
+                     + (f"\n\n{reflector_focus_ctx}" if reflector_focus_ctx else "")
+                     + (
+                         f"\n\n既有攻击计划(JSON):\n{_safe_json_dumps(decision_reentry.get('preserved_items') or [])}"
+                         if decision_reentry.get("mode") == "targeted" else ""
+                     )
                  ),
                  normalizer=self._normalize_attack_plan,
                  validator=self._validate_attack_plan,
                  correction_hint="输出必须是 JSON 数组或包含 items/attack_plan 字段产生的结果。每个步骤必须包含 poc_name、parameters、strategy、reason。",
              )
+             if decision_reentry.get("mode") == "targeted":
+                 merged_items = self._merge_attack_plan_items(
+                     decision_reentry.get("preserved_items") or [],
+                     decision_structured.get("items") or [],
+                     decision_reentry.get("focus_steps") or [],
+                     decision_reentry.get("focus_pocs") or [],
+                 )
+                 decision_structured["items"] = merged_items
+                 decision_structured["item_count"] = len(merged_items)
+                 decision_structured["summary"] = self.attack_plan
+                 self.attack_plan = _safe_json_dumps(decision_structured)
+                 self.structured_results.pop("decision_reentry", None)
+             self.structured_results["attack_plan"] = decision_structured
              self._require_phase_success("decision")
              self._merge_agent_supervisor_events(self.decision_agent, "decision")
              self._supervise_attack_plan()
 
-        if any(item.get("poc_name") == "dynamic_0day" for item in self.structured_results["attack_plan"].get("items", [])):
-            logger.info("[Orchestrator] 恢复执行时检测到 dynamic_0day，重新触发 Weaponize Agent...")
+        if any(_is_dynamic_probe_name(item.get("poc_name")) for item in self.structured_results["attack_plan"].get("items", [])):
+            logger.info("[Orchestrator] 恢复执行时检测到 dynamic_unknown_service_probe，重新触发 Weaponize Agent...")
             weaponize_result = self.weaponize_agent.call(
-                f"针对目标 {self.target_ip} 的未知服务，生成可直接在当前环境下运行的 Python Fuzzing/Exploit 代码。",
+                f"针对目标 {self.target_ip} 的未知服务，生成可直接在当前环境下运行的 Python 协议感知型动态探测代码。",
                 context=(
                     f"侦察结果(JSON):\n{_safe_json_dumps(self.structured_results['recon'])}\n\n"
                     f"攻击计划(JSON):\n{_safe_json_dumps(self.structured_results['attack_plan'])}"
@@ -2397,17 +2939,17 @@ class AgentOrchestrator:
             )
             code_match = re.search(r'```python\s*(.*?)\s*```', weaponize_result, re.DOTALL)
             if code_match:
-                sandbox_file = os.path.join(os.path.dirname(__file__), "pocs", "99_Dynamic_0Day.py")
+                sandbox_file = os.path.join(os.path.dirname(__file__), "pocs", DYNAMIC_PROBE_FILENAME)
                 with open(sandbox_file, "w") as f:
                     f.write(_wrap_code_as_plugin(code_match.group(1)))
                 for item in self.structured_results["attack_plan"]["items"]:
-                    if item["poc_name"] == "dynamic_0day":
-                        item["poc_name"] = "99_Dynamic_0Day.py"
+                    if _is_dynamic_probe_name(item.get("poc_name")):
+                        item["poc_name"] = DYNAMIC_PROBE_FILENAME
                         item["status"] = "weaponized"
                 self.attack_plan = _safe_json_dumps(self.structured_results["attack_plan"])
                 self._record_phase("weaponize", "done", weaponize_result, {"weaponized": True})
             else:
-                self._record_phase("weaponize", "error", weaponize_result, {"weaponized": False}, "dynamic 0-day generation failed")
+                self._record_phase("weaponize", "error", weaponize_result, {"weaponized": False}, "dynamic unknown service probe generation failed")
                 self._require_phase_success("weaponize")
         elif not self._get_phase_record("weaponize"):
             self._record_phase("weaponize", "skipped", "", {"weaponized": False})
@@ -2432,13 +2974,17 @@ class AgentOrchestrator:
         if start_index <= PHASE_SEQUENCE.index("reflector"):
             reflector_result, reflector_structured = self._run_reflector()
             self._record_phase("reflector", "done", reflector_result, reflector_structured)
+            rerouted = self._maybe_resume_from_reflector()
+            if rerouted is not None:
+                return rerouted
 
         assessment_input = self._build_assessment_call(
             context=(
                 f"侦察结果:\n{self.recon_result}\n\n"
                 f"攻击计划(JSON):\n{_safe_json_dumps(self.structured_results['attack_plan'])}\n\n"
                 f"执行结果(JSON):\n{_safe_json_dumps(self.structured_results['execution'])}\n\n"
-                f"漏洞发现(JSON):\n{_safe_json_dumps(self.findings)}"
+                f"漏洞发现(JSON):\n{_safe_json_dumps(self.findings)}\n\n"
+                f"反思审计(JSON):\n{_safe_json_dumps(self.structured_results.get('reflector', {}))}"
             )
         )
         self.final_report = self.assessment_agent.call(
@@ -2460,6 +3006,8 @@ class AgentOrchestrator:
             "logs": self.current_logs,
             "phase_records": self.phase_records,
             "findings": self.findings,
+            "reflector_reentry_count": self.reflector_reentry_count,
+            "reflector_reentry_history": self.reflector_reentry_history,
             "structured": self.structured_results,
             "phases": {
                 "recon": self.recon_result,
@@ -2477,7 +3025,7 @@ class AgentOrchestrator:
             "recon": "侦察 (Reconnaissance)",
             "planner": "任务编排 (Mission Planning)",
             "decision": "关键决策 (Critical Decision)",
-            "weaponize": "武器化/0-Day (Weaponization)",
+            "weaponize": "动态探测生成 (Weaponization)",
             "execute": "漏洞利用 (Exploitation)",
             "reflector": "自适应反思 (Adaptive Reflection)",
             "assess": "风险评估 (Risk Assessment)"
@@ -2531,17 +3079,17 @@ class AgentOrchestrator:
         elif phase == "weaponize":
             self._upsert_phase_record(phase="weaponize", status="running", attempt=1)
             result = self.weaponize_agent.call(
-                f"针对目标 {self.target_ip} 的未知服务，生成可直接在当前环境下运行的 Python Fuzzing/Exploit 代码。",
+                f"针对目标 {self.target_ip} 的未知服务，生成可直接在当前环境下运行的 Python 协议感知型动态探测代码。",
                 context=context,
             )
             # 解析生成的代码并写入 sandbox
             code_match = re.search(r'```python\s*(.*?)\s*```', result, re.DOTALL)
             structured = {"weaponized": bool(code_match)}
             if code_match:
-                sandbox_file = os.path.join(os.path.dirname(__file__), "pocs", "99_Dynamic_0Day.py")
+                sandbox_file = os.path.join(os.path.dirname(__file__), "pocs", DYNAMIC_PROBE_FILENAME)
                 with open(sandbox_file, "w") as f:
                     f.write(_wrap_code_as_plugin(code_match.group(1)))
-                self._add_log({"type": "success", "message": "[Weaponize Agent] 成功投递并沙箱化 0-day 探测脚本: 99_Dynamic_0Day.py"})
+                self._add_log({"type": "success", "message": f"[Weaponize Agent] 成功投递并沙箱化未知服务动态探测脚本: {DYNAMIC_PROBE_FILENAME}"})
         elif phase == "execute":
             existing_error_items = [
                 item for item in (self.structured_results.get("execution", {}).get("items") or [])

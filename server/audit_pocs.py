@@ -70,8 +70,6 @@ def _iter_poc_files() -> list[Path]:
             continue
         if path.name == "can_bus_utils.py":
             continue
-        if path.name == "99_Dynamic_0Day.py":
-            continue
         files.append(path)
     return files
 

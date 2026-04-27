@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from edge_deployment import edge_runtime_filename, normalize_edge_arch, normalize_edge_os
+
 
 SERVER_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SERVER_DIR.parent
@@ -21,26 +23,9 @@ def _generate_poc_registry() -> None:
 
 
 def _platform_alias_name() -> str:
-    raw_os = platform.system().lower()
-    if raw_os in {"darwin", "mac"}:
-        os_type = "darwin"
-    elif raw_os == "windows":
-        os_type = "windows"
-    else:
-        os_type = raw_os
-
-    raw_arch = platform.machine().lower()
-    if raw_arch in ("x86_64", "amd64"):
-        arch_type = "x86_64"
-    elif raw_arch in ("aarch64", "arm64", "arm"):
-        arch_type = "arm64"
-    else:
-        arch_type = raw_arch
-
-    alias = f"autosec-edge-{os_type}-{arch_type}"
-    if os_type == "windows":
-        alias += ".exe"
-    return alias
+    os_type = normalize_edge_os(platform.system())
+    arch_type = normalize_edge_arch(platform.machine())
+    return edge_runtime_filename(os_type, arch_type)
 
 
 def main() -> int:

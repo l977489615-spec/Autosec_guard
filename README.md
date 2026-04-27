@@ -274,7 +274,7 @@ PoC 按车联网常见攻击面组织：
 | Wireless | 18 | `32-49` | Wi-Fi、Bluetooth、QNX 无线面、协议层攻击与接入控制 | `WiFi Deauth` `KRACK` `BlueBorne` `PerfektBlue` | 📡 Edge |
 | Application | 13 | `50-62` | 车机应用、CarPlay/AirPlay、USB、WebView、媒体链路风险 | `AirPlay UAF` `USB SQLi` `WebView File Exfil` `Mirror Hijack` | ☁️ Cloud + 📡 Edge + 部分人工辅助 |
 | Advanced | 8 | `63-70` | OTA、RF、GPS、TPMS、V2X、固件与升级链路高级验证 | `OTA MITM` `GPS Spoofing` `TPMS Spoofing` `Unsigned Firmware` | 📡 Edge / 硬件依赖 |
-| Dynamic 0-Day | 1 | `99` | 面向未知服务的动态武器化探测与实验性扩展 | `Dynamic 0-Day Probe` | ☁️ Cloud / 📡 Edge |
+| Dynamic Unknown Service | 1 | `99` | 面向未知服务的协议感知型动态指纹与异常响应探测 | `Dynamic Unknown Service Probe` | ☁️ Cloud / 📡 Edge |
 
 ### 分类说明
 
@@ -283,7 +283,7 @@ PoC 按车联网常见攻击面组织：
 - `CAN Bus` 和 `Wireless` 强依赖现场接口与硬件能力，是边云协同架构存在的核心原因。
 - `Application` 覆盖车机生态中更接近用户侧和媒体链路侧的风险，部分场景需要人工配合完成最终验证。
 - `Advanced` 主要面向更高复杂度攻击链，如 OTA、中继、V2X、RF、GPS 与固件更新链路。
-- `99_Dynamic_0Day` 是实验性动态 PoC，用于在 `Agent Scan` 中补足未知服务场景，不等同于固定签名插件。
+- `99_Dynamic_Unknown_Service_Probe` 是未知服务动态探测 PoC，用于在 `Agent Scan` 中补足固定签名插件无法覆盖的服务场景；该模块输出候选异常证据，不将单次连接异常直接等同于漏洞确认。
 
 ### 当前 PoC 分布
 
@@ -401,7 +401,7 @@ PoC 按车联网常见攻击面组织：
 | `AUTOSEC_DB_URI` | 本地 SQLite | 数据库连接串 |
 | `AUTOSEC_API` | `http://localhost:5002` | 主 API 地址 |
 | `MCP_SERVER` | `http://localhost:5003` | MCP Server 地址 |
-| `AUTOSEC_EDGE_RUNTIME_PATH` | 自动探测 | Edge Runtime 文件路径 |
+| `AUTOSEC_EDGE_RUNTIME_PATH` | 自动探测 | Edge Runtime 文件路径或多平台产物目录 |
 | `AUTOSEC_EDGE_BUILD_DIR` | `build/edge_runtime` | Edge 构建输出目录 |
 | `AUTOSEC_PUBLIC_HOST` | 空 | 强制指定 Edge 命令中的服务端地址 |
 | `AUTOSEC_HOST` | `0.0.0.0` | Flask 监听地址 |
@@ -446,6 +446,29 @@ AUTOSEC_PUBLIC_HOST=10.192.97.40
 curl -fsSL "http://your-server:5002/api/edge/install.sh?enrollment_token=<TOKEN>" | bash
 $HOME/.autosec-edge/autosec-edge --edge-api http://your-server:5002 --daemon
 ```
+
+Windows PowerShell：
+
+```powershell
+powershell -ExecutionPolicy Bypass -Command "iwr 'http://your-server:5002/api/edge/install.ps1?enrollment_token=<TOKEN>' -UseBasicParsing | iex"
+$env:USERPROFILE\.autosec-edge\autosec-edge.exe --edge-api http://your-server:5002 --daemon
+```
+
+### 产品化多平台构建
+
+Edge Runtime 是平台相关二进制，不能在 macOS 上直接生成可用于 Linux 或 Windows 的产物。生产环境建议使用私有 CI 在目标系统 runner 上分别构建，并将产物放入 `AUTOSEC_EDGE_RUNTIME_PATH` 指向的目录或默认 `build/edge_runtime` 目录。
+
+标准产物命名：
+
+```text
+autosec-edge-linux-x86_64
+autosec-edge-linux-arm64
+autosec-edge-windows-x86_64.exe
+autosec-edge-darwin-arm64
+autosec-edge-darwin-x86_64
+```
+
+仓库内置 `.github/workflows/edge-runtime.yml`，可手动触发多平台构建。商业分发优先使用 `nuitka` backend；`pyinstaller` backend 仅建议用于快速诊断。Linux ARM64 产物需要 ARM64 runner，例如 GitHub hosted ARM runner 或私有树莓派/ARM 云主机 self-hosted runner。
 
 ### Edge Agent 负责什么
 
@@ -494,6 +517,8 @@ $HOME/.autosec-edge/autosec-edge --edge-api http://your-server:5002 --daemon
 - `GET /api/edge/agents`
 - `POST /api/edge/enrollment-tokens`
 - `GET /api/edge/install.sh`
+- `GET /api/edge/install.ps1`
+- `GET /api/edge/runtime/download`
 - `POST /api/edge/tasks`
 - `GET /api/edge/tasks/next`
 - `POST /api/edge/tasks/<task_id>/result`
