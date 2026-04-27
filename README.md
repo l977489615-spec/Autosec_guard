@@ -274,7 +274,7 @@ PoC 按车联网常见攻击面组织：
 | Wireless | 18 | `32-49` | Wi-Fi、Bluetooth、QNX 无线面、协议层攻击与接入控制 | `WiFi Deauth` `KRACK` `BlueBorne` `PerfektBlue` | 📡 Edge |
 | Application | 13 | `50-62` | 车机应用、CarPlay/AirPlay、USB、WebView、媒体链路风险 | `AirPlay UAF` `USB SQLi` `WebView File Exfil` `Mirror Hijack` | ☁️ Cloud + 📡 Edge + 部分人工辅助 |
 | Advanced | 8 | `63-70` | OTA、RF、GPS、TPMS、V2X、固件与升级链路高级验证 | `OTA MITM` `GPS Spoofing` `TPMS Spoofing` `Unsigned Firmware` | 📡 Edge / 硬件依赖 |
-| Dynamic 0-Day | 1 | `99` | 面向未知服务的动态武器化探测与实验性扩展 | `Dynamic 0-Day Probe` | ☁️ Cloud / 📡 Edge |
+| Dynamic Unknown Service | 1 | `99` | 面向未知服务的协议感知型动态指纹与异常响应探测 | `Dynamic Unknown Service Probe` | ☁️ Cloud / 📡 Edge |
 
 ### 分类说明
 
@@ -283,7 +283,7 @@ PoC 按车联网常见攻击面组织：
 - `CAN Bus` 和 `Wireless` 强依赖现场接口与硬件能力，是边云协同架构存在的核心原因。
 - `Application` 覆盖车机生态中更接近用户侧和媒体链路侧的风险，部分场景需要人工配合完成最终验证。
 - `Advanced` 主要面向更高复杂度攻击链，如 OTA、中继、V2X、RF、GPS 与固件更新链路。
-- `99_Dynamic_0Day` 是实验性动态 PoC，用于在 `Agent Scan` 中补足未知服务场景，不等同于固定签名插件。
+- `99_Dynamic_Unknown_Service_Probe` 是未知服务动态探测 PoC，用于在 `Agent Scan` 中补足固定签名插件无法覆盖的服务场景；该模块输出候选异常证据，不将单次连接异常直接等同于漏洞确认。
 
 ### 当前 PoC 分布
 

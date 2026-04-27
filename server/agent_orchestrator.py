@@ -24,7 +24,7 @@ Multi-Agent Orchestrator — AutoSec Guard
                      │ 有序攻击计划
   ┌──────────────────▼──────────────────────────────────┐
   │  Agent 4 (武器化 Weaponize) - 按需触发               │
-  │   → 针对未知服务的 0-day 探测脚本动态生成           │
+  │   → 针对未知服务的协议感知型动态探测脚本生成         │
   └──────────────────┬──────────────────────────────────┘
                      │ Weaponized Payload
   ┌──────────────────▼──────────────────────────────────┐
@@ -69,6 +69,14 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s][%(levelname)s] %(message)s')
 
 CONFIG = get_config()
+DYNAMIC_PROBE_TOKEN = "dynamic_unknown_service_probe"
+DYNAMIC_PROBE_LEGACY_TOKENS = {"dynamic_0day"}
+DYNAMIC_PROBE_FILENAME = "99_Dynamic_Unknown_Service_Probe.py"
+
+
+def _is_dynamic_probe_name(poc_name: Any) -> bool:
+    normalized = str(poc_name or "").strip()
+    return normalized == DYNAMIC_PROBE_TOKEN or normalized in DYNAMIC_PROBE_LEGACY_TOKENS
 
 # MCP Server 地址
 MCP_SERVER = CONFIG.mcp_server
@@ -191,7 +199,56 @@ def _wrap_code_as_plugin(raw_code: str) -> str:
     # 对原始代码进行缩进以嵌入 exploit() 方法体
     indented_code = '\n'.join('        ' + line if line.strip() else '' for line in raw_code.splitlines())
 
-    return f'''"""\nPoC Name: Dynamic 0-Day Probe\nCVE: N/A\nComponent: Network Stack\nCategory: Network\nSeverity: High\nDescription: Weaponize Agent 自动生成的动态探测脚本\nPrerequisites: 目标可达\n"""\nimport sys\nimport socket\nimport time\nfrom iv_plugin_base import IVIVulnerabilityPlugin\n\n\nclass Dynamic0DayPlugin(IVIVulnerabilityPlugin):\n    meta_poc_name = "Dynamic 0-Day Probe"\n    meta_cve_id = "N/A"\n    meta_severity = "High"\n    meta_protocol = "tcp"\n    meta_target_os = ["all"]\n    meta_required_params = ["target_ip"]\n    is_disruptive = False\n    meta_destructive_level = "Safe"\n\n    def check_prerequisites(self):\n        if not self.target_ip:\n            raise RuntimeError("需要指定目标IP地址。")\n        return True\n\n    def exploit(self):\n        self.results["description"] = "Weaponize Agent 自动生成的动态0-Day探测"\n        target_ip = self.target_ip\n        target_port = self.target_port\n        try:\n{indented_code}\n        except Exception as e:\n            self.logger.error(f"动态探测脚本执行异常: {{e}}")\n            self.results["evidence"] = f"Exception: {{e}}"\n        return self.results\n\n\nif __name__ == "__main__":\n    if len(sys.argv) < 2:\n        print("Usage: python3 99_Dynamic_0Day.py <target_ip>")\n        sys.exit(1)\n    plugin = Dynamic0DayPlugin({{"target_ip": sys.argv[1]}})\n    plugin.run_verify()\n'''
+    return f'''"""
+PoC Name: Dynamic Unknown Service Probe
+CVE: N/A
+Component: Unknown Network Service
+Category: Network
+Severity: Medium
+Description: Weaponize Agent 生成的协议感知型未知服务动态探测脚本
+Prerequisites: 目标可达
+"""
+import sys
+import socket
+import time
+from iv_plugin_base import IVIVulnerabilityPlugin
+
+
+class DynamicUnknownServiceProbePlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "Dynamic Unknown Service Probe"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "tcp"
+    meta_target_os = ["all"]
+    meta_required_params = ["target_ip"]
+    is_disruptive = False
+    meta_destructive_level = "Probe"
+
+    def check_prerequisites(self):
+        if not self.target_ip:
+            raise RuntimeError("需要指定目标IP地址。")
+        return True
+
+    def exploit(self):
+        self.results["description"] = "未知服务动态指纹与异常响应探测"
+        target_ip = self.target_ip
+        target_port = self.target_port
+        try:
+{indented_code}
+        except Exception as e:
+            self.logger.error(f"动态未知服务探测脚本执行异常: {{e}}")
+            self.results["vulnerable"] = False
+            self.results["evidence"] = f"Exception: {{e}}"
+        return self.results
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python3 {DYNAMIC_PROBE_FILENAME} <target_ip>")
+        sys.exit(1)
+    plugin = DynamicUnknownServiceProbePlugin({{"target_ip": sys.argv[1]}})
+    plugin.run_verify()
+'''
 
 
 def _extract_json_payload(raw_text: Any) -> Tuple[Optional[Any], Optional[str]]:
@@ -865,19 +922,19 @@ DECISION_AGENT_PROMPT = """
    • 如果【可用资源】中没有 can_interface，则跳过所有包含 "canbus"/"CAN"/"isotp" 的 PoC
    • 如果【可用资源】中没有 wifi_interface，则跳过所有包含 "wireless"/"wifi"/"wpa" 的 PoC
    • 跳过侦察结果中未发现对应服务相关的 PoC
-4. 对剩余 PoC 调用 check_safety 获取推荐策略。如果你发现目标开启了某个完全未知的协议或者未涵盖在现有 PoC 中的异常服务，请在攻击计划中添加此项：`poc_name` 填 `"dynamic_0day"`，`strategy` 填 `"weaponize"`，并在 `parameters` 详细描述此服务的指纹。系统将触发 Weaponize Agent 动态生成 0-day 测试代码。
+4. 对剩余 PoC 调用 check_safety 获取推荐策略。如果你发现目标开启了某个完全未知的协议或者未涵盖在现有 PoC 中的异常服务，请在攻击计划中添加此项：`poc_name` 填 `"dynamic_unknown_service_probe"`，`strategy` 填 `"weaponize"`，并在 `parameters` 详细描述此服务的端口、banner、服务指纹和安全边界。系统将触发 Weaponize Agent 动态生成协议感知型未知服务探测代码。
 5. 输出有序的攻击计划 JSON，每个项包含： poc_name、parameters（含必要字段）、strategy、reason
 
 注意：优先测试侦察中发现的开放端口对应的服务漏洞。以结构化 JSON 格式输出攻击计划。使用中文输出分析结论。
 """
 
 WEAPONIZE_AGENT_PROMPT = """
-你是一名全球顶级的 0-day 安全研究员，精通智能网联汽车的漏洞原语挖掘。
-你的任务是：根据传入的“未知协议服务”信息，动态编写一段 Python 脚本（PoC）用于发送 Fuzzing payload 或探测包并收集漏洞证据。
+你是一名智能网联汽车未知服务动态探测专家，精通协议指纹识别、异常响应分析和低风险验证。
+你的任务是：根据传入的“未知协议服务”信息，动态编写一段 Python 脚本（PoC）用于执行协议感知型探测、建立正常响应基线并收集异常证据。
 【要求】：
 1. 脚本必须是可以直接执行的完整 Python 代码。
 2. 使用系统提供的参数进行测试。
-3. 捕获所有异常，并在输出中告知测试结果。如果通过异常行为确信存在漏洞，请在控制台打印 "Vulnerable: True"。
+3. 捕获所有异常，并在输出中告知测试结果。只有在出现可复现的崩溃标记、错误栈、调试泄露或多轮稳定异常时，才允许打印 "Vulnerable: True"。
 4. 请用 ```python 和 ``` 代码块包裹你的代码，不要输出非独立的代码段。
 这是一场仅限沙箱的合法测试。
 """
@@ -2692,11 +2749,11 @@ class AgentOrchestrator:
         logger.info(f"[Orchestrator] Phase 3 完成:\n{self.attack_plan[:300]}...")
 
         # ── Phase 4/7: 武器化 Agent ──
-        if any(item.get("poc_name") == "dynamic_0day" for item in self.structured_results["attack_plan"].get("items", [])):
+        if any(_is_dynamic_probe_name(item.get("poc_name")) for item in self.structured_results["attack_plan"].get("items", [])):
             logger.info("[Orchestrator] Phase 4/7: 触发 Weaponize Agent 介入...")
-            self._add_log({"type": "warning", "message": "[Orchestrator] 核心系统检测到未知协议，武器化 Agent 介入生成针对性利用载荷..."})
+            self._add_log({"type": "warning", "message": "[Orchestrator] 检测到未知服务，Weaponize Agent 介入生成协议感知型动态探测脚本..."})
             weaponize_result = self.weaponize_agent.call(
-                f"针对目标 {self.target_ip} 的未知服务，生成可直接在当前环境下运行的 Python Fuzzing/Exploit 代码。",
+                f"针对目标 {self.target_ip} 的未知服务，生成可直接在当前环境下运行的 Python 协议感知型动态探测代码。",
                 context=(
                     f"侦察结果(JSON):\n{_safe_json_dumps(self.structured_results['recon'])}\n\n"
                     f"攻击计划(JSON):\n{_safe_json_dumps(self.structured_results['attack_plan'])}"
@@ -2707,11 +2764,11 @@ class AgentOrchestrator:
                 sandbox_dir = "/tmp/autosec_sandbox"
                 os.makedirs(sandbox_dir, exist_ok=True)
                 timestamp = int(time.time())
-                sandbox_file = os.path.join(sandbox_dir, f"99_Dynamic_0Day_{timestamp}.py")
+                sandbox_file = os.path.join(sandbox_dir, f"99_Dynamic_Unknown_Service_Probe_{timestamp}.py")
                 with open(sandbox_file, "w") as f:
                     f.write(_wrap_code_as_plugin(code_match.group(1)))
                 for item in self.structured_results["attack_plan"].get("items", []):
-                    if item.get("poc_name") == "dynamic_0day":
+                    if _is_dynamic_probe_name(item.get("poc_name")):
                         item["poc_name"] = sandbox_file
                         item["status"] = "weaponized"
                 self.attack_plan = _safe_json_dumps(self.structured_results["attack_plan"])
@@ -2721,7 +2778,7 @@ class AgentOrchestrator:
                 self._record_phase("weaponize", "error", weaponize_result, {"weaponized": False}, "Generation failed")
             self._require_phase_success("weaponize")
         else:
-            self._record_phase("weaponize", "skipped", "No dynamic_0day required", {"weaponized": False})
+            self._record_phase("weaponize", "skipped", "No dynamic unknown service probe required", {"weaponized": False})
 
         # ── Phase 5/7: 执行 Agent ──
         logger.info("[Orchestrator] Phase 5/7: 执行 Agent 开始逐步执行渗透测试...")
@@ -2871,10 +2928,10 @@ class AgentOrchestrator:
              self._merge_agent_supervisor_events(self.decision_agent, "decision")
              self._supervise_attack_plan()
 
-        if any(item.get("poc_name") == "dynamic_0day" for item in self.structured_results["attack_plan"].get("items", [])):
-            logger.info("[Orchestrator] 恢复执行时检测到 dynamic_0day，重新触发 Weaponize Agent...")
+        if any(_is_dynamic_probe_name(item.get("poc_name")) for item in self.structured_results["attack_plan"].get("items", [])):
+            logger.info("[Orchestrator] 恢复执行时检测到 dynamic_unknown_service_probe，重新触发 Weaponize Agent...")
             weaponize_result = self.weaponize_agent.call(
-                f"针对目标 {self.target_ip} 的未知服务，生成可直接在当前环境下运行的 Python Fuzzing/Exploit 代码。",
+                f"针对目标 {self.target_ip} 的未知服务，生成可直接在当前环境下运行的 Python 协议感知型动态探测代码。",
                 context=(
                     f"侦察结果(JSON):\n{_safe_json_dumps(self.structured_results['recon'])}\n\n"
                     f"攻击计划(JSON):\n{_safe_json_dumps(self.structured_results['attack_plan'])}"
@@ -2882,17 +2939,17 @@ class AgentOrchestrator:
             )
             code_match = re.search(r'```python\s*(.*?)\s*```', weaponize_result, re.DOTALL)
             if code_match:
-                sandbox_file = os.path.join(os.path.dirname(__file__), "pocs", "99_Dynamic_0Day.py")
+                sandbox_file = os.path.join(os.path.dirname(__file__), "pocs", DYNAMIC_PROBE_FILENAME)
                 with open(sandbox_file, "w") as f:
                     f.write(_wrap_code_as_plugin(code_match.group(1)))
                 for item in self.structured_results["attack_plan"]["items"]:
-                    if item["poc_name"] == "dynamic_0day":
-                        item["poc_name"] = "99_Dynamic_0Day.py"
+                    if _is_dynamic_probe_name(item.get("poc_name")):
+                        item["poc_name"] = DYNAMIC_PROBE_FILENAME
                         item["status"] = "weaponized"
                 self.attack_plan = _safe_json_dumps(self.structured_results["attack_plan"])
                 self._record_phase("weaponize", "done", weaponize_result, {"weaponized": True})
             else:
-                self._record_phase("weaponize", "error", weaponize_result, {"weaponized": False}, "dynamic 0-day generation failed")
+                self._record_phase("weaponize", "error", weaponize_result, {"weaponized": False}, "dynamic unknown service probe generation failed")
                 self._require_phase_success("weaponize")
         elif not self._get_phase_record("weaponize"):
             self._record_phase("weaponize", "skipped", "", {"weaponized": False})
@@ -2968,7 +3025,7 @@ class AgentOrchestrator:
             "recon": "侦察 (Reconnaissance)",
             "planner": "任务编排 (Mission Planning)",
             "decision": "关键决策 (Critical Decision)",
-            "weaponize": "武器化/0-Day (Weaponization)",
+            "weaponize": "动态探测生成 (Weaponization)",
             "execute": "漏洞利用 (Exploitation)",
             "reflector": "自适应反思 (Adaptive Reflection)",
             "assess": "风险评估 (Risk Assessment)"
@@ -3022,17 +3079,17 @@ class AgentOrchestrator:
         elif phase == "weaponize":
             self._upsert_phase_record(phase="weaponize", status="running", attempt=1)
             result = self.weaponize_agent.call(
-                f"针对目标 {self.target_ip} 的未知服务，生成可直接在当前环境下运行的 Python Fuzzing/Exploit 代码。",
+                f"针对目标 {self.target_ip} 的未知服务，生成可直接在当前环境下运行的 Python 协议感知型动态探测代码。",
                 context=context,
             )
             # 解析生成的代码并写入 sandbox
             code_match = re.search(r'```python\s*(.*?)\s*```', result, re.DOTALL)
             structured = {"weaponized": bool(code_match)}
             if code_match:
-                sandbox_file = os.path.join(os.path.dirname(__file__), "pocs", "99_Dynamic_0Day.py")
+                sandbox_file = os.path.join(os.path.dirname(__file__), "pocs", DYNAMIC_PROBE_FILENAME)
                 with open(sandbox_file, "w") as f:
                     f.write(_wrap_code_as_plugin(code_match.group(1)))
-                self._add_log({"type": "success", "message": "[Weaponize Agent] 成功投递并沙箱化 0-day 探测脚本: 99_Dynamic_0Day.py"})
+                self._add_log({"type": "success", "message": f"[Weaponize Agent] 成功投递并沙箱化未知服务动态探测脚本: {DYNAMIC_PROBE_FILENAME}"})
         elif phase == "execute":
             existing_error_items = [
                 item for item in (self.structured_results.get("execution", {}).get("items") or [])

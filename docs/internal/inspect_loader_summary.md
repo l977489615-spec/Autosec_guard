@@ -4,7 +4,7 @@
 - `server/poc_worker.py`
 - `server/sandbox_runner.py`
 - `server/pocs/iv_plugin_base.py`
-- `server/pocs/99_Dynamic_0Day.py`
+- `server/pocs/99_Dynamic_Unknown_Service_Probe.py`
 
 ## Edge execution path
 1. `server/poc_worker.py` builds a `PocWorkerPlan`.
@@ -66,16 +66,14 @@ A file can trigger this if:
 - its class does not expose `run_verify`
 - its class is nested or otherwise not visible as a normal module attribute after import
 
-## Root cause for `server/pocs/99_Dynamic_0Day.py`
-`99_Dynamic_0Day.py` is a standalone script, not a plugin module:
-- it defines top-level variables
-- it defines functions `telnet_bruteforce(...)` and `ssh_bruteforce(...)`
-- it has `if __name__ == "__main__": ...` script execution logic
-- it defines **no class**
-- therefore it defines no class with `run_verify`
+## Root cause previously observed for the dynamic probe
+The earlier dynamic probe file was a standalone script rather than a plugin module:
+- it defined top-level variables and helper functions
+- it had `if __name__ == "__main__": ...` script execution logic
+- it defined no concrete subclass of `IVIVulnerabilityPlugin`
+- therefore it exposed no class with `run_verify`
 
-So the loader imports the file successfully, scans `dir(module)`, finds no eligible class, and returns:
-- `{"error":"No valid plugin class found"}`
+The current `99_Dynamic_Unknown_Service_Probe.py` follows the standard plugin contract by defining `DynamicUnknownServiceProbePlugin(IVIVulnerabilityPlugin)`.
 
 ## Important note on naming vs inheritance
 There is no strict class-name convention in the loader besides excluding the literal base class name `IVIVulnerabilityPlugin`.

@@ -24,7 +24,7 @@ const PHASES: AgentPhase[] = [
   { name: 'recon', label: '侦察 Agent', icon: Network, description: '端口扫描 + 拓扑分析 + 服务指纹' },
   { name: 'planner', label: '规划 Agent', icon: Sliders, description: '多级任务编排与攻击路径规划' },
   { name: 'decision', label: '决策 Agent', icon: Cpu, description: '自适应 PoC 筛选 + 认证策略生成' },
-  { name: 'weaponize', label: '开采 Agent', icon: Zap, description: '零日漏洞 (0-day) 动态载荷生成' },
+  { name: 'weaponize', label: '探测生成 Agent', icon: Zap, description: '未知服务协议感知型动态探测生成' },
   { name: 'execute', label: '执行 Agent', icon: Shield, description: 'PoC 自动化执行 + 响应反馈闭环' },
   { name: 'reflector', label: '反思 Agent', icon: RotateCcw, description: '错误恢复与动态策略调整' },
   { name: 'assess', label: '评估 Agent', icon: FileText, description: 'ISO 21434 合规报告生成' },
