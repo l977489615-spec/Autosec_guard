@@ -22,7 +22,7 @@ interface AgentPhase {
 
 const PHASES: AgentPhase[] = [
   { name: 'recon', label: '侦察 Agent', icon: Network, description: '端口扫描 + 拓扑分析 + 服务指纹' },
-  { name: 'planner', label: '规划 Agent', icon: Sliders, description: '多级任务编排与攻击路径规划' },
+  { name: 'planner', label: '规划 Agent', icon: Sliders, description: '多级任务编排与验证路径规划' },
   { name: 'decision', label: '决策 Agent', icon: Cpu, description: '自适应 PoC 筛选 + 认证策略生成' },
   { name: 'weaponize', label: '探测生成 Agent', icon: Zap, description: '未知服务协议感知型动态探测生成' },
   { name: 'execute', label: '执行 Agent', icon: Shield, description: 'PoC 自动化执行 + 响应反馈闭环' },
@@ -148,9 +148,9 @@ const diagnosePhaseOutput = (output: string) => {
 
 const stringifyPhaseContext = (label: string, output: string, structured?: any) => {
   if (structured && Object.keys(structured).length > 0) {
-    return `\n\n${label} 结果(JSON):\n${JSON.stringify(structured, null, 2)}`;
+    return `\n\n${label} 结果(JSON):\n${truncateText(JSON.stringify(compactForBrowserStorage(structured), null, 2))}`;
   }
-  return `\n\n${label} 结果:\n${output}`;
+  return `\n\n${label} 结果:\n${truncateText(output || '')}`;
 };
 
 const LOAD_COLOR: Record<string, string> = {
@@ -159,6 +159,51 @@ const LOAD_COLOR: Record<string, string> = {
   critical: 'text-red-400',
   unknown: 'text-gray-400',
 };
+
+const MAX_AGENT_LOG_LINES = 600;
+const MAX_AGENT_LOG_MESSAGE_CHARS = 1200;
+const MAX_STORED_STRING_CHARS = 6000;
+const MAX_STORED_ARRAY_ITEMS = 80;
+const MAX_STORED_OBJECT_KEYS = 80;
+
+const truncateText = (value: string, max = MAX_STORED_STRING_CHARS) =>
+  value.length > max ? `${value.slice(0, max)}\n...[truncated ${value.length - max} chars]` : value;
+
+const compactLog = (log: any) => ({
+  ...log,
+  message: truncateText(String(log?.message ?? ''), MAX_AGENT_LOG_MESSAGE_CHARS),
+});
+
+const compactLogs = (items: any[] = []) =>
+  items.slice(-MAX_AGENT_LOG_LINES).map(compactLog);
+
+const compactUiPhases = (items: PhaseResult[] = []) =>
+  items.map(item => ({
+    ...item,
+    output: truncateText(item.output || ''),
+  }));
+
+const compactForBrowserStorage = (value: any, depth = 0): any => {
+  if (value == null) return value;
+  if (typeof value === 'string') return truncateText(value);
+  if (typeof value !== 'object') return value;
+  if (depth >= 4) return '[truncated-depth]';
+  if (Array.isArray(value)) {
+    return value.slice(0, MAX_STORED_ARRAY_ITEMS).map(item => compactForBrowserStorage(item, depth + 1));
+  }
+  return Object.fromEntries(
+    Object.entries(value)
+      .slice(0, MAX_STORED_OBJECT_KEYS)
+      .map(([key, item]) => [key, compactForBrowserStorage(item, depth + 1)])
+  );
+};
+
+const compactPhaseRecords = (records: PhaseRecord[] = []) =>
+  records.map(record => ({
+    ...record,
+    raw_output: truncateText(record.raw_output || ''),
+    structured_output: compactForBrowserStorage(record.structured_output || {}),
+  }));
 
 const buildIdlePhases = (): PhaseResult[] =>
   PHASES.map(p => ({ phase: p.name, status: 'idle', output: '' }));
@@ -187,11 +232,23 @@ const getResumablePhase = (records: PhaseRecord[] = []) => {
   return null;
 };
 
+const detectLowResourceMode = () => {
+  if (typeof navigator === 'undefined') return false;
+  const nav = navigator as Navigator & { deviceMemory?: number };
+  const ua = navigator.userAgent.toLowerCase();
+  const isLinux = ua.includes('linux');
+  const isFirefox = ua.includes('firefox');
+  const cpuCores = typeof nav.hardwareConcurrency === 'number' ? nav.hardwareConcurrency : 8;
+  const deviceMemory = typeof nav.deviceMemory === 'number' ? nav.deviceMemory : 8;
+  return (isLinux && isFirefox) || cpuCores <= 4 || deviceMemory <= 4;
+};
+
 const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComplete, engineUrl }) => {
   const [targetIp, setTargetIp] = useState('');
   const [targetName, setTargetName] = useState('IVI System');
   const [isFullMode, setIsFullMode] = useState(true);
   const [showAdvanced, setShowAdvanced] = useState(true);
+  const [lowResourceMode, setLowResourceMode] = useState(false);
 
   // 可选参数 — 控制 Agent 选择哪类 PoC
   const [canInterface, setCanInterface] = useState('PCAN_USBBUS1');
@@ -233,18 +290,20 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
         const s = JSON.parse(saved);
         if (s.targetIp) setTargetIp(s.targetIp);
         if (s.targetName) setTargetName(s.targetName);
-        const restoredPhaseRecords = Array.isArray(s.phaseRecords) ? s.phaseRecords : [];
+        if (typeof s.lowResourceMode === 'boolean') setLowResourceMode(s.lowResourceMode);
+        else setLowResourceMode(detectLowResourceMode());
+        const restoredPhaseRecords = compactPhaseRecords(Array.isArray(s.phaseRecords) ? s.phaseRecords : []);
         setPhaseRecords(restoredPhaseRecords);
-        setStructuredState(s.structuredState || {});
-        setFindings(Array.isArray(s.findings) ? s.findings : []);
+        setStructuredState(compactForBrowserStorage(s.structuredState || {}));
+        setFindings(compactForBrowserStorage(Array.isArray(s.findings) ? s.findings : []));
         setPhases(
           Array.isArray(s.phases) && s.phases.length === PHASES.length
-            ? s.phases
+            ? compactUiPhases(s.phases)
             : buildUiPhasesFromRecords(restoredPhaseRecords)
         );
-        if (s.finalReport) setFinalReport(s.finalReport);
-        if (s.topology) setTopology(s.topology);
-        if (s.adaptiveCtx) setAdaptiveCtx(s.adaptiveCtx);
+        if (s.finalReport) setFinalReport(truncateText(s.finalReport, 20000));
+        if (s.topology) setTopology(compactForBrowserStorage(s.topology));
+        if (s.adaptiveCtx) setAdaptiveCtx(compactForBrowserStorage(s.adaptiveCtx));
         if (s.scanTime) setScanTime(s.scanTime);
         if (s.canInterface) setCanInterface(s.canInterface);
         if (s.bluetoothMac) setBluetoothMac(s.bluetoothMac);
@@ -252,10 +311,12 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
         if (s.rfFrequency) setRfFrequency(s.rfFrequency);
         setActiveStep(-1);
         if (s.riskScore) setRiskScore(s.riskScore);
-        if (s.results) setResults(s.results);
-        if (s.logs) setLogs(s.logs);
-        if (s.assessment) setAssessment(s.assessment);
+        if (s.results) setResults(compactForBrowserStorage(s.results));
+        if (s.logs) setLogs(compactLogs(s.logs));
+        if (s.assessment) setAssessment(compactForBrowserStorage(s.assessment));
         if (typeof s.activeStep === 'number') setActiveStep(s.activeStep);
+      } else {
+        setLowResourceMode(detectLowResourceMode());
       }
     } catch { }
   }, []);
@@ -263,17 +324,23 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
   // ── 保存状态到 localStorage ──
   const saveState = (override: Record<string, unknown> = {}) => {
     try {
-      const current = {
+      const current: any = {
         targetIp, targetName, phases, finalReport,
         topology, adaptiveCtx, scanTime, activeStep,
-        canInterface, bluetoothMac, wifiInterface, rfFrequency,
-        riskScore, results, logs,
-        assessment,
-        phaseRecords,
-        structuredState,
-        findings,
+        canInterface, bluetoothMac, wifiInterface, rfFrequency, lowResourceMode,
+        riskScore, results, logs, assessment, phaseRecords, structuredState, findings,
         ...override,
       };
+      current.phases = compactUiPhases(current.phases);
+      current.finalReport = truncateText(current.finalReport || '', 20000);
+      current.topology = compactForBrowserStorage(current.topology);
+      current.adaptiveCtx = compactForBrowserStorage(current.adaptiveCtx);
+      current.results = compactForBrowserStorage(current.results);
+      current.logs = compactLogs(current.logs);
+      current.assessment = compactForBrowserStorage(current.assessment);
+      current.phaseRecords = compactPhaseRecords(current.phaseRecords);
+      current.structuredState = compactForBrowserStorage(current.structuredState);
+      current.findings = compactForBrowserStorage(current.findings);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
     } catch { }
   };
@@ -402,7 +469,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
       results: nextResults ?? results,
       findings: nextFindings ?? findings,
       phaseRecords: nextPhaseRecords ?? phaseRecords,
-      structuredState: nextStructured ?? structuredState,
+      structuredState: compactForBrowserStorage(nextStructured ?? structuredState),
       assessment: nextAssessment ?? assessment,
       finalReport: nextFinalReport ?? finalReport,
       activeStep: nextActiveStep ?? activeStep,
@@ -422,9 +489,9 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
     const initialFindings = isResume ? [...findings] : [];
     const initialResults = isResume ? [...results] : [];
     const initialLogs = isResume
-      ? [...logs, { timestamp: new Date().toLocaleTimeString(), type: 'info', message: `[*] 从阶段 ${resumeFrom} 恢复执行任务: ${targetName}` }]
+      ? [...logs, { timestamp: new Date().toLocaleTimeString(), type: 'info', message: `[*] 从阶段 ${resumeFrom} 恢复执行验证任务: ${targetName}` }]
       : [
-          { timestamp: new Date().toLocaleTimeString(), type: 'info', message: `[*] 启动自主渗透测试任务: ${targetName}` },
+          { timestamp: new Date().toLocaleTimeString(), type: 'info', message: `[*] 启动自动化验证任务: ${targetName}` },
           { timestamp: new Date().toLocaleTimeString(), type: 'info', message: `[*] 目标向量: ${targetIp}` }
         ];
 
@@ -509,10 +576,10 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
         }
 
         currentFinalReport = data?.phases?.assessment_report || currentFinalReport;
-        collectedLogs = Array.isArray(data.logs) ? data.logs : collectedLogs;
+        collectedLogs = compactLogs(Array.isArray(data.logs) ? data.logs : collectedLogs);
         collectedFindings = Array.isArray(data.findings) ? data.findings : collectedFindings;
         collectedPhaseRecords = Array.isArray(data.phase_records) ? data.phase_records : collectedPhaseRecords;
-        structuredPhases = data.structured || structuredPhases;
+        structuredPhases = compactForBrowserStorage(data.structured || structuredPhases);
         if (collectedFindings.length > 0) {
           collectedResults = collectedFindings.map((f: any) => ({
             ...f,
@@ -521,11 +588,11 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
           }));
         }
 
-        setLogs(collectedLogs);
-        setFindings(collectedFindings);
-        setResults(collectedResults);
-        setPhaseRecords(collectedPhaseRecords);
-        setStructuredState(structuredPhases);
+        setLogs(compactLogs(collectedLogs));
+        setFindings(compactForBrowserStorage(collectedFindings));
+        setResults(compactForBrowserStorage(collectedResults));
+        setPhaseRecords(compactPhaseRecords(collectedPhaseRecords));
+        setStructuredState(compactForBrowserStorage(structuredPhases));
         setFinalReport(currentFinalReport);
         const nextPhases = buildUiPhasesFromRecords(collectedPhaseRecords, phases);
         setPhases(nextPhases);
@@ -588,8 +655,9 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
           // 集成后端返回的所有详细日志 (工具调用、PoC 详情及 Agent 步骤)
           if (data.logs && Array.isArray(data.logs)) {
             collectedLogs.push(...data.logs);
-            setLogs([...collectedLogs]);
-            persistRunState({ nextLogs: [...collectedLogs] });
+            collectedLogs = compactLogs(collectedLogs);
+            setLogs(collectedLogs);
+            persistRunState({ nextLogs: collectedLogs });
           }
 
           if (data.phase_records && Array.isArray(data.phase_records)) {
@@ -598,12 +666,12 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
               if (idx >= 0) collectedPhaseRecords[idx] = record;
               else collectedPhaseRecords.push(record);
             });
-            setPhaseRecords([...collectedPhaseRecords]);
+            setPhaseRecords(compactPhaseRecords([...collectedPhaseRecords]));
           }
 
           if (data.structured_result) {
-            structuredPhases[PHASES[i].name] = data.structured_result;
-            setStructuredState({ ...structuredPhases });
+            structuredPhases[PHASES[i].name] = compactForBrowserStorage(data.structured_result);
+            setStructuredState(compactForBrowserStorage({ ...structuredPhases }));
           }
 
           // 集成结构化漏洞发现
@@ -622,8 +690,8 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
                 });
               }
             });
-            setResults([...collectedResults]);
-            setFindings([...collectedFindings]);
+            setResults(compactForBrowserStorage([...collectedResults]));
+            setFindings(compactForBrowserStorage([...collectedFindings]));
           }
 
           prevContext += stringifyPhaseContext(PHASES[i].label, output, data.structured_result);
@@ -651,8 +719,9 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
             message: `[!] ${PHASES[i].label} 执行异常: ${errorMessage}`
           };
           collectedLogs.push(errorLog);
-          setLogs([...collectedLogs]);
-          persistRunState({ nextLogs: [...collectedLogs] });
+          collectedLogs = compactLogs(collectedLogs);
+          setLogs(collectedLogs);
+          persistRunState({ nextLogs: collectedLogs });
         }
       }
       }
@@ -718,8 +787,9 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
         collectedLogs.push({
           timestamp: new Date().toLocaleTimeString(),
           type: 'warning',
-          message: `[!] 攻击路径与整改模拟生成失败: ${e.message}`,
+          message: `[!] 关联图与整改模拟生成失败: ${e.message}`,
         });
+        collectedLogs = compactLogs(collectedLogs);
       }
 
       const sessionObj = {
@@ -750,9 +820,9 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
       onSessionComplete?.(sessionObj);
 
       // 完成后保存所有状态到 localStorage
-      setPhaseRecords(collectedPhaseRecords);
-      setStructuredState(structuredPhases);
-      setFindings(collectedFindings);
+      setPhaseRecords(compactPhaseRecords(collectedPhaseRecords));
+      setStructuredState(compactForBrowserStorage(structuredPhases));
+      setFindings(compactForBrowserStorage(collectedFindings));
       persistRunState({
         nextActiveStep: 3,
         nextAssessment: artifacts,
@@ -819,7 +889,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
       <div class="meta">
         <span><span class="label">扫描目标：</span>${targetName}&#8203;(${targetIp})</span>
         <span><span class="label">扫描时间：</span>${now}</span>
-        <span><span class="label">报告类型：</span>Agent 自主渗透测试报告</span>
+        <span><span class="label">报告类型：</span>Agent 自动化验证报告</span>
         <span><span class="label">工具版本：</span>AutoSec Guard v2.0 · Qwen-Max (千问)</span>
       </div>
     </div>
@@ -889,8 +959,8 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
         <div className="flex items-center gap-3">
           <Bot className="w-6 h-6 text-cyan-400 shrink-0" />
           <div>
-            <h2 className="text-lg font-bold text-cyan-300">多 Agent 自主渗透测试</h2>
-            <p className="text-xs text-gray-400">针对 IVI 测试场景 · 服务感知自适应 + MCP + Qwen (千问) Function Calling</p>
+            <h2 className="text-lg font-bold text-cyan-300">多 Agent 自动化安全验证</h2>
+            <p className="text-xs text-gray-400">针对 IVI 验证场景 · 服务感知自适应 + MCP + Qwen (千问) Function Calling</p>
           </div>
         </div>
         <div className="flex-1" />
@@ -914,6 +984,15 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
           >
             <Zap className="w-3.5 h-3.5" />
             极速介入
+          </button>
+          <button
+            onClick={() => setLowResourceMode(v => !v)}
+            disabled={isRunning}
+            className="flex items-center gap-2 bg-black/40 border border-cyan-700/50 hover:border-cyan-500 hover:text-cyan-300 text-cyan-400/80 disabled:opacity-50 disabled:cursor-not-allowed rounded px-3 py-1.5 text-xs font-semibold transition-colors"
+            title="降低浏览器渲染与内存压力"
+          >
+            <AlertTriangle className="w-3.5 h-3.5" />
+            {lowResourceMode ? '低资源模式: 开' : '低资源模式: 关'}
           </button>
           <button
             onClick={handleReset}
@@ -1055,21 +1134,50 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
              <span className="ml-2 w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
           )}
         </div>
-        
-        <Canvas camera={{ position: [3, 2, 5], fov: 45 }} className="w-full h-full">
-          <ambientLight intensity={0.5} />
-          <pointLight position={[10, 10, 10]} intensity={1} />
-          <OrbitControls 
-            enableZoom={false} 
-            enablePan={false}
-            autoRotate={activeStep < 0}
-            autoRotateSpeed={1}
-            maxPolarAngle={Math.PI / 2 - 0.1} // don't go below ground
-          />
-          <Environment preset="night" />
-          <CarModel activeZones={activeZones} />
-          <ContactShadows resolution={512} scale={10} blur={2} opacity={0.6} far={10} color="#0eb5c2" />
-        </Canvas>
+
+        {lowResourceMode ? (
+          <div className="w-full h-full flex items-center justify-center px-6">
+            <div className="w-full max-w-2xl rounded-xl border border-cyan-900/40 bg-black/50 p-5 backdrop-blur-sm">
+              <div className="flex items-center gap-2 text-cyan-300 text-sm font-semibold">
+                <AlertTriangle className="w-4 h-4" />
+                低资源模式已启用
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
+                <div className="rounded-lg border border-cyan-900/30 bg-black/30 p-3">
+                  <div className="text-gray-500">当前阶段</div>
+                  <div className="mt-1 text-cyan-300 font-semibold">{activeStep >= 0 ? PHASES[activeStep]?.label : '待机'}</div>
+                </div>
+                <div className="rounded-lg border border-cyan-900/30 bg-black/30 p-3">
+                  <div className="text-gray-500">活跃区域</div>
+                  <div className="mt-1 text-cyan-300 font-semibold">{activeZones.length > 0 ? activeZones.join(', ') : '无'}</div>
+                </div>
+                <div className="rounded-lg border border-cyan-900/30 bg-black/30 p-3">
+                  <div className="text-gray-500">日志缓存</div>
+                  <div className="mt-1 text-cyan-300 font-semibold">{logs.length} / {MAX_AGENT_LOG_LINES}</div>
+                </div>
+                <div className="rounded-lg border border-cyan-900/30 bg-black/30 p-3">
+                  <div className="text-gray-500">说明</div>
+                  <div className="mt-1 text-gray-300">已关闭 3D 场景，优先保证 Kali/虚拟机浏览器稳定性。</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <Canvas camera={{ position: [3, 2, 5], fov: 45 }} className="w-full h-full">
+            <ambientLight intensity={0.5} />
+            <pointLight position={[10, 10, 10]} intensity={1} />
+            <OrbitControls
+              enableZoom={false}
+              enablePan={false}
+              autoRotate={activeStep < 0}
+              autoRotateSpeed={1}
+              maxPolarAngle={Math.PI / 2 - 0.1}
+            />
+            <Environment preset="night" />
+            <CarModel activeZones={activeZones} />
+            <ContactShadows resolution={512} scale={10} blur={2} opacity={0.6} far={10} color="#0eb5c2" />
+          </Canvas>
+        )}
       </div>
 
       {/* Context Cards Row */}

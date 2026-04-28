@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { POC, ConnectionParams, ParamType } from '../types';
+import { POC, ConnectionParams, ParamType, EdgeTaskRecord } from '../types';
 import { X, Play, Terminal, AlertTriangle, ShieldCheck, ServerCrash, RotateCw, WifiOff, Cpu, Send } from 'lucide-react';
-import { checkBackendHealth, createEdgeTask, getBackendUrl, getEdgeAgents, getEdgeRecommendations, runPocPlugin } from '../services/api';
+import { checkBackendHealth, createEdgeTask, getBackendUrl, getEdgeAgents, getEdgeRecommendations, getEdgeTasks, runPocPlugin } from '../services/api';
 
 interface ManualTestModalProps {
   poc: POC | null;
@@ -25,6 +25,7 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
   const [edgeRecommendations, setEdgeRecommendations] = useState<any[]>([]);
   const [selectedEdgeAgent, setSelectedEdgeAgent] = useState<string>('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pollAbortRef = useRef(false);
   const supportedPlanes = poc?.supportedExecutionPlanes || ['cloud', 'edge'];
   const cloudAllowed = supportedPlanes.includes('cloud');
   const edgeAllowed = supportedPlanes.includes('edge');
@@ -78,6 +79,17 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
     }
   }, [consoleOutput]);
 
+  useEffect(() => {
+    pollAbortRef.current = !isOpen;
+  }, [isOpen]);
+
+  useEffect(() => {
+    pollAbortRef.current = false;
+    return () => {
+      pollAbortRef.current = true;
+    };
+  }, []);
+
   if (!isOpen || !poc) return null;
 
   const buildEdgeParams = () => {
@@ -103,6 +115,84 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
     } catch (e: any) {
       setConsoleOutput((prev) => [...prev, `[-] Edge recommendation failed: ${e?.message || e}`]);
     }
+  };
+
+  const pushConsoleLines = (lines: string[] = []) => {
+    if (!lines.length) return;
+    setConsoleOutput((prev) => [...prev, ...lines]);
+  };
+
+  const applyEdgeExecutionResult = (result: Record<string, any> | null | undefined) => {
+    if (!result) {
+      setTestResult('error');
+      setConsoleOutput((prev) => [...prev, '[-] Edge task completed without a result payload.']);
+      return;
+    }
+
+    if (Array.isArray(result.logs)) {
+      pushConsoleLines(result.logs.map((line: unknown) => String(line)));
+    }
+    if (Array.isArray(result.errors) && result.errors.length > 0) {
+      pushConsoleLines(result.errors.map((line: unknown) => `[E] ${String(line)}`));
+    }
+
+    if (result.vulnerable) {
+      setTestResult('fail');
+      setConsoleOutput((prev) => [...prev, `[!] STATUS: Validation confirmed issue. Evidence: ${result.evidence || 'N/A'}`]);
+      return;
+    }
+
+    if (result.success) {
+      setTestResult('success');
+      setConsoleOutput((prev) => [...prev, `[*] STATUS: Validation completed. (${result.elapsed_seconds || 0}s)`]);
+      return;
+    }
+
+    setTestResult('error');
+    setConsoleOutput((prev) => [...prev, `[-] Execution failed: ${result.error || 'unknown error'}`]);
+  };
+
+  const pollEdgeTaskResult = async (taskId: string) => {
+    if (!token) throw new Error('JWT token missing for edge task polling.');
+
+    const maxAttempts = 60;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      if (pollAbortRef.current) {
+        throw new Error('Edge task polling cancelled.');
+      }
+
+      await new Promise(resolve => window.setTimeout(resolve, 2000));
+      const data = await getEdgeTasks(token);
+      const task = (data.tasks || []).find((item: EdgeTaskRecord) => item.task_id === taskId) as EdgeTaskRecord | undefined;
+
+      if (!task) {
+        setConsoleOutput((prev) => [...prev, `[-] Edge task ${taskId} no longer appears in the task list.`]);
+        return;
+      }
+
+      if (attempt === 1 || attempt % 5 === 0) {
+        setConsoleOutput((prev) => [...prev, `[*] Polling edge task ${taskId}: ${task.status}`]);
+      }
+
+      if (task.status === 'completed') {
+        setConsoleOutput((prev) => [...prev, `[+] Edge task ${taskId} completed.`]);
+        applyEdgeExecutionResult(task.result);
+        return;
+      }
+
+      if (task.status === 'failed') {
+        setConsoleOutput((prev) => [...prev, `[-] Edge task ${taskId} failed.`]);
+        applyEdgeExecutionResult(task.result || { success: false, error: 'Edge task failed without detailed result.' });
+        return;
+      }
+    }
+
+    setTestResult('idle');
+    setConsoleOutput((prev) => [
+      ...prev,
+      '[-] Timed out waiting for the edge task result in this dialog.',
+      '[*] Open Edge Control Plane if you need the final task state later.',
+    ]);
   };
 
   const handleRun = async () => {
@@ -149,28 +239,18 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
 
         const syncResult = taskResp.sync_result;
         if (syncResult) {
-          // Display logs from actual execution
-          if (Array.isArray(syncResult.logs)) {
-            syncResult.logs.forEach((l: string) => setConsoleOutput(p => [...p, l]));
-          }
-          if (Array.isArray(syncResult.errors) && syncResult.errors.length > 0) {
-            syncResult.errors.forEach((e: string) => setConsoleOutput(p => [...p, `[E] ${e}`]));
-          }
-
-          if (syncResult.vulnerable) {
-            setTestResult('fail');
-            setConsoleOutput(p => [...p, `[!] STATUS: Vulnerability Confirmed. Evidence: ${syncResult.evidence || 'N/A'}`]);
-          } else if (syncResult.success) {
-            setTestResult('success');
-            setConsoleOutput(p => [...p, `[*] STATUS: Clean. (${syncResult.elapsed_seconds || 0}s)`]);
-          } else {
-            setTestResult('error');
-            setConsoleOutput(p => [...p, `[-] Execution failed: ${syncResult.error || 'unknown error'}`]);
-          }
+          applyEdgeExecutionResult(syncResult);
         } else {
-          // Fallback: async mode (no sync_result returned)
-          setConsoleOutput(p => [...p, `[*] Task queued (async). Check Edge Control panel for results.`]);
+          setConsoleOutput((p) => [
+            ...p,
+            `[*] Task queued (${taskResp.sync_pending ? 'sync timeout' : 'async'}). Waiting for edge result...`,
+          ]);
           setTestResult('idle');
+          if (taskResp.task?.task_id) {
+            await pollEdgeTaskResult(taskResp.task.task_id);
+          } else {
+            setConsoleOutput((p) => [...p, '[-] Missing task id. Cannot poll edge result automatically.']);
+          }
         }
         setIsRunning(false);
         return;
