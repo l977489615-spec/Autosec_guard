@@ -6,7 +6,7 @@ from pathlib import Path
 from audit_pocs import audit
 
 
-LOCAL_EDGE_PARAMS = {
+LOCAL_RUNTIME_PARAMS = {
     "can_interface",
     "interface",
     "bd_addr",
@@ -36,10 +36,10 @@ def classify_record(record: dict) -> dict:
     params = set(record.get("meta_required_params") or [])
     hardware_hints = record.get("hardware_hints") or []
     evidence_style = "direct"
-    deployment_mode = "cloud_remote"
+    deployment_mode = "local_network"
 
-    if params & LOCAL_EDGE_PARAMS or hardware_hints:
-        deployment_mode = "cloud_plus_edge"
+    if params & LOCAL_RUNTIME_PARAMS or hardware_hints:
+        deployment_mode = "local_workstation"
 
     file_path = Path(record["file"])
     text = (Path(__file__).resolve().parent / file_path).read_text(encoding="utf-8", errors="ignore").lower()
@@ -47,14 +47,14 @@ def classify_record(record: dict) -> dict:
     if manual_confirmation:
         evidence_style = "manual_confirmation"
 
-    if deployment_mode == "cloud_plus_edge" and manual_confirmation:
-        readiness = "edge_required_manual_confirmation"
-    elif deployment_mode == "cloud_plus_edge":
-        readiness = "edge_required"
+    if deployment_mode == "local_workstation" and manual_confirmation:
+        readiness = "local_runtime_manual_confirmation"
+    elif deployment_mode == "local_workstation":
+        readiness = "local_runtime_required"
     elif manual_confirmation:
-        readiness = "cloud_reachable_manual_confirmation"
+        readiness = "local_network_manual_confirmation"
     else:
-        readiness = "cloud_ready"
+        readiness = "local_network_ready"
 
     return {
         "deployment_mode": deployment_mode,

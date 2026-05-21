@@ -403,56 +403,6 @@ const authedFetch = async (path: string, token: string | null, init?: RequestIni
   return data;
 };
 
-export const getEdgeAgents = async (token: string | null) => {
-  return authedFetch('/api/edge/agents', token, { method: 'GET' });
-};
-
-export const getEdgeTasks = async (token: string | null) => {
-  return authedFetch('/api/edge/tasks', token, { method: 'GET' });
-};
-
-export const getEdgeRecommendations = async (
-  filename: string,
-  params: Record<string, any>,
-  token: string | null
-) => {
-  return authedFetch('/api/edge/recommendations', token, {
-    method: 'POST',
-    body: JSON.stringify({ filename, params }),
-  });
-};
-
-export const createEdgeTask = async (
-  payload: {
-    filename: string;
-    params: Record<string, any>;
-    agent_id?: string;
-    session_id?: string;
-    trace_id?: string;
-  },
-  token: string | null
-) => {
-  return authedFetch('/api/edge/tasks', token, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-};
-
-export const generateEnrollmentToken = async (
-  label: string,
-  ttlHours: number,
-  token: string | null
-) => {
-  return authedFetch('/api/edge/enrollment-tokens', token, {
-    method: 'POST',
-    body: JSON.stringify({ label, ttl_hours: ttlHours }),
-  });
-};
-
-export const getEnrollmentTokens = async (token: string | null) => {
-  return authedFetch('/api/edge/enrollment-tokens', token, { method: 'GET' });
-};
-
-export const revokeEnrollmentToken = async (tokenId: number, token: string | null) => {
-  return authedFetch(`/api/edge/enrollment-tokens/${tokenId}`, token, { method: 'DELETE' });
+export const getLocalCapabilities = async (token: string | null) => {
+  return authedFetch('/api/local/capabilities', token, { method: 'GET' });
 };

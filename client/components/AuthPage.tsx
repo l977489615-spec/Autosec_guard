@@ -68,7 +68,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
 						智驭<span className="text-cyber-accent">安盾</span>
 					</h1>
 					<p className="text-cyber-400 text-sm mt-2 flex items-center justify-center gap-2 font-mono">
-						<Terminal size={14} /> ICV Vulnerability Platform
+						<Terminal size={14} /> Edge-side ICV Vulnerability Workstation
 					</p>
 				</div>
 

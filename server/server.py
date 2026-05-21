@@ -1,6 +1,6 @@
 import sys
 import subprocess
-from typing import Optional, List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple
 import tempfile
 import os
 import json
@@ -11,24 +11,21 @@ import logging
 import bcrypt
 import jwt
 import datetime
-import ipaddress
 import re
 import socket
 import requests
 import ast
 import uuid
-import secrets
 import base64
 import hashlib
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from urllib.parse import quote
-from flask import Flask, request, jsonify, Response, send_file
+from flask import Flask, request, jsonify, Response, send_from_directory
 from flask_cors import CORS, cross_origin
 from flask_sqlalchemy import SQLAlchemy
 from functools import wraps
 from cryptography.fernet import Fernet, InvalidToken
-from config import get_config, get_runtime_warnings
+from config import get_config, get_runtime_data_dir, get_runtime_warnings
 
 def _get_utc_now() -> datetime.datetime:
     """Helper to return a naive UTC datetime, consistent across the app and DB."""
@@ -45,22 +42,11 @@ from benchmark_suite import (
     score_session_against_benchmark as evaluate_session_against_benchmark,
 )
 from poc_worker import get_poc_worker
-from poc_catalog import resolve_poc_path
-from edge_requirements import (
+from poc_catalog import list_available_poc_names, resolve_poc_path, resolve_poc_source
+from local_requirements import (
     classify_poc_execution_mode,
-    edge_capabilities_missing,
-    edge_capability_flags,
-    infer_edge_requirements,
+    local_capability_flags,
 )
-from edge_deployment import (
-    build_edge_install_command,
-    edge_runtime_filename,
-    edge_runtime_download_path,
-    normalize_edge_arch,
-    normalize_edge_os,
-    resolve_public_edge_api_base,
-)
-from edge_task_payload import attach_poc_code_to_task_payload
 from poc_security import extract_poc_security_profile, should_require_disruptive_approval
 from poc_execution_service import normalize_poc_params, resolve_target_label
 from auth_service import resolve_user_from_bearer
@@ -71,7 +57,8 @@ from auth_service import resolve_user_from_bearer
 # ==========================================
 # Configure Logging
 # ==========================================
-LOGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
+RUNTIME_DATA_DIR = get_runtime_data_dir()
+LOGS_DIR = str(RUNTIME_DATA_DIR / 'logs')
 os.makedirs(LOGS_DIR, exist_ok=True)
 log_file = os.path.join(LOGS_DIR, 'autosec.log')
 
@@ -89,6 +76,16 @@ console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
+SERVER_DIR = Path(__file__).resolve().parent
+if getattr(sys, "frozen", False):
+    SERVER_DIR = Path(getattr(sys, "_MEIPASS", SERVER_DIR))
+
+WEB_DIST_CANDIDATES = [
+    SERVER_DIR / 'web_dist',
+    SERVER_DIR.parent / 'client' / 'dist',
+    Path(sys.argv[0]).resolve().parent / 'web_dist' if sys.argv and sys.argv[0] else Path.cwd() / 'web_dist',
+]
+
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"], "allow_headers": "*"}})  # Allow React Frontend to communicate
 
@@ -96,10 +93,7 @@ CONFIG = get_config()
 RUNTIME_WARNINGS = get_runtime_warnings(CONFIG)
 
 # Path to the Pocs directory
-POCS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'pocs')
-EDGE_DIST_DIR = Path(os.path.dirname(os.path.abspath(__file__))) / 'edge_dist'
-EDGE_BUILD_DIR = Path(os.path.dirname(os.path.abspath(__file__))).parent / 'build' / 'edge_runtime'
-
+POCS_DIR = str(SERVER_DIR / 'pocs')
 # ==========================================
 # Application Configuration
 # ==========================================
@@ -481,115 +475,11 @@ class ExecutionArtifact(db.Model):
         }
 
 
-class EdgeAgent(db.Model):
-    __tablename__ = 'edge_agents'
-    id = db.Column(db.Integer, primary_key=True)
-    agent_id = db.Column(db.String(120), unique=True, nullable=False, index=True)
-    display_name = db.Column(db.String(255), nullable=False)
-    site_name = db.Column(db.String(255), nullable=True)
-    token_hash = db.Column(db.String(255), nullable=False)
-    status = db.Column(db.String(40), default='registered', nullable=False, index=True)
-    capabilities_json = db.Column(db.Text, nullable=True)
-    metadata_json = db.Column(db.Text, nullable=True)
-    last_seen_at = db.Column(db.DateTime, nullable=True, index=True)
-    created_at = db.Column(db.DateTime, default=_get_utc_now, nullable=False, index=True)
-    updated_at = db.Column(db.DateTime, default=_get_utc_now, onupdate=_get_utc_now, nullable=False)
-
-    def to_dict(self):
-        capability_flags = edge_capability_flags(
-            json.loads(self.capabilities_json) if self.capabilities_json else {}
-        )
-        effective_status = self.status
-        if self.last_seen_at and (_get_utc_now() - self.last_seen_at).total_seconds() > 90:
-            effective_status = 'offline'
-        return {
-            "agent_id": self.agent_id,
-            "display_name": self.display_name,
-            "site_name": self.site_name,
-            "status": effective_status,
-            "capabilities": json.loads(self.capabilities_json) if self.capabilities_json else {},
-            "capability_flags": capability_flags,
-            "metadata": json.loads(self.metadata_json) if self.metadata_json else {},
-            "last_seen_at": self.last_seen_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.last_seen_at else None,
-            "created_at": self.created_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.created_at else None,
-            "updated_at": self.updated_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.updated_at else None,
-        }
-
-
-class EdgeTask(db.Model):
-    __tablename__ = 'edge_tasks'
-    id = db.Column(db.Integer, primary_key=True)
-    task_id = db.Column(db.String(120), unique=True, nullable=False, index=True)
-    edge_agent_id = db.Column(db.Integer, db.ForeignKey('edge_agents.id'), nullable=False, index=True)
-    requested_by_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
-    session_id = db.Column(db.String(120), nullable=True, index=True)
-    trace_id = db.Column(db.String(120), nullable=True, index=True)
-    poc_filename = db.Column(db.String(255), nullable=False)
-    params_json = db.Column(db.Text, nullable=False)
-    status = db.Column(db.String(40), default='queued', nullable=False, index=True)
-    result_json = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default=_get_utc_now, nullable=False, index=True)
-    updated_at = db.Column(db.DateTime, default=_get_utc_now, onupdate=_get_utc_now, nullable=False)
-    started_at = db.Column(db.DateTime, nullable=True)
-    completed_at = db.Column(db.DateTime, nullable=True)
-
-    edge_agent = db.relationship('EdgeAgent', backref=db.backref('tasks', lazy=True))
-    requested_by = db.relationship('User', backref=db.backref('edge_tasks', lazy=True))
-
-    def to_dict(self):
-        return {
-            "task_id": self.task_id,
-            "edge_agent_id": self.edge_agent.agent_id if self.edge_agent else None,
-            "requested_by_user_id": self.requested_by_user_id,
-            "session_id": self.session_id,
-            "trace_id": self.trace_id,
-            "poc_filename": self.poc_filename,
-            "params": json.loads(self.params_json) if self.params_json else {},
-            "status": self.status,
-            "result": json.loads(self.result_json) if self.result_json else None,
-            "created_at": self.created_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.created_at else None,
-            "updated_at": self.updated_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.updated_at else None,
-            "started_at": self.started_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.started_at else None,
-            "completed_at": self.completed_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.completed_at else None,
-        }
-
-
-class EdgeEnrollmentToken(db.Model):
-    __tablename__ = 'edge_enrollment_tokens'
-    id = db.Column(db.Integer, primary_key=True)
-    token_hash = db.Column(db.String(255), nullable=False)
-    label = db.Column(db.String(255), nullable=True)
-    created_by_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
-    used_by_agent_id = db.Column(db.String(120), nullable=True)
-    status = db.Column(db.String(40), default='active', nullable=False, index=True)  # active, used, revoked
-    expires_at = db.Column(db.DateTime, nullable=False)
-    created_at = db.Column(db.DateTime, default=_get_utc_now, nullable=False)
-    used_at = db.Column(db.DateTime, nullable=True)
-
-    created_by = db.relationship('User', backref=db.backref('enrollment_tokens', lazy=True))
-
-    def is_valid(self) -> bool:
-        if self.status != 'active':
-            return False
-        if _get_utc_now() > self.expires_at:
-            return False
-        return True
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "label": self.label,
-            "status": self.status,
-            "created_by": self.created_by.username if self.created_by else None,
-            "used_by_agent_id": self.used_by_agent_id,
-            "expires_at": self.expires_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.expires_at else None,
-            "created_at": self.created_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.created_at else None,
-            "used_at": self.used_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.used_at else None,
-        }
-
-
 def _extract_poc_security_profile(poc_path: str) -> dict:
-    return extract_poc_security_profile(poc_path)
+    source_text = None
+    if not os.path.exists(poc_path):
+        _, _, source_text = resolve_poc_source(POCS_DIR, os.path.relpath(poc_path, POCS_DIR))
+    return extract_poc_security_profile(poc_path, source_text=source_text)
 
 
 def _should_require_disruptive_approval(profile: dict, params: dict) -> bool:
@@ -640,13 +530,14 @@ def _persist_execution_artifact(
     return artifact
 
 
-def _build_poc_registry_entry(filepath: str) -> dict:
-    rel_path = os.path.relpath(filepath, POCS_DIR)
+def _build_poc_registry_entry(filepath: str, source_text: str | None = None, rel_path_override: str | None = None) -> dict:
+    rel_path = rel_path_override or os.path.relpath(filepath, POCS_DIR)
+    category_dir = os.path.dirname(rel_path).split('/', 1)[0] if '/' in rel_path else "root"
     entry = {
         "filename": rel_path,
         "filepath": filepath,
-        "category": os.path.basename(os.path.dirname(filepath)) if os.path.dirname(filepath) != POCS_DIR else "root",
-        "size": os.path.getsize(filepath),
+        "category": os.path.basename(os.path.dirname(filepath)) if os.path.exists(filepath) and os.path.dirname(filepath) != POCS_DIR else category_dir,
+        "size": os.path.getsize(filepath) if os.path.exists(filepath) else len(source_text or ""),
         "poc_name": os.path.basename(filepath),
         "class_name": None,
         "cve_id": "",
@@ -660,8 +551,10 @@ def _build_poc_registry_entry(filepath: str) -> dict:
     }
 
     try:
-        with open(filepath, "r", encoding="utf-8") as handle:
-            content = handle.read()
+        if source_text is None:
+            with open(filepath, "r", encoding="utf-8") as handle:
+                source_text = handle.read()
+        content = source_text
         entry["content"] = _truncate_poc_for_display(content)
         tree = ast.parse(content, filename=filepath)
         for node in ast.walk(tree):
@@ -709,14 +602,27 @@ def _build_poc_registry_entry(filepath: str) -> dict:
 
 def _scan_poc_registry() -> dict:
     entries = []
-    if not os.path.isdir(POCS_DIR):
-        return {"entries": entries, "counts": {}, "source": "missing"}
+    source = "filesystem"
+    seen: set[str] = set()
 
-    for dirpath, dirnames, filenames in os.walk(POCS_DIR):
-        dirnames[:] = [d for d in dirnames if not d.startswith('.') and d != '.venv' and d != '__pycache__']
-        for filename in sorted(filenames):
-            if filename.endswith('.py') and not filename.startswith('__') and filename != 'iv_plugin_base.py':
-                entries.append(_build_poc_registry_entry(os.path.join(dirpath, filename)))
+    if os.path.isdir(POCS_DIR):
+        for dirpath, dirnames, filenames in os.walk(POCS_DIR):
+            dirnames[:] = [d for d in dirnames if not d.startswith('.') and d != '.venv' and d != '__pycache__']
+            for filename in sorted(filenames):
+                if filename.endswith('.py') and not filename.startswith('__') and filename != 'iv_plugin_base.py':
+                    filepath = os.path.join(dirpath, filename)
+                    rel_path = os.path.relpath(filepath, POCS_DIR)
+                    seen.add(rel_path)
+                    entries.append(_build_poc_registry_entry(filepath))
+
+    for rel_path in list_available_poc_names(POCS_DIR):
+        if rel_path in seen:
+            continue
+        virtual_path, normalized, source_text = resolve_poc_source(POCS_DIR, rel_path)
+        if not virtual_path or not normalized or not source_text:
+            continue
+        source = "embedded" if not entries else "filesystem+embedded"
+        entries.append(_build_poc_registry_entry(virtual_path, source_text=source_text, rel_path_override=normalized))
 
     counts = {
         "total": len(entries),
@@ -724,7 +630,7 @@ def _scan_poc_registry() -> dict:
         "review_recommended": sum(1 for item in entries if item.get("status") == "review_recommended"),
         "ready": sum(1 for item in entries if item.get("status") == "ready"),
     }
-    return {"entries": entries, "counts": counts, "source": "filesystem"}
+    return {"entries": entries, "counts": counts, "source": source if entries else "missing"}
 
 
 def _normalize_scoring_key(value) -> str:
@@ -772,86 +678,6 @@ def admin_required(f):
         return f(current_user, *args, **kwargs)
     return decorated
 
-
-def _edge_hash_token(token: str) -> str:
-    return bcrypt.hashpw(token.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
-
-def _edge_verify_token(token: str, token_hash: str) -> bool:
-    if not token or not token_hash:
-        return False
-    try:
-        return bcrypt.checkpw(token.encode('utf-8'), token_hash.encode('utf-8'))
-    except Exception:
-        return False
-
-
-def _find_matching_enrollment_token(raw_token: str) -> EdgeEnrollmentToken | None:
-    if not raw_token:
-        return None
-
-    candidates = (
-        EdgeEnrollmentToken.query
-        .filter_by(status='active')
-        .order_by(EdgeEnrollmentToken.created_at.desc())
-        .all()
-    )
-    for token_record in candidates:
-        if not token_record.is_valid():
-            continue
-        if _edge_verify_token(raw_token, token_record.token_hash):
-            return token_record
-    return None
-
-
-def _validate_enrollment_secret(raw_token: str) -> tuple[str | None, EdgeEnrollmentToken | None]:
-    if not raw_token:
-        return None, None
-    token_record = _find_matching_enrollment_token(raw_token)
-    if token_record:
-        return 'user_token', token_record
-    return None, None
-
-
-def _owned_edge_agent_ids_for_user(current_user) -> set[str]:
-    if current_user.role == 'admin':
-        return {item.agent_id for item in EdgeAgent.query.with_entities(EdgeAgent.agent_id).all()}
-
-    rows = (
-        EdgeEnrollmentToken.query
-        .filter_by(created_by_user_id=current_user.id)
-        .filter(EdgeEnrollmentToken.used_by_agent_id.isnot(None))
-        .all()
-    )
-    return {item.used_by_agent_id for item in rows if item.used_by_agent_id}
-
-
-def _edge_agent_query_for_user(current_user):
-    if current_user.role == 'admin':
-        return EdgeAgent.query
-
-    owned_ids = _owned_edge_agent_ids_for_user(current_user)
-    if not owned_ids:
-        return EdgeAgent.query.filter(db.text("1 = 0"))
-    return EdgeAgent.query.filter(EdgeAgent.agent_id.in_(owned_ids))
-
-
-def edge_token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if request.method == 'OPTIONS':
-            return '', 200
-        token = request.headers.get('X-Edge-Token') or request.headers.get('Authorization', '').removeprefix('Bearer ').strip()
-        agent_id = request.headers.get('X-Edge-Agent-Id') or request.args.get('agent_id')
-        if not token or not agent_id:
-            return jsonify({'message': 'Edge token or agent id missing'}), 401
-
-        edge_agent = EdgeAgent.query.filter_by(agent_id=agent_id).first()
-        if not edge_agent or not _edge_verify_token(token, edge_agent.token_hash):
-            return jsonify({'message': 'Edge token is invalid'}), 401
-
-        return f(edge_agent, *args, **kwargs)
-    return decorated
 
 # ==========================================
 # Auth Endpoints
@@ -1057,699 +883,69 @@ def admin_delete_user(current_user, user_id):
     logger.warning(f"Admin {current_user.username} DELETED user: {username}")
     return jsonify({"message": f"User {username} deleted successfully!"}), 200
 
+
+def _web_dist_dir() -> Path | None:
+    for candidate in WEB_DIST_CANDIDATES:
+        if candidate.exists() and (candidate / 'index.html').exists():
+            return candidate
+    return None
+
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_frontend(path: str):
+    if path.startswith('api/'):
+        return jsonify({"message": "API endpoint not found"}), 404
+
+    web_dist = _web_dist_dir()
+    if not web_dist:
+        return jsonify({
+            "message": "Frontend bundle not found.",
+            "hint": "Run the workstation packaging script or npm run build in client/.",
+        }), 404
+
+    requested = web_dist / path
+    if path and requested.exists() and requested.is_file():
+        return send_from_directory(web_dist, path)
+    return send_from_directory(web_dist, 'index.html')
+
+
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Check if the execution engine is online."""
     return jsonify({
         "status": "online",
         "system": sys.platform,
+        "product": "AutoSec Guard Edge Workstation",
+        "product_mode": "edge-local",
         "pocs_dir": POCS_DIR,
+        "data_dir": str(RUNTIME_DATA_DIR),
+        "web_dist": str(_web_dist_dir() or ""),
         "database": app.config['SQLALCHEMY_DATABASE_URI'].split(':', 1)[0],
         "ai_reports_enabled": True,
         "warnings": RUNTIME_WARNINGS,
     })
 
 
-@app.route('/api/edge/register', methods=['POST'])
-def edge_register():
-    enrollment_token = request.headers.get('X-Edge-Enrollment-Token') or ''
-    if not enrollment_token:
-        return jsonify({"message": "Enrollment token is required."}), 401
-
-    enrollment_mode, matched_db_token = _validate_enrollment_secret(enrollment_token)
-    if not enrollment_mode:
-        return jsonify({"message": "Invalid or expired enrollment token."}), 401
-
-    data = request.json or {}
-    display_name = (data.get('display_name') or data.get('hostname') or '').strip()
-    if not display_name:
-        return jsonify({"message": "display_name is required"}), 400
-
-    agent_id = data.get('agent_id') or f"edge-{uuid.uuid4().hex[:12]}"
-    raw_token = secrets.token_urlsafe(32)
-    now = _get_utc_now()
-
-    agent = EdgeAgent.query.filter_by(agent_id=agent_id).first()
-    if agent is None:
-        agent = EdgeAgent(
-            agent_id=agent_id,
-            display_name=display_name,
-            site_name=data.get('site_name'),
-            token_hash=_edge_hash_token(raw_token),
-            status='online',
-            capabilities_json=json.dumps(data.get('capabilities', {}), ensure_ascii=False),
-            metadata_json=json.dumps(data.get('metadata', {}), ensure_ascii=False),
-            last_seen_at=now,
-        )
-        db.session.add(agent)
-    else:
-        agent.display_name = display_name
-        agent.site_name = data.get('site_name')
-        agent.token_hash = _edge_hash_token(raw_token)
-        agent.status = 'online'
-        agent.capabilities_json = json.dumps(data.get('capabilities', {}), ensure_ascii=False)
-        agent.metadata_json = json.dumps(data.get('metadata', {}), ensure_ascii=False)
-        agent.last_seen_at = now
-
-    # Mark dynamic token as used (one-time)
-    if matched_db_token is not None:
-        matched_db_token.status = 'used'
-        matched_db_token.used_by_agent_id = agent.agent_id
-        matched_db_token.used_at = _get_utc_now()
-
-    db.session.commit()
-    return jsonify({
-        "agent_id": agent.agent_id,
-        "edge_token": raw_token,
-        "enrollment_mode": enrollment_mode,
-        "agent": agent.to_dict(),
-    })
-
-
-@app.route('/api/edge/heartbeat', methods=['POST'])
-@edge_token_required
-def edge_heartbeat(edge_agent):
-    data = request.json or {}
-    edge_agent.last_seen_at = _get_utc_now()
-    edge_agent.status = data.get('status', 'online')
-    if 'capabilities' in data:
-        edge_agent.capabilities_json = json.dumps(data.get('capabilities', {}), ensure_ascii=False)
-    if 'metadata' in data:
-        edge_agent.metadata_json = json.dumps(data.get('metadata', {}), ensure_ascii=False)
-    db.session.commit()
-    return jsonify({"ok": True, "agent": edge_agent.to_dict()})
-
-
-@app.route('/api/edge/tasks/next', methods=['GET'])
-@edge_token_required
-def edge_next_task(edge_agent):
-    task = (
-        EdgeTask.query
-        .filter_by(edge_agent_id=edge_agent.id, status='queued')
-        .order_by(EdgeTask.created_at.asc())
-        .first()
-    )
-    if not task:
-        edge_agent.last_seen_at = _get_utc_now()
-        edge_agent.status = 'online'
-        db.session.commit()
-        return jsonify({"task": None})
-
-    task.status = 'running'
-    task.started_at = _get_utc_now()
-    edge_agent.last_seen_at = _get_utc_now()
-    edge_agent.status = 'busy'
-    db.session.commit()
-    
-    task_data = task.to_dict()
-    try:
-        task_data = attach_poc_code_to_task_payload(POCS_DIR, task_data, task.poc_filename)
-    except Exception as exc:
-        logger.error(f"Failed to read PoC code for edge task {task.task_id}: {exc}")
-        
-    return jsonify({"task": task_data})
-
-
-@app.route('/api/edge/tasks/<task_id>/payload', methods=['GET'])
-@edge_token_required
-def edge_task_payload(edge_agent, task_id):
-    task = EdgeTask.query.filter_by(task_id=task_id, edge_agent_id=edge_agent.id).first()
-    if not task:
-        return jsonify({"message": "Task not found"}), 404
-
-    task_data = task.to_dict()
-    try:
-        task_data = attach_poc_code_to_task_payload(POCS_DIR, task_data, task.poc_filename)
-    except Exception as exc:
-        logger.error(f"Failed to build payload for edge task {task.task_id}: {exc}")
-    return jsonify({"task": task_data})
-
-
-@app.route('/api/edge/tasks/<task_id>/result', methods=['POST'])
-@edge_token_required
-def edge_submit_result(edge_agent, task_id):
-    task = EdgeTask.query.filter_by(task_id=task_id, edge_agent_id=edge_agent.id).first()
-    if not task:
-        return jsonify({"message": "Task not found"}), 404
-
-    data = request.json or {}
-    result_payload = {
-        "success": bool(data.get("success")),
-        "logs": data.get("logs", []),
-        "errors": data.get("errors", []),
-        "vulnerable": bool(data.get("vulnerable")),
-        "evidence": data.get("evidence", ""),
-        "cve_id": data.get("cve_id", ""),
-        "elapsed_seconds": data.get("elapsed_seconds", 0),
-        "plugin_results": data.get("plugin_results", {}),
-        "sandbox_profile": data.get("sandbox_profile", {}),
-        "security_profile": data.get("security_profile", {}),
-        "worker_mode": data.get("worker_mode", "edge"),
-        "submitted_at": _get_utc_now().strftime('%Y-%m-%dT%H:%M:%SZ'),
-    }
-
-    task.status = 'completed' if result_payload["success"] else 'failed'
-    task.result_json = json.dumps(result_payload, ensure_ascii=False)
-    task.completed_at = _get_utc_now()
-    edge_agent.last_seen_at = _get_utc_now()
-    edge_agent.status = 'online'
-
-    params = json.loads(task.params_json) if task.params_json else {}
-    if task.requested_by_user_id:
-        _persist_execution_artifact(
-            user_id=task.requested_by_user_id,
-            session_id=task.session_id or 'edge',
-            artifact_type="edge_poc_run",
-            trace_id=task.trace_id or task.task_id,
-            poc_filename=task.poc_filename,
-            poc_name=(result_payload.get("security_profile") or {}).get("poc_name") or task.poc_filename,
-            target_ip=params.get("target_ip"),
-            target_mac=params.get("target_mac") or params.get("bluetooth_mac"),
-            payload=_build_execution_artifact_payload(
-                request_type="edge_task_result",
-                task=task.to_dict(),
-                result=result_payload,
-                edge_agent=edge_agent.to_dict(),
-            ),
-        )
-
-    db.session.commit()
-    return jsonify({"ok": True, "task": task.to_dict()})
-
-
-@app.route('/api/edge/agents', methods=['GET'])
+@app.route('/api/local/capabilities', methods=['GET'])
 @token_required
-@admin_required
-def list_edge_agents(current_user):
-    agents = EdgeAgent.query.order_by(EdgeAgent.created_at.desc()).all()
-    return jsonify({"agents": [agent.to_dict() for agent in agents]})
-
-
-@app.route('/api/edge/enrollment-tokens', methods=['POST'])
-@token_required
-def create_enrollment_token(current_user):
-    """Self-service: any authenticated user can generate a one-time edge enrollment token."""
-    data = request.json or {}
-    label = (data.get('label') or '').strip() or f"{current_user.username}'s edge node"
-    ttl_hours = min(int(data.get('ttl_hours', 24)), 168)  # max 7 days
-    public_edge_api_base = resolve_public_edge_api_base(
-        CONFIG.autosec_api,
-        request.host_url,
-        forwarded_host=request.headers.get('X-Forwarded-Host', ''),
-        forwarded_proto=request.headers.get('X-Forwarded-Proto', ''),
-    )
-
-    raw_token = secrets.token_urlsafe(32)
-    token_record = EdgeEnrollmentToken(
-        token_hash=_edge_hash_token(raw_token),
-        label=label,
-        created_by_user_id=current_user.id,
-        expires_at=_get_utc_now() + datetime.timedelta(hours=ttl_hours),
-    )
-    db.session.add(token_record)
-    db.session.commit()
-
-    logger.info(f"User {current_user.username} generated edge enrollment token (id={token_record.id}, label={label})")
-    return jsonify({
-        "token": raw_token,
-        "enrollment_token_id": token_record.id,
-        "label": label,
-        "expires_at": token_record.expires_at.strftime('%Y-%m-%dT%H:%M:%SZ'),
-        "install_command": build_edge_install_command(
-            public_edge_api_base,
-            raw_token,
-        ),
-        "install_script_url": f"{public_edge_api_base}/api/edge/install.sh?enrollment_token={quote(raw_token)}",
-    }), 201
-
-
-@app.route('/api/edge/enrollment-tokens', methods=['GET'])
-@token_required
-def list_enrollment_tokens(current_user):
-    """List enrollment tokens created by the current user (admin sees all)."""
-    query = EdgeEnrollmentToken.query.order_by(EdgeEnrollmentToken.created_at.desc())
-    if current_user.role != 'admin':
-        query = query.filter_by(created_by_user_id=current_user.id)
-    tokens = query.limit(100).all()
-    return jsonify({"tokens": [t.to_dict() for t in tokens]})
-
-
-@app.route('/api/edge/enrollment-tokens/<int:token_id>', methods=['DELETE'])
-@token_required
-def revoke_enrollment_token(current_user, token_id):
-    """Revoke an enrollment token."""
-    token_record = EdgeEnrollmentToken.query.get(token_id)
-    if not token_record:
-        return jsonify({"message": "Token not found"}), 404
-    if current_user.role != 'admin' and token_record.created_by_user_id != current_user.id:
-        return jsonify({"message": "Not authorized"}), 403
-    token_record.status = 'revoked'
-    db.session.commit()
-    return jsonify({"ok": True, "token": token_record.to_dict()})
-
-
-@app.route('/api/edge/install.sh', methods=['GET'])
-def edge_install_script():
-    def _shell_error(message: str, status: int = 500) -> Response:
-        body = (
-            "#!/usr/bin/env bash\n"
-            "echo " + json.dumps(message) + " >&2\n"
-            "exit 1\n"
-        )
-        return Response(body, mimetype='text/x-shellscript', status=status)
-
+def local_capabilities(current_user):
+    """Report hardware and host capabilities for this local vehicle-side workstation."""
     try:
-        enrollment_token = (request.args.get('enrollment_token') or '').strip()
-        enrollment_mode, _ = _validate_enrollment_secret(enrollment_token)
-        if not enrollment_mode:
-            return _shell_error("Invalid or expired enrollment token.", 401)
+        from local_capability_probe import probe as probe_local_capabilities
 
-        base = resolve_public_edge_api_base(
-            CONFIG.autosec_api,
-            request.host_url,
-            forwarded_host=request.headers.get('X-Forwarded-Host', ''),
-            forwarded_proto=request.headers.get('X-Forwarded-Proto', ''),
-        )
-
-        script = f"""#!/usr/bin/env bash
-set -euo pipefail
-
-# Architecture and OS detection
-OS_TYPE=$(uname -s | tr '[:upper:]' '[:lower:]')
-ARCH_TYPE=$(uname -m | tr '[:upper:]' '[:lower:]')
-# Normalize arch
-if [ "$ARCH_TYPE" = "x86_64" ] || [ "$ARCH_TYPE" = "amd64" ]; then
-    ARCH_TYPE="x86_64"
-elif [ "$ARCH_TYPE" = "aarch64" ] || [ "$ARCH_TYPE" = "arm64" ]; then
-    ARCH_TYPE="arm64"
-fi
-
-EDGE_API="${{EDGE_API:-{base}}}"
-ENROLLMENT_TOKEN="{enrollment_token}"
-INSTALL_DIR="${{AUTOSEC_EDGE_INSTALL_DIR:-$HOME/.autosec-edge}}"
-BIN_PATH="$INSTALL_DIR/autosec-edge"
-
-RUNTIME_URL="$EDGE_API/api/edge/runtime/download?os=$OS_TYPE&arch=$ARCH_TYPE"
-
-mkdir -p "$INSTALL_DIR"
-cd "$INSTALL_DIR"
-
-echo "[+] Detecting platform: $OS_TYPE ($ARCH_TYPE)"
-echo "[+] Fetching secure Edge Agent binary from: $RUNTIME_URL"
-
-if command -v curl >/dev/null 2>&1; then
-  HTTP_STATUS=$(curl -sL -w "%{{http_code}}" -o "$BIN_PATH" "$RUNTIME_URL")
-  if [ "$HTTP_STATUS" != "200" ]; then
-      echo "[-] Server blocked download (HTTP $HTTP_STATUS). Platform ($OS_TYPE $ARCH_TYPE) binary may not be generated yet." >&2
-      rm -f "$BIN_PATH"
-      exit 1
-  fi
-elif command -v wget >/dev/null 2>&1; then
-  wget -qO "$BIN_PATH" "$RUNTIME_URL" || {{ echo "[-] Download failed. Binary may not be generated yet."; rm -f "$BIN_PATH"; exit 1; }}
-else
-  echo "curl or wget is required" >&2
-  exit 1
-fi
-
-chmod +x "$BIN_PATH"
-
-if [ "$OS_TYPE" = "darwin" ]; then
-  echo "[+] Relaxing macOS Gatekeeper constraints and re-signing..."
-  xattr -cr "$BIN_PATH" 2>/dev/null || true
-  # Ad-hoc sign for arm64 execution
-  if command -v codesign >/dev/null 2>&1; then
-    codesign -s - --force "$BIN_PATH" 2>/dev/null || true
-  fi
-fi
-
-echo "[+] Edge Agent acquired. Initiating isolated setup..."
-"$BIN_PATH" --register --edge-api "$EDGE_API" --enrollment-token="$ENROLLMENT_TOKEN"
-
-cat <<EOF
---------------------------------------------------
-Edge runtime installed: $BIN_PATH
-Status: OBFUSCATED NATIVE BINARY DEPLOYED
-
-Start once:
-  $BIN_PATH --edge-api "$EDGE_API"
-Run continuously (Daemon):
-  $BIN_PATH --edge-api "$EDGE_API" --daemon
---------------------------------------------------
-EOF
-"""
-        return Response(script, mimetype='text/x-shellscript')
-    except Exception as exc:
-        logger.exception(f"Failed to generate edge install script: {exc}")
-        return _shell_error(f"Failed to generate edge install script: {exc}", 500)
-
-
-@app.route('/api/edge/install.ps1', methods=['GET'])
-def edge_install_powershell_script():
-    def _powershell_error(message: str, status: int = 500) -> Response:
-        body = (
-            "Write-Error " + json.dumps(message) + "\n"
-            "exit 1\n"
-        )
-        return Response(body, mimetype='text/plain', status=status)
-
-    try:
-        enrollment_token = (request.args.get('enrollment_token') or '').strip()
-        enrollment_mode, _ = _validate_enrollment_secret(enrollment_token)
-        if not enrollment_mode:
-            return _powershell_error("Invalid or expired enrollment token.", 401)
-
-        base = resolve_public_edge_api_base(
-            CONFIG.autosec_api,
-            request.host_url,
-            forwarded_host=request.headers.get('X-Forwarded-Host', ''),
-            forwarded_proto=request.headers.get('X-Forwarded-Proto', ''),
-        )
-
-        script = f"""$ErrorActionPreference = "Stop"
-
-$EdgeApi = $env:EDGE_API
-if ([string]::IsNullOrWhiteSpace($EdgeApi)) {{
-  $EdgeApi = "{base}"
-}}
-
-$EnrollmentToken = "{enrollment_token}"
-$InstallDir = $env:AUTOSEC_EDGE_INSTALL_DIR
-if ([string]::IsNullOrWhiteSpace($InstallDir)) {{
-  $InstallDir = Join-Path $env:USERPROFILE ".autosec-edge"
-}}
-
-$BinPath = Join-Path $InstallDir "autosec-edge.exe"
-$RuntimeUrl = "$EdgeApi/api/edge/runtime/download?os=windows&arch=x86_64"
-
-New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-
-Write-Host "[+] Detecting platform: windows (x86_64)"
-Write-Host "[+] Fetching secure Edge Agent binary from: $RuntimeUrl"
-
-try {{
-  Invoke-WebRequest -Uri $RuntimeUrl -OutFile $BinPath -UseBasicParsing
-}} catch {{
-  if (Test-Path $BinPath) {{
-    Remove-Item $BinPath -Force
-  }}
-  Write-Error "Download failed. Windows x86_64 binary may not be generated yet. $($_.Exception.Message)"
-  exit 1
-}}
-
-Write-Host "[+] Edge Agent acquired. Initiating isolated setup..."
-& $BinPath --register --edge-api $EdgeApi --enrollment-token=$EnrollmentToken
-
-Write-Host "--------------------------------------------------"
-Write-Host "Edge runtime installed: $BinPath"
-Write-Host "Status: NATIVE WINDOWS BINARY DEPLOYED"
-Write-Host ""
-Write-Host "Start once:"
-Write-Host "  $BinPath --edge-api $EdgeApi"
-Write-Host "Run continuously:"
-Write-Host "  $BinPath --edge-api $EdgeApi --daemon"
-Write-Host "--------------------------------------------------"
-"""
-        return Response(script, mimetype='text/plain')
-    except Exception as exc:
-        logger.exception(f"Failed to generate edge PowerShell install script: {exc}")
-        return _powershell_error(f"Failed to generate edge PowerShell install script: {exc}", 500)
-
-
-@app.route('/api/edge/runtime/download', methods=['GET'])
-def download_edge_runtime():
-    requested_os = normalize_edge_os(request.args.get('os', 'darwin'))
-    requested_arch = normalize_edge_arch(request.args.get('arch', 'arm64'))
-
-    runtime_path = edge_runtime_download_path(
-        os.environ.get('AUTOSEC_EDGE_RUNTIME_PATH', ''),
-        requested_os,
-        requested_arch,
-        EDGE_BUILD_DIR,
-        EDGE_DIST_DIR,
-    )
-
-    if not runtime_path.exists() or not runtime_path.is_file():
+        capabilities = probe_local_capabilities()
         return jsonify({
-            "message": "Edge runtime for this OS/architecture is not available.",
-            "requested_os": requested_os,
-            "requested_arch": requested_arch,
-            "expected_path": str(runtime_path),
-            "hint": "Build this target on a matching host/CI runner, for example on Linux ARM64 for linux/arm64.",
-        }), 404
-
-    return send_file(
-        runtime_path,
-        as_attachment=True,
-        download_name=edge_runtime_filename(requested_os, requested_arch),
-    )
-
-
-@app.route('/api/edge/recommendations', methods=['POST'])
-@token_required
-def recommend_edge_agents(current_user):
-    data = request.json or {}
-    poc_filename = data.get('filename')
-    params = data.get('params', {}) or {}
-
-    if not poc_filename:
-        return jsonify({"message": "filename is required"}), 400
-
-    poc_path, normalized_filename = resolve_poc_path(POCS_DIR, poc_filename)
-    if not poc_path or not normalized_filename:
-        return jsonify({"message": "PoC file not found"}), 404
-
-    profile = _extract_poc_security_profile(poc_path)
-    requirements = infer_edge_requirements(POCS_DIR, profile, normalized_filename, params)
-
-    recommendations = []
-    for edge_agent in _edge_agent_query_for_user(current_user).order_by(EdgeAgent.created_at.desc()).all():
-        matches, missing = edge_capabilities_missing(edge_agent.capabilities_json, requirements)
-        recommendations.append(
-            {
-                "agent": edge_agent.to_dict(),
-                "matches": matches,
-                "missing_capabilities": missing,
-            }
-        )
-
-    recommendations.sort(
-        key=lambda item: (
-            0 if item["matches"] else 1,
-            0 if item["agent"]["status"] in {"online", "busy"} else 1,
-            item["agent"]["display_name"],
-        )
-    )
-    return jsonify(
-        {
-            "filename": normalized_filename,
-            "security_profile": profile,
-            "requirements": requirements,
-            "recommendations": recommendations,
-        }
-    )
-
-
-@app.route('/api/edge/route-check', methods=['POST'])
-@token_required
-def check_edge_route(current_user):
-    """
-    API endpoint for the Orchestrator to check if a target IP should be routed to an Edge Agent.
-    """
-    data = request.json or {}
-    target_ip = data.get('target_ip')
-    if not target_ip:
-        return jsonify({"error": "target_ip is required"}), 400
-    
-    agent, plane = _find_best_execution_target(target_ip)
-    return jsonify({
-        "target_ip": target_ip,
-        "recommended_plane": plane,
-        "selected_agent": agent.to_dict() if agent else None,
-        "message": f"Target routed to {plane}"
-    })
-
-
-def _find_best_execution_target(target_ip: str) -> tuple[Optional[EdgeAgent], str]:
-    """
-    Core Smart Task Router logic:
-    Determines whether a target IP should be scanned via Cloud (local) or a specific Edge Agent.
-    Priority:
-    1. If IP matches an online Edge Agent's subnet -> Edge
-    2. Default -> Cloud
-    """
-    if not target_ip:
-        return None, "cloud"
-
-    # Quick check for private IP status
-    try:
-        addr = ipaddress.ip_address(target_ip)
-        if not addr.is_private:
-            # Public IPs default to Cloud scanning
-            return None, "cloud"
-    except Exception:
-        # Invalid IP formats fall back to Cloud
-        return None, "cloud"
-
-    # Search for online Agents reporting matching subnets
-    # We prioritize Online agents, then Busy agents. Offline agents are skipped.
-    now = _get_utc_now()
-    valid_agents = EdgeAgent.query.filter(
-        EdgeAgent.status.in_(['online', 'busy']),
-        EdgeAgent.last_seen_at >= now - datetime.timedelta(seconds=120)
-    ).all()
-
-    for agent in valid_agents:
-        try:
-            capabilities = json.loads(agent.capabilities_json) if agent.capabilities_json else {}
-            networks = capabilities.get("networks") or []
-            if not networks:
-                continue
-            
-            for network_cidr in networks:
-                try:
-                    if addr in ipaddress.ip_network(network_cidr, strict=False):
-                        logger.info(f"[Router] Smart routing match: {target_ip} falls within agent '{agent.display_name}' subnet {network_cidr}")
-                        return agent, "edge"
-                except Exception:
-                    continue
-        except Exception as exc:
-            logger.error(f"[Router] Error parsing agent {agent.agent_id} capabilities: {exc}")
-            continue
-
-    return None, "cloud"
-
-
-@app.route('/api/edge/tasks', methods=['POST'])
-@token_required
-def create_edge_task(current_user):
-    data = request.json or {}
-    agent_id = data.get('agent_id')
-    poc_filename = data.get('filename')
-    params = data.get('params', {}) or {}
-    session_id = data.get('session_id') or f"edge-{uuid.uuid4().hex[:8]}"
-    trace_id = data.get('trace_id') or uuid.uuid4().hex
-
-    if not poc_filename:
-        return jsonify({"message": "filename is required"}), 400
-
-    poc_path, normalized_filename = resolve_poc_path(POCS_DIR, poc_filename)
-    if not poc_path or not normalized_filename:
-        return jsonify({"message": "PoC file not found"}), 404
-    poc_filename = normalized_filename
-    security_profile = _extract_poc_security_profile(poc_path)
-    requirements = infer_edge_requirements(POCS_DIR, security_profile, poc_filename, params)
-
-    edge_agent = None
-    if agent_id:
-        edge_agent = _edge_agent_query_for_user(current_user).filter_by(agent_id=agent_id).first()
-        if not edge_agent:
-            return jsonify({"message": "Edge agent not found"}), 404
-        matches, missing = edge_capabilities_missing(edge_agent.capabilities_json, requirements)
-        if not matches:
-            return jsonify(
-                {
-                    "message": "Selected edge agent does not satisfy PoC capability requirements",
-                    "required_capabilities": requirements["required_capabilities"],
-                    "missing_capabilities": missing,
-                    "agent": edge_agent.to_dict(),
-                }
-            ), 400
-    else:
-        candidates = []
-        for candidate in _edge_agent_query_for_user(current_user).order_by(EdgeAgent.created_at.desc()).all():
-            matches, missing = edge_capabilities_missing(candidate.capabilities_json, requirements)
-            if matches and candidate.to_dict()["status"] in {"online", "busy"}:
-                candidates.append(candidate)
-        if not candidates:
-            return jsonify(
-                {
-                    "message": "No eligible edge agent found for this PoC",
-                    "required_capabilities": requirements["required_capabilities"],
-                }
-            ), 409
-        edge_agent = candidates[0]
-
-    task = EdgeTask(
-        task_id=f"task-{uuid.uuid4().hex[:16]}",
-        edge_agent_id=edge_agent.id,
-        requested_by_user_id=current_user.id,
-        session_id=session_id,
-        trace_id=trace_id,
-        poc_filename=poc_filename,
-        params_json=json.dumps(params, ensure_ascii=False),
-        status='queued',
-    )
-    db.session.add(task)
-    db.session.commit()
-
-    # Sync mode: wait for the selected edge agent to execute the queued task
-    if data.get('sync'):
-        try:
-            wait_timeout = int(params.get("edge_sync_timeout_seconds", 90))
-            deadline = time.time() + wait_timeout
-            result_payload = None
-
-            while time.time() < deadline:
-                db.session.expire_all()
-                synced_task = EdgeTask.query.filter_by(id=task.id).first()
-                synced_agent = EdgeAgent.query.filter_by(id=edge_agent.id).first()
-                if not synced_task or not synced_agent:
-                    break
-
-                task = synced_task
-                edge_agent = synced_agent
-                if task.status in {'completed', 'failed'}:
-                    result_payload = json.loads(task.result_json) if task.result_json else {}
-                    break
-                time.sleep(1.0)
-
-            if result_payload is None:
-                return jsonify(
-                    {
-                        "task": task.to_dict(),
-                        "requirements": requirements,
-                        "selected_agent": edge_agent.to_dict(),
-                        "sync_pending": True,
-                        "message": "Edge task queued. The selected edge agent did not complete within the sync timeout window.",
-                    }
-                ), 202
-
-            return jsonify(
-                {
-                    "task": task.to_dict(),
-                    "requirements": requirements,
-                    "selected_agent": edge_agent.to_dict(),
-                    "sync_result": result_payload,
-                }
-            ), 200
-        except Exception as exc:
-            logger.error(f"Sync edge execution failed: {exc}")
-            return jsonify(
-                {
-                    "task": task.to_dict(),
-                    "requirements": requirements,
-                    "selected_agent": edge_agent.to_dict(),
-                    "sync_result": {"success": False, "error": str(exc), "vulnerable": False, "evidence": "", "logs": [], "errors": [str(exc)]},
-                }
-            ), 200
-
-    return jsonify(
-        {
-            "task": task.to_dict(),
-            "requirements": requirements,
-            "selected_agent": edge_agent.to_dict(),
-        }
-    ), 201
-
-
-@app.route('/api/edge/tasks', methods=['GET'])
-@token_required
-def list_edge_tasks(current_user):
-    query = EdgeTask.query.order_by(EdgeTask.created_at.desc())
-    if current_user.role != 'admin':
-        query = query.filter_by(requested_by_user_id=current_user.id)
-    tasks = query.limit(200).all()
-    return jsonify({"tasks": [task.to_dict() for task in tasks]})
+            "mode": "edge-local",
+            "host": socket.gethostname(),
+            "capabilities": capabilities,
+            "capability_flags": local_capability_flags(capabilities),
+            "checked_at": _get_utc_now().strftime('%Y-%m-%dT%H:%M:%SZ'),
+            "operator": current_user.username,
+        })
+    except Exception as exc:
+        logger.error(f"Local capability probe failed: {exc}", exc_info=True)
+        return jsonify({"message": "Local capability probe failed", "error": str(exc)}), 500
 
 
 @app.route('/api/report/generate', methods=['POST'])
@@ -1957,62 +1153,56 @@ def auto_discovery():
 def list_pocs():
     """List all available PoC plugin files in pocs/ directory tree with metadata."""
     pocs = []
-    if not os.path.isdir(POCS_DIR):
-        return jsonify({"error": "Pocs directory not found", "path": POCS_DIR}), 404
+    for rel_path in list_available_poc_names(POCS_DIR):
+        filepath, normalized, content = resolve_poc_source(POCS_DIR, rel_path)
+        if not filepath or not normalized:
+            continue
+        category_dir = os.path.dirname(normalized).split('/', 1)[0] if '/' in normalized else "root"
+        poc_info = {
+            "filename": normalized,
+            "filepath": filepath,
+            "size": os.path.getsize(filepath) if os.path.exists(filepath) else len(content or ""),
+            "category_dir": category_dir,
+            "packaged": not os.path.exists(filepath),
+        }
+        try:
+            if content is None:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    content = f.read()
+            poc_info['content'] = _truncate_poc_for_display(content)
 
-    for dirpath, dirnames, filenames in os.walk(POCS_DIR):
-        # Ignore hidden directories and .venv
-        dirnames[:] = [d for d in dirnames if not d.startswith('.') and d != '.venv' and d != '__pycache__']
-        
-        for filename in sorted(filenames):
-            if filename.endswith('.py') and not filename.startswith('__') and filename != 'iv_plugin_base.py':
-                filepath = os.path.join(dirpath, filename)
-                rel_path = os.path.relpath(filepath, POCS_DIR)
-                poc_info = {
-                    "filename": rel_path,
-                    "filepath": filepath,
-                    "size": os.path.getsize(filepath),
-                    "category_dir": os.path.basename(dirpath) if dirpath != POCS_DIR else "root"
-                }
-                try:
-                    with open(filepath, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                        poc_info['content'] = _truncate_poc_for_display(content)
-                        
-                        import ast
-                        tree = ast.parse(content)
-                        for node in ast.walk(tree):
-                            if isinstance(node, ast.ClassDef):
-                                poc_info['class_name'] = node.name
-                                for item in node.body:
-                                    if isinstance(item, ast.Assign):
-                                        for target in item.targets:
-                                            if isinstance(target, ast.Name):
-                                                name = target.id
-                                                if name in ['is_disruptive', 'meta_poc_name', 'meta_cve_id', 'meta_severity', 'meta_protocol', 'meta_destructive_level', 'meta_target_os', 'meta_required_params']:
-                                                    try:
-                                                        poc_info[name] = ast.literal_eval(item.value)
-                                                    except Exception:
-                                                        pass
-                                            
-                                # Fallback properties mapping from docstrings
-                                if not poc_info.get('meta_cve_id') and 'cve_id' in content:
-                                    for line in content.splitlines():
-                                        if 'cve_id' in line and '=' in line:
-                                            cve = line.split('=')[-1].strip().strip('"\'')
-                                            poc_info['meta_cve_id'] = cve
-                                            break
+            import ast
+            tree = ast.parse(content)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef):
+                    poc_info['class_name'] = node.name
+                    for item in node.body:
+                        if isinstance(item, ast.Assign):
+                            for target in item.targets:
+                                if isinstance(target, ast.Name):
+                                    name = target.id
+                                    if name in ['is_disruptive', 'meta_poc_name', 'meta_cve_id', 'meta_severity', 'meta_protocol', 'meta_destructive_level', 'meta_target_os', 'meta_required_params']:
+                                        try:
+                                            poc_info[name] = ast.literal_eval(item.value)
+                                        except Exception:
+                                            pass
 
-                except Exception as e:
-                    logger.error(f"Error parsing {filepath}: {e}")
-                
-                # Default is_disruptive logic if not found
-                if 'is_disruptive' not in poc_info:
-                     poc_info['is_disruptive'] = False
-                profile = _extract_poc_security_profile(filepath)
-                poc_info["manual_confirmation_required"] = _should_require_disruptive_approval(profile, {})
-                poc_info.update(classify_poc_execution_mode(POCS_DIR, filepath, profile, rel_path))
-                pocs.append(poc_info)
+                    if not poc_info.get('meta_cve_id') and 'cve_id' in content:
+                        for line in content.splitlines():
+                            if 'cve_id' in line and '=' in line:
+                                cve = line.split('=')[-1].strip().strip('"\'')
+                                poc_info['meta_cve_id'] = cve
+                                break
+                    break
+        except Exception as e:
+            logger.error(f"Error parsing {filepath}: {e}")
+
+        if 'is_disruptive' not in poc_info:
+             poc_info['is_disruptive'] = False
+        profile = _extract_poc_security_profile(filepath)
+        poc_info["manual_confirmation_required"] = _should_require_disruptive_approval(profile, {})
+        poc_info.update(classify_poc_execution_mode(POCS_DIR, filepath, profile, normalized))
+        pocs.append(poc_info)
 
     return jsonify({"pocs": pocs, "total": len(pocs)})
 
@@ -2095,7 +1285,7 @@ def run_poc():
     if not poc_filename:
         return jsonify({"error": "No PoC filename provided"}), 400
 
-    poc_path, normalized_filename = resolve_poc_path(POCS_DIR, poc_filename)
+    poc_path, normalized_filename, poc_code = resolve_poc_source(POCS_DIR, poc_filename)
     if not poc_path:
         logger.warning(f"PoC file not found: {poc_filename}")
         return jsonify({"error": f"PoC file not found: {poc_filename}"}), 404
@@ -2146,6 +1336,7 @@ def run_poc():
             params,
             trace_id=trace_id,
             session_id=session_id,
+            poc_code=poc_code if poc_code and not os.path.exists(poc_path) else None,
             timeout_seconds=int(params.get("sandbox_timeout_seconds", 60)),
         )
         run_result = worker.run_once(plan)
@@ -2229,7 +1420,7 @@ def run_poc_stream():
     if not poc_filename:
         return jsonify({"error": "No PoC filename provided"}), 400
 
-    poc_path, normalized_filename = resolve_poc_path(POCS_DIR, poc_filename)
+    poc_path, normalized_filename, poc_code = resolve_poc_source(POCS_DIR, poc_filename)
     if not poc_path:
         return jsonify({"error": f"PoC file not found: {poc_filename}"}), 404
     poc_filename = normalized_filename
@@ -2293,6 +1484,7 @@ def run_poc_stream():
             params,
             trace_id=trace_id,
             session_id=session_id,
+            poc_code=poc_code if poc_code and not os.path.exists(poc_path) else None,
             timeout_seconds=int(params.get("sandbox_timeout_seconds", 60)),
         )
         emitted_logs: list[str] = []
@@ -3071,6 +2263,11 @@ def agent_scan(current_user):
 
 
 if __name__ == '__main__':
+    if len(sys.argv) >= 4 and sys.argv[1] == '--run-sandbox':
+        sys.argv = [sys.argv[0], sys.argv[2], sys.argv[3]]
+        from sandbox_runner import main as sandbox_main
+        raise SystemExit(sandbox_main())
+
     logger.info(f"AutoSec Execution Engine starting on port {CONFIG.flask_port}...")
     logger.info(f"PoCs directory: {POCS_DIR}")
     for warning in RUNTIME_WARNINGS:
