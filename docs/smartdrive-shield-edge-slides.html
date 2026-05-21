@@ -1,0 +1,830 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>智驭安盾 SmartDrive Shield Edge Presentation</title>
+  <style>
+    :root {
+      --bg: #07111f;
+      --panel: #0f1b2d;
+      --panel-2: #13243a;
+      --ink: #f7fbff;
+      --muted: #aebcd0;
+      --line: rgba(255, 255, 255, 0.13);
+      --green: #16c47f;
+      --amber: #f59e0b;
+      --blue: #38bdf8;
+      --red: #fb7185;
+      --violet: #a78bfa;
+      --gray: #64748b;
+      --shadow: 0 28px 80px rgba(0, 0, 0, 0.42);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      overflow: hidden;
+      background:
+        linear-gradient(135deg, rgba(22, 196, 127, 0.13), transparent 32%),
+        linear-gradient(225deg, rgba(56, 189, 248, 0.13), transparent 38%),
+        var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      letter-spacing: 0;
+    }
+
+    .deck {
+      width: 100vw;
+      height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+    }
+
+    .slide {
+      display: none;
+      position: relative;
+      width: min(1280px, calc(100vw - 56px));
+      aspect-ratio: 16 / 9;
+      max-height: calc(100vh - 56px);
+      padding: 54px 62px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.015)),
+        var(--panel);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .slide.active { display: flex; flex-direction: column; }
+
+    .slide::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 5px;
+      background: linear-gradient(90deg, var(--green), var(--blue), var(--amber));
+    }
+
+    .eyebrow {
+      color: var(--green);
+      font-size: 16px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 14px;
+    }
+
+    h1, h2, h3, p { margin: 0; }
+
+    h1 {
+      font-size: 72px;
+      line-height: 0.98;
+      letter-spacing: 0;
+      max-width: 900px;
+    }
+
+    h2 {
+      font-size: 44px;
+      line-height: 1.12;
+      letter-spacing: 0;
+      max-width: 980px;
+    }
+
+    h3 {
+      font-size: 22px;
+      line-height: 1.25;
+      margin-bottom: 12px;
+    }
+
+    p, li {
+      color: var(--muted);
+      font-size: 20px;
+      line-height: 1.5;
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 22px;
+    }
+
+    li + li { margin-top: 8px; }
+
+    .hero {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1.12fr 0.88fr;
+      gap: 48px;
+      align-items: center;
+    }
+
+    .subtitle {
+      margin-top: 24px;
+      max-width: 760px;
+      font-size: 24px;
+      color: #d7e4f6;
+    }
+
+    .badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 34px;
+    }
+
+    .badge {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 8px 13px;
+      background: rgba(255, 255, 255, 0.06);
+      color: #eaf3ff;
+      font-size: 15px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .visual-panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.045);
+      padding: 22px;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .metric {
+      min-height: 118px;
+      border-radius: 8px;
+      padding: 20px;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 42px;
+      line-height: 1;
+      color: var(--ink);
+    }
+
+    .metric span {
+      display: block;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.35;
+    }
+
+    .body {
+      flex: 1;
+      display: grid;
+      gap: 22px;
+      margin-top: 34px;
+    }
+
+    .two-col {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-items: stretch;
+    }
+
+    .three-col {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      align-items: stretch;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 24px;
+      background: rgba(255, 255, 255, 0.045);
+    }
+
+    .card .tag {
+      display: inline-flex;
+      margin-bottom: 16px;
+      color: var(--green);
+      font-size: 15px;
+      font-weight: 800;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 12px;
+      align-items: center;
+    }
+
+    .flow-step {
+      position: relative;
+      min-height: 124px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      background: rgba(255, 255, 255, 0.055);
+    }
+
+    .flow-step:not(:last-child)::after {
+      content: "→";
+      position: absolute;
+      right: -20px;
+      top: 42px;
+      color: var(--blue);
+      font-size: 26px;
+      font-weight: 900;
+      z-index: 2;
+    }
+
+    .flow-step strong {
+      display: block;
+      font-size: 18px;
+      color: var(--ink);
+      margin-bottom: 8px;
+    }
+
+    .flow-step span {
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.35;
+    }
+
+    .architecture {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 16px;
+      align-items: stretch;
+    }
+
+    .stack {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.045);
+      padding: 18px;
+    }
+
+    .stack-title {
+      font-size: 18px;
+      font-weight: 900;
+      color: #ffffff;
+      margin-bottom: 12px;
+    }
+
+    .pill-list {
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+    }
+
+    .pill {
+      padding: 10px 12px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.065);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      color: #dbe8f8;
+      font-size: 15px;
+      line-height: 1.25;
+    }
+
+    .matrix {
+      display: grid;
+      grid-template-columns: 1.05fr 0.6fr 1.45fr 1.1fr;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.035);
+    }
+
+    .matrix div {
+      padding: 13px 15px;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.3;
+    }
+
+    .matrix div:nth-child(4n) { border-right: 0; }
+    .matrix div:nth-last-child(-n + 4) { border-bottom: 0; }
+    .matrix .head {
+      color: var(--ink);
+      font-weight: 900;
+      background: rgba(22, 196, 127, 0.12);
+    }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: 0.4fr 1fr;
+      gap: 14px 18px;
+      align-items: start;
+    }
+
+    .phase {
+      color: var(--green);
+      font-weight: 900;
+      font-size: 17px;
+    }
+
+    .phase-text {
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1.42;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .quote {
+      margin-top: 30px;
+      padding-left: 22px;
+      border-left: 4px solid var(--green);
+      color: #dcecff;
+      font-size: 28px;
+      line-height: 1.35;
+      max-width: 980px;
+    }
+
+    .footer {
+      position: absolute;
+      left: 62px;
+      right: 62px;
+      bottom: 28px;
+      display: flex;
+      justify-content: space-between;
+      color: rgba(255, 255, 255, 0.48);
+      font-size: 13px;
+    }
+
+    .controls {
+      position: fixed;
+      right: 24px;
+      bottom: 22px;
+      display: flex;
+      gap: 8px;
+      z-index: 20;
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px 12px;
+      background: rgba(255,255,255,0.1);
+      color: var(--ink);
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    button:hover { background: rgba(255,255,255,0.16); }
+
+    .progress {
+      position: fixed;
+      left: 0;
+      bottom: 0;
+      width: 100%;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.09);
+      z-index: 21;
+    }
+
+    .progress-bar {
+      height: 100%;
+      width: 0;
+      background: linear-gradient(90deg, var(--green), var(--blue));
+      transition: width 180ms ease;
+    }
+
+    .small {
+      font-size: 16px;
+      line-height: 1.45;
+    }
+
+    .accent-green { color: var(--green); }
+    .accent-blue { color: var(--blue); }
+    .accent-amber { color: var(--amber); }
+    .accent-red { color: var(--red); }
+
+    @media (max-width: 900px) {
+      body { overflow: auto; }
+      .deck { height: auto; padding: 0; display: block; }
+      .slide {
+        width: 100vw;
+        min-height: 100vh;
+        max-height: none;
+        aspect-ratio: auto;
+        border-radius: 0;
+        padding: 44px 24px 76px;
+      }
+      .hero, .two-col, .three-col, .architecture {
+        grid-template-columns: 1fr;
+      }
+      .flow { grid-template-columns: 1fr; }
+      .flow-step:not(:last-child)::after { display: none; }
+      h1 { font-size: 46px; }
+      h2 { font-size: 34px; }
+      p, li { font-size: 18px; }
+      .matrix { grid-template-columns: 1fr; }
+      .matrix div { border-right: 0; }
+      .matrix .head:nth-child(n + 2) { display: none; }
+      .footer { left: 24px; right: 24px; }
+    }
+
+    @media print {
+      body { overflow: visible; background: #07111f; }
+      .deck { display: block; padding: 0; }
+      .slide {
+        display: flex !important;
+        width: 100vw;
+        height: 100vh;
+        max-height: none;
+        page-break-after: always;
+        border-radius: 0;
+        box-shadow: none;
+      }
+      .controls, .progress { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck" aria-live="polite">
+    <section class="slide active">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">SmartDrive Shield Edge</div>
+          <h1>🛡️ 智驭安盾</h1>
+          <p class="subtitle">智能网联汽车边缘端漏洞验证工作站：本机安装、本机连接车辆/台架、本机执行 PoC、本机沉淀证据、本机生成报告。</p>
+          <div class="badges">
+            <span class="badge">Edge Workstation</span>
+            <span class="badge">React + Vite</span>
+            <span class="badge">Flask Local Engine</span>
+            <span class="badge">72 PoC</span>
+            <span class="badge">macOS · Linux · Windows</span>
+          </div>
+        </div>
+        <div class="visual-panel">
+          <div class="metric-grid">
+            <div class="metric"><strong>72</strong><span>内置车辆安全 PoC，覆盖网络、CAN、无线、应用与高级场景</span></div>
+            <div class="metric"><strong>6</strong><span>本机能力标志：USB / CAN / PCAN / Wi-Fi / Bluetooth / SDR</span></div>
+            <div class="metric"><strong>7</strong><span>多 Agent 阶段：侦察、规划、决策、武器化、执行、反思、评估</span></div>
+            <div class="metric"><strong>1</strong><span>统一本地工作站执行面，避免云端与车端产品边界混乱</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="footer"><span>AutoSec Guard · ICV Vulnerability Scanner</span><span>01</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">Product Positioning</div>
+      <h2>项目不再讲“云端漏扫 + 车端漏扫联动”，而是明确为边缘端本地验证工作站</h2>
+      <div class="body two-col">
+        <div class="card">
+          <span class="tag">为什么必须本机化</span>
+          <ul>
+            <li>车端漏洞验证依赖 CAN、PCAN、蓝牙、Wi-Fi Monitor、SDR、USB 等现场硬件。</li>
+            <li>许多 PoC 需要实验室私有网、隔离台架或车载以太网，远端云扫描无法直接触达。</li>
+            <li>高风险 PoC 可能造成 DoS、复位、总线注入或目标异常，需要现场审批与回滚预案。</li>
+          </ul>
+        </div>
+        <div class="card">
+          <span class="tag">产品边界</span>
+          <ul>
+            <li>React UI、Flask API、PoC Worker、沙箱 Runner 和 SQLite 均在本机运行。</li>
+            <li>Local Runtime 只检测本机能力，不再作为远端节点控制台。</li>
+            <li>Agent Scan 是本机服务内的智能编排能力，不承担云端调度定位。</li>
+          </ul>
+        </div>
+      </div>
+      <p class="quote">核心一句话：把“车辆现场安全验证”做成可安装、可审计、可打包交付的本地工作站。</p>
+      <div class="footer"><span>定位校准</span><span>02</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">User Workflow</div>
+      <h2>从本机能力识别到漏洞证据沉淀，形成闭环验证流程</h2>
+      <div class="body">
+        <div class="flow">
+          <div class="flow-step"><strong>注册登录</strong><span>本地账号、JWT、本地用户级 AI 配置</span></div>
+          <div class="flow-step"><strong>能力探测</strong><span>Local Runtime 刷新硬件与系统能力</span></div>
+          <div class="flow-step"><strong>选择目标</strong><span>IP、蓝牙 MAC、CAN 接口、Wi-Fi 接口、RF 频点</span></div>
+          <div class="flow-step"><strong>执行 PoC</strong><span>Manual Scan、Global Scan 或 Agent Scan</span></div>
+          <div class="flow-step"><strong>报告审计</strong><span>历史记录、证据、攻击图、物理影响、报告</span></div>
+        </div>
+        <div class="card">
+          <h3>流程特点</h3>
+          <p>流程不是单纯“扫端口”，而是先判断本机是否具备执行条件，再把 PoC 元数据、目标参数、风险审批、沙箱执行、证据归档串成一个可复查的车辆安全验证链条。</p>
+        </div>
+      </div>
+      <div class="footer"><span>执行闭环</span><span>03</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">Architecture</div>
+      <h2>本地 UI、本地检测引擎、本地 PoC 执行面三层解耦</h2>
+      <div class="body">
+        <div class="architecture">
+          <div class="stack">
+            <div class="stack-title">🖥️ Local React UI</div>
+            <div class="pill-list">
+              <div class="pill">Dashboard</div>
+              <div class="pill">Scanner / ManualTestModal</div>
+              <div class="pill">AgentScan</div>
+              <div class="pill">LocalRuntime</div>
+              <div class="pill">PocDatabase / ScanHistory</div>
+            </div>
+          </div>
+          <div class="stack">
+            <div class="stack-title">⚙️ Local Flask Engine</div>
+            <div class="pill-list">
+              <div class="pill">server.py</div>
+              <div class="pill">auth_service.py</div>
+              <div class="pill">local_capability_probe.py</div>
+              <div class="pill">assessment_engine.py</div>
+              <div class="pill">agent_orchestrator.py</div>
+            </div>
+          </div>
+          <div class="stack">
+            <div class="stack-title">🧪 Execution Boundary</div>
+            <div class="pill-list">
+              <div class="pill">poc_worker.py</div>
+              <div class="pill">sandbox_runner.py</div>
+              <div class="pill">poc_security.py</div>
+              <div class="pill">generated_poc_registry.py</div>
+              <div class="pill">server/pocs/*</div>
+            </div>
+          </div>
+        </div>
+        <p class="small">架构上的重点不是“多端分布式”，而是把 UI、API、能力探测、PoC 编排、安全校验和证据生成都约束在本地工作站边界内。</p>
+      </div>
+      <div class="footer"><span>系统架构</span><span>04</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">Local Runtime</div>
+      <h2>本机能力探测决定哪些 PoC 具备执行条件</h2>
+      <div class="body two-col">
+        <div class="card">
+          <h3>探测输入</h3>
+          <ul>
+            <li>系统命令：lsusb、ip、iw、bluetoothctl、hciconfig、hackrf_info、rtl_test</li>
+            <li>python-can 配置、PCAN 字符设备、SocketCAN 接口</li>
+            <li>USB 挂载候选、Wi-Fi 接口、蓝牙控制器、SDR 状态</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>归一化输出</h3>
+          <ul>
+            <li><span class="accent-green">usb</span>：USB / USB Gadget / 物理接口验证</li>
+            <li><span class="accent-blue">can / pcan</span>：CAN、UDS、OBD、重放、注入</li>
+            <li><span class="accent-amber">wifi / bluetooth / sdr</span>：无线、RF、TPMS、GPS、V2X 类验证</li>
+          </ul>
+        </div>
+      </div>
+      <p class="quote">能力探测的价值是把“能不能执行”前置，减少误触发、误报告和不具备硬件条件时的无效测试。</p>
+      <div class="footer"><span>本机能力</span><span>05</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">PoC Matrix</div>
+      <h2>72 个 PoC 覆盖 6 类车辆攻击面</h2>
+      <div class="body">
+        <div class="matrix">
+          <div class="head">Category</div><div class="head">Count</div><div class="head">Focus</div><div class="head">本机依赖</div>
+          <div>Reconnaissance</div><div>8</div><div>主机发现、端口扫描、服务枚举</div><div>网络可达</div>
+          <div>Network</div><div>13</div><div>ADB、SSH、FTP、MQTT、SOME/IP、RTSP 等</div><div>网络可达</div>
+          <div>CAN Bus</div><div>11</div><div>CAN、UDS、OBD、注入、重放、诊断访问</div><div>CAN / PCAN / SocketCAN</div>
+          <div>Wireless</div><div>18</div><div>Wi-Fi、Bluetooth、QNX 无线面</div><div>Wi-Fi / Bluetooth</div>
+          <div>Application</div><div>13</div><div>车机应用、AirPlay、CarPlay、USB、WebView</div><div>网络 / USB / 人工辅助</div>
+          <div>Advanced</div><div>8</div><div>OTA、RF、GPS、TPMS、V2X、固件</div><div>SDR / RF / USB / 台架</div>
+          <div>Dynamic Unknown</div><div>1</div><div>未知服务动态探测</div><div>网络可达</div>
+        </div>
+      </div>
+      <div class="footer"><span>PoC 覆盖面</span><span>06</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">Safety Model</div>
+      <h2>高风险 PoC 不是靠前端提示，而是前后端双层审批与沙箱执行</h2>
+      <div class="body three-col">
+        <div class="card">
+          <span class="tag">静态画像</span>
+          <p>poc_security.py 通过 AST 提取 PoC 类元数据，识别 severity、protocol、required_params、destructive_level 和 is_disruptive。</p>
+        </div>
+        <div class="card">
+          <span class="tag">审批拦截</span>
+          <p>前端对高风险 PoC 做显式确认，后端再次根据 destructive_level / is_disruptive 执行强校验，避免绕过 UI 直接调用。</p>
+        </div>
+        <div class="card">
+          <span class="tag">沙箱边界</span>
+          <p>sandbox_runner.py 约束 CPU、内存、输出大小、文件句柄和访问目标，并把日志、错误、证据和 trace_id 结构化保存。</p>
+        </div>
+      </div>
+      <div class="footer"><span>安全控制</span><span>07</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">Agent Scan</div>
+      <h2>多 Agent 协作是本机智能编排能力，不是云端调度能力</h2>
+      <div class="body">
+        <div class="timeline">
+          <div class="phase">Recon</div><div class="phase-text">调用 scan_ports、get_topology，输出服务列表、拓扑和攻击向量。</div>
+          <div class="phase">Planner</div><div class="phase-text">基于侦察结果生成无代码执行序列，避免直接进入破坏性动作。</div>
+          <div class="phase">Decision</div><div class="phase-text">调用 list_pocs、check_safety，过滤可用资源并补齐参数与安全策略。</div>
+          <div class="phase">Weaponize</div><div class="phase-text">针对未知服务生成协议感知型动态探测插件，并包装成合规 PoC 类。</div>
+          <div class="phase">Execute / Reflect / Assess</div><div class="phase-text">沙箱执行、失败反思恢复、生成符合 ISO 21434 / UN R155 语境的安全评估报告。</div>
+        </div>
+      </div>
+      <div class="footer"><span>多 Agent 流程</span><span>08</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">Evidence Model</div>
+      <h2>证据、攻击图、物理影响和报告共享统一执行结果模型</h2>
+      <div class="body two-col">
+        <div class="card">
+          <h3>统一 Finding 实体</h3>
+          <ul>
+            <li>trace_id：贯穿执行链路</li>
+            <li>poc_id / poc_name：关联具体验证脚本</li>
+            <li>target_ip / parameters：还原测试条件</li>
+            <li>severity / domain / evidence：支撑报告与图谱</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>下游消费</h3>
+          <ul>
+            <li>Scan History：历史审计与批量删除</li>
+            <li>Assessment：结构化安全报告</li>
+            <li>Attack Graph：攻击路径可视化</li>
+            <li>Physical Impact：物理影响评估</li>
+          </ul>
+        </div>
+      </div>
+      <p class="quote">报告不是事后拼文本，而是从执行证据模型中派生出来。</p>
+      <div class="footer"><span>证据闭环</span><span>09</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">Packaging</div>
+      <h2>项目已经按可交付边缘端产品组织打包链路</h2>
+      <div class="body two-col">
+        <div class="card">
+          <h3>本地发行包内容</h3>
+          <ul>
+            <li>Flask 本机检测引擎</li>
+            <li>React dist 前端资源</li>
+            <li>嵌入式 PoC 注册表</li>
+            <li>本机能力探测与沙箱 Runner</li>
+            <li>SQLite 数据库初始化、启动脚本、运行时 README</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>GitHub Actions 打包</h3>
+          <ul>
+            <li>linux-x64、linux-arm64、windows-x64、macos-arm64 矩阵构建</li>
+            <li>支持 PyInstaller 与 Nuitka 后端</li>
+            <li>构建后做 health、PoC registry、首页 smoke test</li>
+            <li>tag 触发时上传 GitHub Release 产物</li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer"><span>安装包交付</span><span>10</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">Technical Differentiation</div>
+      <h2>可以对外强调的技术差异点</h2>
+      <div class="body three-col">
+        <div class="card">
+          <span class="tag">能力驱动执行</span>
+          <p>不是先选 PoC 再碰运气，而是先检测本机硬件与系统能力，再约束可执行的验证动作。</p>
+        </div>
+        <div class="card">
+          <span class="tag">PoC 安全画像</span>
+          <p>通过静态元数据抽取和 destructive_level 策略，把车辆测试中的破坏性风险显式纳入流程。</p>
+        </div>
+        <div class="card">
+          <span class="tag">多 Agent 闭环</span>
+          <p>侦察、规划、决策、执行、反思和评估阶段有清晰边界，执行证据回流到最终报告。</p>
+        </div>
+      </div>
+      <div class="footer"><span>技术卖点</span><span>11</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">Demo Script</div>
+      <h2>建议演示路径：让评审看到“本机执行面”而不是概念叙述</h2>
+      <div class="body">
+        <div class="flow">
+          <div class="flow-step"><strong>1. 启动工作站</strong><span>打开本机 UI 和 /api/health</span></div>
+          <div class="flow-step"><strong>2. 刷新能力</strong><span>展示 Local Runtime 的硬件能力标志</span></div>
+          <div class="flow-step"><strong>3. 选择 PoC</strong><span>展示 PoC Database 与分类矩阵</span></div>
+          <div class="flow-step"><strong>4. 触发审批</strong><span>选择高风险 PoC 说明前后端双校验</span></div>
+          <div class="flow-step"><strong>5. 查看报告</strong><span>展示 History、Evidence、Attack Graph 和报告</span></div>
+        </div>
+        <div class="card">
+          <p>如果现场没有硬件，可使用网络类 PoC 和动态未知服务探测做演示；如果有 Linux 台架，则优先展示 SocketCAN / BlueZ / Wi-Fi / SDR 能力识别。</p>
+        </div>
+      </div>
+      <div class="footer"><span>演示流程</span><span>12</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">Patent-Friendly Angles</div>
+      <h2>更适合从现有代码中提炼的专利表达方向</h2>
+      <div class="body two-col">
+        <div class="card">
+          <h3>A 篇：多 Agent 车辆漏洞验证编排</h3>
+          <p>重点写 Recon → Planner → Decision → Weaponize → Execute → Reflector → Assessment 的阶段化协作，以及失败反思、动态探测插件包装、证据回流报告。</p>
+        </div>
+        <div class="card">
+          <h3>B 篇：能力感知的本机 PoC 安全执行</h3>
+          <p>重点写本机能力探测、PoC 元数据安全画像、破坏性等级审批、沙箱执行、证据模型和本地报告生成。它不依赖 A 篇的 Agent 流程，也不涉及云边联动。</p>
+        </div>
+      </div>
+      <p class="quote">两篇的边界：A 写“智能编排决策链”，B 写“边缘端安全执行控制链”。</p>
+      <div class="footer"><span>专利拆分参考</span><span>13</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">Roadmap</div>
+      <h2>下一步产品化重点</h2>
+      <div class="body three-col">
+        <div class="card">
+          <span class="tag">交付形态</span>
+          <p>继续稳定 Nuitka / PyInstaller 多平台打包，形成 macOS、Linux、Windows 可下载安装包。</p>
+        </div>
+        <div class="card">
+          <span class="tag">硬件适配</span>
+          <p>优先完善 Linux 下 SocketCAN、BlueZ、Wi-Fi Monitor、SDR 权限与驱动检查提示。</p>
+        </div>
+        <div class="card">
+          <span class="tag">报告可信度</span>
+          <p>把证据、参数、执行环境、审批记录、trace_id 和修复建议进一步绑定，增强审计可复现性。</p>
+        </div>
+      </div>
+      <div class="footer"><span>产品路线</span><span>14</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Closing</div>
+          <h1>从“扫描工具”到“车端安全验证工作站”</h1>
+          <p class="subtitle">智驭安盾的核心价值，是把车辆现场测试所需的硬件能力、PoC 执行、安全控制、Agent 编排和证据报告统一在本机边缘端产品中。</p>
+        </div>
+        <div class="visual-panel">
+          <div class="metric-grid">
+            <div class="metric"><strong>Local</strong><span>执行面本地化</span></div>
+            <div class="metric"><strong>Safe</strong><span>高风险 PoC 可控</span></div>
+            <div class="metric"><strong>Traceable</strong><span>证据链可审计</span></div>
+            <div class="metric"><strong>Packaged</strong><span>可安装交付</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="footer"><span>SmartDrive Shield Edge</span><span>15</span></div>
+    </section>
+  </main>
+
+  <div class="controls" aria-label="Slide controls">
+    <button type="button" id="prev" aria-label="Previous slide">←</button>
+    <button type="button" id="next" aria-label="Next slide">→</button>
+  </div>
+  <div class="progress"><div class="progress-bar" id="progress"></div></div>
+
+  <script>
+    const slides = Array.from(document.querySelectorAll(".slide"));
+    const progress = document.getElementById("progress");
+    let current = 0;
+
+    function showSlide(index) {
+      current = Math.max(0, Math.min(index, slides.length - 1));
+      slides.forEach((slide, idx) => slide.classList.toggle("active", idx === current));
+      progress.style.width = `${((current + 1) / slides.length) * 100}%`;
+      document.title = `(${current + 1}/${slides.length}) 智驭安盾 SmartDrive Shield Edge`;
+    }
+
+    document.getElementById("prev").addEventListener("click", () => showSlide(current - 1));
+    document.getElementById("next").addEventListener("click", () => showSlide(current + 1));
+
+    window.addEventListener("keydown", (event) => {
+      if (["ArrowRight", "PageDown", " "].includes(event.key)) {
+        event.preventDefault();
+        showSlide(current + 1);
+      }
+      if (["ArrowLeft", "PageUp"].includes(event.key)) {
+        event.preventDefault();
+        showSlide(current - 1);
+      }
+      if (event.key === "Home") showSlide(0);
+      if (event.key === "End") showSlide(slides.length - 1);
+    });
+
+    showSlide(0);
+  </script>
+</body>
+</html>
