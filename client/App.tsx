@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { LayoutDashboard, Radio, Database, Shield, Github, History, User, Bot } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { LayoutDashboard, Radio, Database, Shield, Github, History, User, AlertTriangle, ServerCrash, Cpu } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Scanner from './components/Scanner';
 import PocDatabase from './components/PocDatabase';
@@ -8,18 +8,21 @@ import AuthPage from './components/AuthPage';
 import Profile from './components/Profile';
 import UserManagement from './components/UserManagement';
 import AgentScan from './components/AgentScan';
+import EdgeManager from './components/EdgeManager';
 import { ScanSession } from './types';
+import { fetchCurrentProfile, getBackendHealth, getBackendUrl } from './services/api';
 
 enum View {
   DASHBOARD = 'dashboard',
   SCANNER = 'scanner',
   DATABASE = 'database',
   HISTORY = 'history',
+  EDGE = 'edge',
   PROFILE = 'profile',
   USER_MANAGEMENT = 'user_management'
 }
 
-type ScannerMode = 'SELECTION' | 'GLOBAL' | 'MANUAL';
+type ScannerMode = 'SELECTION' | 'GLOBAL' | 'MANUAL' | 'AGENT';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>(View.DASHBOARD);
@@ -57,8 +60,19 @@ const App: React.FC = () => {
 
   // Persistent Scanner State
   const [scannerMode, setScannerMode] = useState<ScannerMode>('SELECTION');
-  const [engineUrl, setEngineUrl] = useState('http://localhost:5002');
+  const [engineUrl, setEngineUrl] = useState(getBackendUrl());
   const [engineStatus, setEngineStatus] = useState<'unknown' | 'online' | 'offline'>('unknown');
+  const [globalBackendHealth, setGlobalBackendHealth] = useState<{
+    url: string;
+    ok: boolean;
+    database?: string;
+    ai_reports_enabled?: boolean;
+    warnings?: string[];
+    error?: string;
+  }>({
+    url: getBackendUrl(),
+    ok: false,
+  });
   const [scannerSession, setScannerSession] = useState<ScanSession>({
     id: 'SESSION-INIT',
     targetName: '',
@@ -105,6 +119,89 @@ const App: React.FC = () => {
     setScanHistory(prev => [...prev, session]);
   };
 
+  const handleResumeAgentSession = (session: ScanSession) => {
+    const phaseRecords = session.phase_records || [];
+    const phases = ['recon', 'decision', 'weaponize', 'execute', 'assess'].map((phase) => {
+      const record = phaseRecords.find(item => item.phase === phase);
+      return {
+        phase,
+        status: (record?.status || 'idle') as 'idle' | 'running' | 'done' | 'error' | 'retrying' | 'skipped',
+        output: record?.raw_output || record?.error || '',
+      };
+    });
+
+    localStorage.setItem('autosec_agent_scan_state', JSON.stringify({
+      targetIp: session.connection.ip || '',
+      targetName: session.targetName || 'IVI System',
+      phases,
+      finalReport: session.aiReport || '',
+      topology: null,
+      adaptiveCtx: null,
+      scanTime: session.startTime ? new Date(session.startTime).toLocaleString('zh-CN', { hour12: false }) : '',
+      activeStep: -1,
+      canInterface: session.connection.canInterface || 'PCAN_USBBUS1',
+      bluetoothMac: session.connection.bluetoothMac || '',
+      wifiInterface: session.connection.interface || '',
+      rfFrequency: session.connection.frequency || '',
+      riskScore: session.riskScore || 0,
+      results: session.results || [],
+      logs: session.logs || [],
+      assessment: session.assessment || {},
+      phaseRecords,
+      structuredState: session.structured || {},
+      findings: session.findings || [],
+    }));
+    setScannerMode('AGENT');
+    setCurrentView(View.SCANNER);
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const refreshHealth = async () => {
+      const health = await getBackendHealth(engineUrl);
+      if (cancelled) return;
+      setGlobalBackendHealth({
+        url: health.url,
+        ok: health.ok,
+        database: health.database,
+        ai_reports_enabled: health.ai_reports_enabled,
+        warnings: health.warnings,
+        error: health.error,
+      });
+      setEngineStatus(health.ok ? 'online' : 'offline');
+    };
+
+    refreshHealth();
+    return () => {
+      cancelled = true;
+    };
+  }, [engineUrl]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const refreshProfile = async () => {
+      if (!token) return;
+      try {
+        const latestUser = await fetchCurrentProfile(token);
+        if (cancelled || !latestUser) return;
+        setUser(latestUser);
+        localStorage.setItem('autosec_user', JSON.stringify(latestUser));
+      } catch (error: any) {
+        if (cancelled) return;
+        if (/401|403|Could not verify|Invalid token/i.test(String(error?.message || ''))) {
+          handleUnauthorized();
+        }
+      }
+    };
+
+    refreshProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
   if (!token || !user) {
     return <AuthPage onLogin={handleLogin} />;
   }
@@ -150,6 +247,14 @@ const App: React.FC = () => {
           >
             <History size={20} />
             <span className="hidden lg:block ml-3 font-medium">Scan History</span>
+          </button>
+
+          <button
+            onClick={() => setCurrentView(View.EDGE)}
+            className={`w-full flex items-center p-3 rounded-lg transition-colors ${currentView === View.EDGE ? 'bg-cyber-700 text-cyber-accent border-l-4 border-cyber-accent' : 'text-gray-400 hover:bg-cyber-700 hover:text-white'}`}
+          >
+            <Cpu size={20} />
+            <span className="hidden lg:block ml-3 font-medium">Edge Control</span>
           </button>
 
 
@@ -212,16 +317,32 @@ const App: React.FC = () => {
             {currentView === View.SCANNER && 'Vulnerability Scanner'}
             {currentView === View.DATABASE && 'Threat Intelligence Database'}
             {currentView === View.HISTORY && 'Scan Records & Audit'}
+            {currentView === View.EDGE && 'Edge Control Plane'}
             {currentView === View.PROFILE && 'User Profile & Settings'}
             {currentView === View.USER_MANAGEMENT && 'System Operators'}
           </h1>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-              <span className="text-xs text-green-500 font-mono">SYSTEM ONLINE</span>
+              <span className={`w-2 h-2 rounded-full animate-pulse ${globalBackendHealth.ok ? 'bg-green-500' : 'bg-red-500'}`}></span>
+              <span className={`text-xs font-mono ${globalBackendHealth.ok ? 'text-green-500' : 'text-red-400'}`}>
+                {globalBackendHealth.ok ? 'SYSTEM ONLINE' : 'BACKEND OFFLINE'}
+              </span>
             </div>
           </div>
         </header>
+
+        <div className={`px-6 py-2 border-b text-xs font-mono flex items-center gap-3 ${globalBackendHealth.ok ? 'bg-cyan-950/20 border-cyan-900/40 text-cyan-300' : 'bg-red-950/20 border-red-900/40 text-red-300'}`}>
+          {globalBackendHealth.ok ? <Shield className="w-3.5 h-3.5" /> : <ServerCrash className="w-3.5 h-3.5" />}
+          <span>Backend: {globalBackendHealth.url}</span>
+          {globalBackendHealth.database && <span>DB: {globalBackendHealth.database}</span>}
+          <span>AI: {globalBackendHealth.ai_reports_enabled ? 'user-configured' : 'unavailable'}</span>
+          {!globalBackendHealth.ok && globalBackendHealth.error && (
+            <span className="flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" />{globalBackendHealth.error}</span>
+          )}
+          {globalBackendHealth.ok && globalBackendHealth.warnings && globalBackendHealth.warnings.length > 0 && (
+            <span className="truncate">Warnings: {globalBackendHealth.warnings.join(' | ')}</span>
+          )}
+        </div>
 
         {/* View Container */}
         <div className="flex-1 overflow-auto bg-gradient-to-br from-cyber-900 to-black relative">
@@ -245,10 +366,26 @@ const App: React.FC = () => {
                 engineStatus={engineStatus}
                 setEngineStatus={setEngineStatus}
                 token={token}
+                currentUser={user}
               />
             )}
             {currentView === View.DATABASE && <PocDatabase />}
-            {currentView === View.HISTORY && <ScanHistory localHistory={scanHistory} currentUser={user} token={token} onUnauthorized={handleUnauthorized} />}
+            {currentView === View.HISTORY && (
+              <ScanHistory
+                localHistory={scanHistory}
+                currentUser={user}
+                token={token}
+                onUnauthorized={handleUnauthorized}
+                onResumeSession={handleResumeAgentSession}
+              />
+            )}
+            {currentView === View.EDGE && (
+              <EdgeManager
+                token={token}
+                currentUser={user}
+                onUnauthorized={handleUnauthorized}
+              />
+            )}
 
 
             {currentView === View.PROFILE && (

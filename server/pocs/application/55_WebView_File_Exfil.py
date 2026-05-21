@@ -42,6 +42,15 @@ EXPLOIT_HTML = '''<!DOCTYPE html>
 '''
 
 class WebViewExfilPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "WebView File Exfil"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "unknown"
+    meta_target_os = ["all"]
+    meta_required_params = ["target_ip"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         self.bind_ip = self.params.get("target_ip", "0.0.0.0")
         if self.bind_ip == "N/A":
@@ -129,5 +138,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 55_WebView_File_Exfil.py <bind_ip>")
         sys.exit(1)
-    plugin = WebViewExfilPlugin({"target_ip": ip})
+    plugin = WebViewExfilPlugin({"target_ip": sys.argv[1]})
     plugin.run_verify()

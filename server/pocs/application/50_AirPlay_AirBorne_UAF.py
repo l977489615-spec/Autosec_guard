@@ -14,6 +14,15 @@ import socket
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class AirBorneUAFPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "AirPlay AirBorne UAF"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "unknown"
+    meta_target_os = ["all"]
+    meta_required_params = ["target_ip"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         if not self.target_ip or self.target_ip == 'N/A':
             self.logger.error("未指定目标IP地址。")

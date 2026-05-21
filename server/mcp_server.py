@@ -29,6 +29,7 @@ import logging
 import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from config import get_config
 
 # 确保上级目录在 sys.path 中
 SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -39,12 +40,13 @@ from physical_safety_monitor import get_or_create_engine
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s][%(levelname)s] %(message)s')
+CONFIG = get_config()
 
 app = Flask(__name__)
 CORS(app)
 
 # 主 AutoSec Flask API 地址
-AUTOSEC_API = os.environ.get("AUTOSEC_API", "http://localhost:5002")
+AUTOSEC_API = CONFIG.autosec_api
 
 
 # ──────────────────────────────────────────────

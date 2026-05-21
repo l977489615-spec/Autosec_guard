@@ -25,6 +25,15 @@ class BluetoothKeyboardSpoofPlugin(IVIVulnerabilityPlugin):
     2. 尝试向目标蓝牙 MAC 地址的 HID Control PSM (端口 17) 发起 L2CAP 连接。
     3. 如果连接建立成功且无需我们在终端输入 PIN 码，说明目标接受了未授权的 HID 连接。
     """
+    meta_poc_name = "BT Keystroke Injection"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "rf"
+    meta_target_os = ["all"]
+    meta_required_params = ["target_mac"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     
     def __init__(self, target_config, logger=None):
         super().__init__(target_config, logger)
@@ -133,5 +142,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: sudo python3 45_BT_Keystroke_Injection.py <target_mac>")
         sys.exit(1)
-    plugin = BluetoothKeyboardSpoofPlugin(config)
+    plugin = BluetoothKeyboardSpoofPlugin({"target_mac": sys.argv[1]})
     plugin.run_verify()

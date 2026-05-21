@@ -13,6 +13,15 @@ import sys
 import subprocess
 from iv_plugin_base import IVIVulnerabilityPlugin
 class BTSDPEnumPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "BT SDP Enum"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "unknown"
+    meta_target_os = ["all"]
+    meta_required_params = ["bd_addr"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         if not self.params.get("bd_addr"):
             raise RuntimeError("需要指定目标蓝牙MAC地址")
@@ -33,8 +42,8 @@ class BTSDPEnumPlugin(IVIVulnerabilityPlugin):
                 for line in result.stdout.splitlines():
                     if "Service Name:" in line or "Channel:" in line or "Protocol:" in line:
                         self.logger.info(f"  {line.strip()}")
-                self.results["vulnerable"] = True
-                self.results["evidence"] = f"{services} Bluetooth services found via sdptool"
+                self.results["vulnerable"] = False
+                self.results["evidence"] = f"Enumerated {services} Bluetooth services via sdptool; enumeration alone does not prove a vulnerability."
                 return self.results
             else:
                 self.logger.info("sdptool 查询失败或无服务")
@@ -55,8 +64,8 @@ class BTSDPEnumPlugin(IVIVulnerabilityPlugin):
                 self.logger.info(f"[+] hcitool 设备信息:")
                 for line in result.stdout.splitlines():
                     self.logger.info(f"  {line.strip()}")
-                self.results["vulnerable"] = True
-                self.results["evidence"] = f"Device info retrieved via hcitool for {target}"
+                self.results["vulnerable"] = False
+                self.results["evidence"] = f"Device info retrieved via hcitool for {target}; this is reconnaissance evidence, not a confirmed vulnerability."
                 return self.results
         except FileNotFoundError:
             self.logger.info("hcitool 也不可用，使用基于协议模拟的 SDP 检测...")

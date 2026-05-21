@@ -9,6 +9,7 @@ interface ScanLogsProps {
 
 const ScanLogs: React.FC<ScanLogsProps> = ({ logs, onClearLogs }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const visibleLogs = logs.slice(-500);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -62,7 +63,12 @@ const ScanLogs: React.FC<ScanLogsProps> = ({ logs, onClearLogs }) => {
       </div>
       <div ref={scrollRef} className="flex-1 overflow-y-auto scroller space-y-1 p-2">
         {logs.length === 0 && <span className="text-gray-600 italic">Waiting for scan to initiate...</span>}
-        {logs.map((log, idx) => (
+        {logs.length > visibleLogs.length && (
+          <div className="text-gray-500 italic">
+            Showing latest {visibleLogs.length} lines. Export logs for the retained buffer.
+          </div>
+        )}
+        {visibleLogs.map((log, idx) => (
           <div key={idx} className="flex gap-3">
             <span className="text-gray-500 shrink-0">[{log.timestamp}]</span>
             <span className={`${log.type === 'error' ? 'text-cyber-danger' :

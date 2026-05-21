@@ -15,6 +15,15 @@ import time
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class BleedingToothPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "BleedingTooth L2CAP"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "rf"
+    meta_target_os = ["all"]
+    meta_required_params = ["bluetooth_mac"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
         self.bt_mac = self.params.get("bluetooth_mac", "")
         if not self.bt_mac:
@@ -84,5 +93,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 47_BleedingTooth_L2CAP.py <bluetooth_mac>")
         sys.exit(1)
-    plugin = BleedingToothPlugin({"bluetooth_mac": mac})
+    plugin = BleedingToothPlugin({"bluetooth_mac": sys.argv[1]})
     plugin.run_verify()

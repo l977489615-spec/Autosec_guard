@@ -19,6 +19,15 @@ class MercedesHiQnetPlugin(IVIVulnerabilityPlugin):
     CVE-2021-23906: Mercedes-Benz MBUX HiQnet Stack Overflow POC
     目标端口: 3804 (TCP)
     """
+    meta_poc_name = "HiQnet Stack Overflow TCP"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "unknown"
+    meta_target_os = ["all"]
+    meta_required_params = ["target_ip"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     
     def __init__(self, target_config, logger=None):
         super().__init__(target_config, logger)
@@ -102,5 +111,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 53_HiQnet_Stack_Overflow_TCP.py <target_ip>")
         sys.exit(1)
-    plugin = MercedesHiQnetPlugin(config)
+    plugin = MercedesHiQnetPlugin({"target_ip": sys.argv[1]})
     plugin.run_verify()

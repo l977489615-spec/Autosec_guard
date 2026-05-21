@@ -12,16 +12,26 @@ Usage: python3 63_RF_Keyfob_Replay.py <args>
 import subprocess
 import sys
 import os
+import shutil
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class HondaReplayPlugin(IVIVulnerabilityPlugin):
     """
     CVE-2022-27254: Honda Keyless Entry Replay Attack
     """
+    meta_poc_name = "RF Keyfob Replay"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "rf"
+    meta_target_os = ["all"]
+    meta_required_params = ["frequency"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def __init__(self, target_config, logger=None):
         super().__init__(target_config, logger)
         self.results["cve_id"] = "CVE-2022-27254"
-        self.freq = "433920000" # 433.92 MHz
+        self.freq = str(target_config.get("frequency", "433920000")) # 433.92 MHz
         self.sample_rate = "2000000"
         self.file_name = "signal.raw"
 
@@ -76,5 +86,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 63_RF_Keyfob_Replay.py <args>")
         sys.exit(1)
-    plugin = HondaReplayPlugin({})
+    plugin = HondaReplayPlugin({"frequency": sys.argv[1]})
     plugin.run_verify()

