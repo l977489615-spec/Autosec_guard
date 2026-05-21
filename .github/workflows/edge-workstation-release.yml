@@ -38,6 +38,11 @@ jobs:
             release_zip: build/edge_workstation/release/autosec-guard-edge-linux-x64.zip
             release_dir: build/edge_workstation/release/autosec-guard-edge-linux-x64
             executable: build/edge_workstation/release/autosec-guard-edge-linux-x64/autosec-guard-edge
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+            release_zip: build/edge_workstation/release/autosec-guard-edge-linux-arm64.zip
+            release_dir: build/edge_workstation/release/autosec-guard-edge-linux-arm64
+            executable: build/edge_workstation/release/autosec-guard-edge-linux-arm64/autosec-guard-edge
           - target: windows-x64
             runner: windows-latest
             release_zip: build/edge_workstation/release/autosec-guard-edge-windows-x64.zip
