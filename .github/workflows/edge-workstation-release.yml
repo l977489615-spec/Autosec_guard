@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       backend:
-        description: "Packaging backend. PyInstaller is the practical default; Nuitka is slower and stronger."
+        description: "Packaging backend. Nuitka builds a compiled standalone package in CI to avoid onefile timeouts."
         required: true
         default: "pyinstaller"
         type: choice
@@ -28,7 +28,7 @@ jobs:
   build:
     name: ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -84,6 +84,9 @@ jobs:
 
       - name: Build edge workstation package
         shell: bash
+        env:
+          AUTOSEC_PYINSTALLER_MODE: onedir
+          AUTOSEC_NUITKA_MODE: standalone
         run: python packaging/build_edge_workstation.py --backend "${{ github.event.inputs.backend || 'pyinstaller' }}"
 
       - name: Verify release files

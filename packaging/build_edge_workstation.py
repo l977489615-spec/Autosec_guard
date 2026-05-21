@@ -29,9 +29,9 @@ ENTRYPOINT = SERVER_DIR / "server.py"
 REGISTRY_GENERATOR = SERVER_DIR / "generate_poc_registry.py"
 
 
-def _run(cmd: list[str], cwd: Path | None = None) -> None:
+def _run(cmd: list[str], cwd: Path | None = None, env: dict[str, str] | None = None) -> None:
     print("[build] " + " ".join(cmd))
-    subprocess.run(cmd, cwd=str(cwd) if cwd else None, check=True)
+    subprocess.run(cmd, cwd=str(cwd) if cwd else None, env=env, check=True)
 
 
 def _platform_tag() -> str:
@@ -133,15 +133,18 @@ def _generate_registry() -> None:
 
 def _build_with_nuitka(work_dir: Path, output_name: str) -> Path:
     out_dir = work_dir / "nuitka"
+    cache_dir = work_dir / "nuitka-cache"
     out_dir.mkdir(parents=True, exist_ok=True)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    nuitka_mode = os.environ.get("AUTOSEC_NUITKA_MODE", "standalone").strip().lower()
+    if nuitka_mode not in {"standalone", "onefile"}:
+        raise RuntimeError("AUTOSEC_NUITKA_MODE must be 'standalone' or 'onefile'")
     cmd = [
         sys.executable,
         "-m",
         "nuitka",
         "--standalone",
-        "--onefile",
         "--assume-yes-for-downloads",
-        "--disable-cache=all",
         f"--output-dir={out_dir}",
         f"--output-filename={output_name}",
         f"--include-data-dir={CLIENT_DIST}=web_dist",
@@ -161,17 +164,73 @@ def _build_with_nuitka(work_dir: Path, output_name: str) -> Path:
         "--include-module=agent_orchestrator",
         "--include-module=physical_safety_monitor",
         "--include-module=topology_scanner",
-        "--include-package=scapy",
-        "--include-package=can",
-        "--include-package=paramiko",
-        "--include-package=requests",
-        "--include-package=cryptography",
-        "--include-package=bcrypt",
-        "--include-package=jwt",
+        "--include-module=openai",
+        "--include-module=scapy.all",
+        "--include-module=scapy.layers.dot11",
+        "--include-module=scapy.layers.inet",
+        "--include-module=scapy.layers.l2",
+        "--include-module=can",
+        "--include-module=can.interfaces.pcan.pcan",
+        "--include-module=can.interfaces.socketcan.socketcan",
+        "--include-module=can.interfaces.slcan",
+        "--include-module=can.interfaces.serial",
+        "--include-module=paramiko",
+        "--include-module=requests",
+        "--include-module=cryptography",
+        "--include-module=bcrypt",
+        "--include-module=jwt",
+        "--nofollow-import-to=*.tests",
+        "--nofollow-import-to=*.testing",
+        "--nofollow-import-to=PIL",
+        "--nofollow-import-to=MySQLdb",
+        "--nofollow-import-to=matplotlib",
+        "--nofollow-import-to=numpy",
+        "--nofollow-import-to=pandas",
+        "--nofollow-import-to=scipy",
+        "--nofollow-import-to=tensorflow",
+        "--nofollow-import-to=torch",
+        "--nofollow-import-to=torchvision",
+        "--nofollow-import-to=tkinter",
         str(ENTRYPOINT),
     ]
-    _run(cmd, cwd=SERVER_DIR)
-    return out_dir / output_name
+    if nuitka_mode == "onefile":
+        cmd.insert(4, "--onefile")
+        cmd.insert(5, "--onefile-no-compression")
+    env = os.environ.copy()
+    env["NUITKA_CACHE_DIR"] = str(cache_dir)
+    _run(cmd, cwd=SERVER_DIR, env=env)
+
+    candidates = [
+        out_dir / output_name,
+        out_dir / f"{ENTRYPOINT.stem}.dist" / output_name,
+        out_dir / f"{ENTRYPOINT.stem}.dist" / f"{output_name}.exe",
+    ]
+    if platform.system().lower() == "windows":
+        candidates.extend([
+            out_dir / output_name.removesuffix(".exe") / output_name,
+            out_dir / f"{ENTRYPOINT.stem}.dist" / output_name.removesuffix(".exe"),
+        ])
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    matches = sorted(out_dir.rglob(output_name))
+    if matches:
+        return matches[0]
+    raise RuntimeError(f"Nuitka build completed but executable was not found under {out_dir}")
+
+
+def _pyinstaller_mode() -> str:
+    """Return the PyInstaller bundle mode for this build.
+
+    GitHub-hosted Windows and ARM64 runners are slow at the final onefile
+    assembly/compression step. The release artifact is already a zip directory,
+    so onedir is a better CI default: it keeps the same user-facing launcher
+    name while avoiding the timeout-prone onefile packing stage.
+    """
+    configured = os.environ.get("AUTOSEC_PYINSTALLER_MODE", "").strip().lower()
+    if configured in {"onefile", "onedir"}:
+        return configured
+    return "onedir"
 
 
 def _build_with_pyinstaller(work_dir: Path, output_name: str) -> Path:
@@ -179,15 +238,18 @@ def _build_with_pyinstaller(work_dir: Path, output_name: str) -> Path:
     if not pyinstaller:
         raise RuntimeError("PyInstaller is required. Install it with: pip install pyinstaller")
 
+    mode = _pyinstaller_mode()
     dist_dir = work_dir / "pyinstaller-dist"
     spec_dir = work_dir / "pyinstaller-spec"
     build_dir = work_dir / "pyinstaller-build"
+    cache_dir = work_dir / "pyinstaller-cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
     sep = ";" if platform.system().lower() == "windows" else ":"
     cmd = [
         pyinstaller,
         "--noconfirm",
         "--clean",
-        "--onefile",
+        f"--{mode}",
         "--name",
         output_name.removesuffix(".exe"),
         "--distpath",
@@ -230,17 +292,37 @@ def _build_with_pyinstaller(work_dir: Path, output_name: str) -> Path:
         "physical_safety_monitor",
         "--hidden-import",
         "topology_scanner",
-        "--collect-all",
-        "scapy",
-        "--collect-all",
+        "--hidden-import",
+        "openai",
+        "--hidden-import",
+        "scapy.all",
+        "--hidden-import",
+        "scapy.layers.dot11",
+        "--hidden-import",
+        "scapy.layers.inet",
+        "--hidden-import",
+        "scapy.layers.l2",
+        "--hidden-import",
         "can",
-        "--collect-all",
+        "--hidden-import",
+        "can.interfaces.pcan",
+        "--hidden-import",
+        "can.interfaces.pcan.pcan",
+        "--hidden-import",
+        "can.interfaces.socketcan",
+        "--hidden-import",
+        "can.interfaces.socketcan.socketcan",
+        "--hidden-import",
+        "can.interfaces.slcan",
+        "--hidden-import",
+        "can.interfaces.serial",
+        "--hidden-import",
         "paramiko",
-        "--collect-all",
+        "--hidden-import",
         "requests",
-        "--collect-all",
+        "--hidden-import",
         "cryptography",
-        "--collect-all",
+        "--hidden-import",
         "bcrypt",
         "--hidden-import",
         "_cffi_backend",
@@ -264,7 +346,15 @@ def _build_with_pyinstaller(work_dir: Path, output_name: str) -> Path:
         "tkinter",
         str(ENTRYPOINT),
     ]
-    _run(cmd, cwd=SERVER_DIR)
+    env = os.environ.copy()
+    env["PYINSTALLER_CONFIG_DIR"] = str(cache_dir)
+    _run(cmd, cwd=SERVER_DIR, env=env)
+    if mode == "onedir":
+        bundle_dir = dist_dir / output_name.removesuffix(".exe")
+        executable = bundle_dir / output_name
+        if not executable.exists() and platform.system().lower() == "windows":
+            executable = bundle_dir / f"{output_name.removesuffix('.exe')}.exe"
+        return executable
     return dist_dir / output_name
 
 
@@ -283,18 +373,43 @@ def build(backend: str) -> Path:
     work_dir = BUILD_DIR / _platform_tag()
     work_dir.mkdir(parents=True, exist_ok=True)
 
+    built_with_pyinstaller = False
+    built_with_nuitka = False
     if backend == "nuitka":
         executable = _build_with_nuitka(work_dir, output_name)
+        built_with_nuitka = True
     elif backend == "pyinstaller":
         executable = _build_with_pyinstaller(work_dir, output_name)
+        built_with_pyinstaller = True
     else:
         try:
             executable = _build_with_nuitka(work_dir, output_name)
+            built_with_nuitka = True
         except Exception as exc:
             print(f"[build] Nuitka failed, falling back to PyInstaller: {exc}")
             executable = _build_with_pyinstaller(work_dir, output_name)
+            built_with_pyinstaller = True
 
-    shutil.copy2(executable, platform_release / output_name)
+    if (
+        (built_with_pyinstaller and _pyinstaller_mode() == "onedir")
+        or (
+            built_with_nuitka
+            and os.environ.get("AUTOSEC_NUITKA_MODE", "standalone").strip().lower() == "standalone"
+            and executable.parent.name.endswith(".dist")
+        )
+    ):
+        bundle_dir = executable.parent
+        for child in bundle_dir.iterdir():
+            destination = platform_release / child.name
+            if child.is_dir():
+                shutil.copytree(child, destination)
+            else:
+                shutil.copy2(child, destination)
+        release_executable = platform_release / executable.name
+        if executable.name != output_name:
+            release_executable.rename(platform_release / output_name)
+    else:
+        shutil.copy2(executable, platform_release / output_name)
     if platform.system().lower() != "windows":
         (platform_release / output_name).chmod(0o755)
     _write_release_files(platform_release, output_name)
