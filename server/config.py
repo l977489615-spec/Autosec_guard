@@ -1,5 +1,7 @@
 import os
+import platform
 import secrets
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List
@@ -25,11 +27,14 @@ def _load_env_file(path: Path) -> None:
 
 
 def load_environment() -> None:
+    executable_dir = Path(sys.argv[0]).resolve().parent if sys.argv and sys.argv[0] else Path.cwd()
     candidates = [
         PROJECT_ROOT / '.env',
         PROJECT_ROOT / '.env.local',
         BASE_DIR / '.env',
         BASE_DIR / '.env.local',
+        executable_dir / '.env',
+        executable_dir / '.env.local',
     ]
     for candidate in candidates:
         _load_env_file(candidate)
@@ -56,7 +61,7 @@ def _to_bool(value: str | None, default: bool = False) -> bool:
 
 
 def _normalize_database_uri(uri: str | None) -> str:
-    default_sqlite_path = (BASE_DIR / 'autosec.db').resolve()
+    default_sqlite_path = (get_runtime_data_dir() / 'autosec.db').resolve()
     if not uri:
         return f"sqlite:///{default_sqlite_path.as_posix()}"
 
@@ -70,6 +75,29 @@ def _normalize_database_uri(uri: str | None) -> str:
 
     path_obj.parent.mkdir(parents=True, exist_ok=True)
     return f"sqlite:///{path_obj.as_posix()}"
+
+
+def get_runtime_data_dir() -> Path:
+    configured = os.environ.get('AUTOSEC_DATA_DIR')
+    if configured:
+        path = Path(configured).expanduser().resolve()
+    elif not (
+        getattr(sys, 'frozen', False)
+        or hasattr(sys, '__compiled__')
+        or os.environ.get('NUITKA_ONEFILE_PARENT')
+        or os.environ.get('PYINSTALLER_SAFE_MODE')
+    ):
+        path = BASE_DIR
+    else:
+        system = platform.system().lower()
+        if system == 'darwin':
+            path = Path.home() / 'Library' / 'Application Support' / 'AutoSec Guard Edge'
+        elif system == 'windows':
+            path = Path(os.environ.get('LOCALAPPDATA') or Path.home() / 'AppData' / 'Local') / 'AutoSec Guard Edge'
+        else:
+            path = Path(os.environ.get('XDG_STATE_HOME') or Path.home() / '.local' / 'state') / 'autosec-guard-edge'
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def get_config() -> AppConfig:
@@ -93,6 +121,7 @@ def get_runtime_warnings(config: AppConfig) -> List[str]:
     if 'AUTOSEC_DB_URI' not in os.environ:
         warnings.append('AUTOSEC_DB_URI not set; using local SQLite database.')
 
+    warnings.append('Edge-local product mode: PoC execution and hardware capability probing run on this workstation.')
     warnings.append('AI features require per-user AI configuration from the browser; the server does not use a shared model API key.')
 
     return warnings

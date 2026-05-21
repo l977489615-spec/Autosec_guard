@@ -6,7 +6,7 @@ import ScanLogs from './ScanLogs';
 import { generateSecurityReport } from '../services/LLMService';
 import PocDetailModal from './PocDetailModal';
 import ManualTestModal from './ManualTestModal';
-import { checkBackendHealth, executePocScript, setBackendUrl, getBackendUrl, listPocs, fingerprintOS, runPocPlugin, saveScanSession, createEdgeTask } from '../services/api';
+import { checkBackendHealth, executePocScript, setBackendUrl, getBackendUrl, listPocs, fingerprintOS, runPocPlugin, saveScanSession } from '../services/api';
 import { Play, RotateCw, FileText, AlertTriangle, ShieldCheck, Wifi, Cable, Bluetooth, Power, Crosshair, List, Server, ArrowRight, Settings, Save, WifiOff, Link, CheckCircle, Radio, Activity, Download, ChevronRight, Bot } from 'lucide-react';
 import AgentScan from './AgentScan';
 
@@ -366,8 +366,6 @@ const Scanner: React.FC<ScannerProps> = ({
 
       const startTime = Date.now();
       const runtimeMeta = runtimeMetadata[poc.id] || pocRuntimeMetadataRef.current[poc.id] || {};
-      const supportedPlanes = runtimeMeta.supportedExecutionPlanes || ['cloud', 'edge'];
-      const recommendedPlane = runtimeMeta.recommendedExecutionPlane || 'cloud';
       const requiresManualConfirmation = Boolean(runtimeMeta.manualConfirmationRequired);
       const shouldAllowDisruptive = requiresManualConfirmation || autoApproveDisruptiveForRunRef.current;
       const executionParams = { ...session.connection } as any;
@@ -404,53 +402,8 @@ const Scanner: React.FC<ScannerProps> = ({
         }
       }
 
-      if (recommendedPlane === 'edge' && supportedPlanes.includes('edge')) {
-        if (!token) {
-          addLog(`${progress} ! ${poc.name} → Edge-only PoC requires authenticated session for task dispatch.`, 'warning');
-          errorCount++;
-          results.push({
-            pocId: poc.id,
-            vulnerable: false,
-            details: 'Edge-only PoC could not be queued because no JWT token was available.',
-            detectedAt: new Date().toISOString(),
-            elapsedSeconds: 0,
-          });
-          continue;
-        }
-
-        try {
-          const edgeParams: Record<string, any> = {};
-          if (executionParams.ip) edgeParams.target_ip = executionParams.ip;
-          if (executionParams.port) edgeParams.port = executionParams.port;
-          if (executionParams.bluetoothMac || executionParams.bluetooth_mac) edgeParams.bluetooth_mac = executionParams.bluetoothMac || executionParams.bluetooth_mac;
-          if (executionParams.canInterface) edgeParams.can_interface = executionParams.canInterface;
-          if (executionParams.interface) edgeParams.interface = executionParams.interface;
-          if (executionParams.frequency) edgeParams.rf_frequency = executionParams.frequency;
-          if (executionParams.url) edgeParams.url = executionParams.url;
-          if (shouldAllowDisruptive) edgeParams.allow_disruptive = true;
-          const queued = await createEdgeTask({ filename: poc.pocFile!, params: edgeParams }, token);
-          const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-          addLog(`${progress} ⇢ ${poc.name} → Queued on edge agent ${queued.selected_agent?.display_name || queued.task?.edge_agent_id || 'auto'} (${elapsed}s)`, 'success');
-          results.push({
-            pocId: poc.id,
-            vulnerable: false,
-            details: `Queued for edge execution on ${queued.selected_agent?.display_name || queued.task?.edge_agent_id || 'auto'} (${queued.task?.task_id || 'task pending'}).`,
-            detectedAt: new Date().toISOString(),
-            elapsedSeconds: parseFloat(elapsed),
-          });
-        } catch (edgeError: any) {
-          const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-          addLog(`${progress} ! ${poc.name} → Edge queue failed (${elapsed}s): ${edgeError?.message || edgeError}`, 'warning');
-          errorCount++;
-          results.push({
-            pocId: poc.id,
-            vulnerable: false,
-            details: `Edge queue error: ${edgeError?.message || edgeError}`,
-            detectedAt: new Date().toISOString(),
-            elapsedSeconds: parseFloat(elapsed),
-          });
-        }
-        continue;
+      if (runtimeMeta.executionRequirements?.requires_edge) {
+        addLog(`${progress} ⇢ ${poc.name} → Using local vehicle runtime for hardware-dependent PoC.`, 'info');
       }
 
       // Execute Real via the Plugin Loader (Handles parameters and subdirectories natively)

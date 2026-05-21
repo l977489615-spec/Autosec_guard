@@ -1,8 +1,7 @@
-import json
 import os
 
 
-def edge_capability_flags(capabilities: dict) -> dict:
+def local_capability_flags(capabilities: dict) -> dict:
     socketcan_raw = str((capabilities.get("socketcan") or {}).get("interfaces") or "").lower()
     wifi_raw = str((capabilities.get("wifi") or {}).get("interfaces") or "").lower()
     bluetooth_raw = " ".join(
@@ -47,7 +46,7 @@ def edge_capability_flags(capabilities: dict) -> dict:
     }
 
 
-def infer_edge_requirements(pocs_dir: str, profile: dict, poc_filename: str, params: dict | None = None) -> dict:
+def infer_local_requirements(pocs_dir: str, profile: dict, poc_filename: str, params: dict | None = None) -> dict:
     params = params or {}
     protocol = str(profile.get("protocol") or "").lower()
     category = os.path.basename(os.path.dirname(os.path.join(pocs_dir, poc_filename))).lower()
@@ -103,18 +102,8 @@ def infer_edge_requirements(pocs_dir: str, profile: dict, poc_filename: str, par
     }
 
 
-def edge_capabilities_missing(capabilities_payload: str | dict | None, requirements: dict) -> tuple[bool, list[str]]:
-    if isinstance(capabilities_payload, str):
-        capabilities = json.loads(capabilities_payload) if capabilities_payload else {}
-    else:
-        capabilities = capabilities_payload or {}
-    flags = edge_capability_flags(capabilities)
-    missing = [name for name in requirements.get("required_capabilities", []) if not flags.get(name)]
-    return not missing, missing
-
-
 def classify_poc_execution_mode(pocs_dir: str, poc_path: str, profile: dict, poc_filename: str) -> dict:
-    requirements = infer_edge_requirements(pocs_dir, profile, poc_filename, {})
+    requirements = infer_local_requirements(pocs_dir, profile, poc_filename, {})
     text = ""
     try:
         with open(poc_path, "r", encoding="utf-8", errors="ignore") as handle:

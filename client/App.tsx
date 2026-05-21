@@ -8,7 +8,7 @@ import AuthPage from './components/AuthPage';
 import Profile from './components/Profile';
 import UserManagement from './components/UserManagement';
 import AgentScan from './components/AgentScan';
-import EdgeManager from './components/EdgeManager';
+import LocalRuntime from './components/LocalRuntime';
 import { ScanSession } from './types';
 import { fetchCurrentProfile, getBackendHealth, getBackendUrl } from './services/api';
 
@@ -254,7 +254,7 @@ const App: React.FC = () => {
             className={`w-full flex items-center p-3 rounded-lg transition-colors ${currentView === View.EDGE ? 'bg-cyber-700 text-cyber-accent border-l-4 border-cyber-accent' : 'text-gray-400 hover:bg-cyber-700 hover:text-white'}`}
           >
             <Cpu size={20} />
-            <span className="hidden lg:block ml-3 font-medium">Edge Control</span>
+            <span className="hidden lg:block ml-3 font-medium">Local Runtime</span>
           </button>
 
 
@@ -317,7 +317,7 @@ const App: React.FC = () => {
             {currentView === View.SCANNER && 'Vulnerability Scanner'}
             {currentView === View.DATABASE && 'Threat Intelligence Database'}
             {currentView === View.HISTORY && 'Scan Records & Audit'}
-            {currentView === View.EDGE && 'Edge Control Plane'}
+            {currentView === View.EDGE && 'Local Vehicle Runtime'}
             {currentView === View.PROFILE && 'User Profile & Settings'}
             {currentView === View.USER_MANAGEMENT && 'System Operators'}
           </h1>
@@ -333,7 +333,7 @@ const App: React.FC = () => {
 
         <div className={`px-6 py-2 border-b text-xs font-mono flex items-center gap-3 ${globalBackendHealth.ok ? 'bg-cyan-950/20 border-cyan-900/40 text-cyan-300' : 'bg-red-950/20 border-red-900/40 text-red-300'}`}>
           {globalBackendHealth.ok ? <Shield className="w-3.5 h-3.5" /> : <ServerCrash className="w-3.5 h-3.5" />}
-          <span>Backend: {globalBackendHealth.url}</span>
+          <span>Local Engine: {globalBackendHealth.url}</span>
           {globalBackendHealth.database && <span>DB: {globalBackendHealth.database}</span>}
           <span>AI: {globalBackendHealth.ai_reports_enabled ? 'user-configured' : 'unavailable'}</span>
           {!globalBackendHealth.ok && globalBackendHealth.error && (
@@ -380,7 +380,7 @@ const App: React.FC = () => {
               />
             )}
             {currentView === View.EDGE && (
-              <EdgeManager
+              <LocalRuntime
                 token={token}
                 currentUser={user}
                 onUnauthorized={handleUnauthorized}

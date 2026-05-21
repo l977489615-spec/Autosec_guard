@@ -160,7 +160,7 @@ def _runtime_entrypoint() -> str:
     if _is_packaged_runtime():
         preferred_paths = [
             os.environ.get("NUITKA_ONEFILE_BINARY"),
-            os.environ.get("AUTOSEC_EDGE_EXECUTABLE"),
+            os.environ.get("AUTOSEC_WORKSTATION_EXECUTABLE"),
             os.path.abspath(sys.argv[0]) if sys.argv and sys.argv[0] else None,
             sys.executable,
         ]

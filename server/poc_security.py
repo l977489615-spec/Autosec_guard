@@ -3,7 +3,7 @@ import os
 from typing import Any, Dict
 
 
-def extract_poc_security_profile(poc_path: str) -> Dict[str, Any]:
+def extract_poc_security_profile(poc_path: str, source_text: str | None = None) -> Dict[str, Any]:
     profile: Dict[str, Any] = {
         "poc_name": os.path.basename(poc_path),
         "cve_id": "",
@@ -16,8 +16,10 @@ def extract_poc_security_profile(poc_path: str) -> Dict[str, Any]:
     }
 
     try:
-        with open(poc_path, "r", encoding="utf-8") as handle:
-            tree = ast.parse(handle.read(), filename=poc_path)
+        if source_text is None:
+            with open(poc_path, "r", encoding="utf-8") as handle:
+                source_text = handle.read()
+        tree = ast.parse(source_text, filename=poc_path)
     except Exception as exc:
         profile["parse_error"] = str(exc)
         return profile

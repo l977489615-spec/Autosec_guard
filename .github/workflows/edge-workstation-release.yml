@@ -1,0 +1,188 @@
+name: Edge Workstation Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      backend:
+        description: "Packaging backend. PyInstaller is the practical default; Nuitka is slower and stronger."
+        required: true
+        default: "pyinstaller"
+        type: choice
+        options:
+          - pyinstaller
+          - nuitka
+      upload_release:
+        description: "Also upload artifacts to a GitHub Release. Only works on tag refs."
+        required: true
+        default: false
+        type: boolean
+  push:
+    tags:
+      - "v*"
+      - "edge-workstation-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            runner: ubuntu-latest
+            release_zip: build/edge_workstation/release/autosec-guard-edge-linux-x64.zip
+            release_dir: build/edge_workstation/release/autosec-guard-edge-linux-x64
+            executable: build/edge_workstation/release/autosec-guard-edge-linux-x64/autosec-guard-edge
+          - target: windows-x64
+            runner: windows-latest
+            release_zip: build/edge_workstation/release/autosec-guard-edge-windows-x64.zip
+            release_dir: build/edge_workstation/release/autosec-guard-edge-windows-x64
+            executable: build/edge_workstation/release/autosec-guard-edge-windows-x64/autosec-guard-edge.exe
+          - target: macos-arm64
+            runner: macos-14
+            release_zip: build/edge_workstation/release/autosec-guard-edge-macos-arm64.zip
+            release_dir: build/edge_workstation/release/autosec-guard-edge-macos-arm64
+            executable: build/edge_workstation/release/autosec-guard-edge-macos-arm64/autosec-guard-edge
+
+    steps:
+      - name: Checkout private source
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: server/requirements.txt
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install Python packaging dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r server/requirements.txt
+          python -m pip install pyinstaller nuitka ordered-set zstandard
+
+      - name: Install frontend dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: Build edge workstation package
+        shell: bash
+        run: python packaging/build_edge_workstation.py --backend "${{ github.event.inputs.backend || 'pyinstaller' }}"
+
+      - name: Verify release files
+        shell: bash
+        run: |
+          test -f "${{ matrix.release_zip }}"
+          test -d "${{ matrix.release_dir }}"
+          test -f "${{ matrix.executable }}"
+
+      - name: Smoke test packaged workstation
+        shell: bash
+        env:
+          AUTOSEC_RELEASE_EXE: ${{ matrix.executable }}
+          AUTOSEC_TEST_DATA_DIR: ${{ runner.temp }}/autosec-guard-edge-data
+          AUTOSEC_TEST_PORT: "5017"
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+          import time
+          import urllib.request
+
+          exe = os.environ["AUTOSEC_RELEASE_EXE"]
+          port = os.environ["AUTOSEC_TEST_PORT"]
+          env = os.environ.copy()
+          env["AUTOSEC_DATA_DIR"] = os.environ["AUTOSEC_TEST_DATA_DIR"]
+          env["AUTOSEC_PORT"] = port
+          env["AUTOSEC_HOST"] = "127.0.0.1"
+
+          proc = subprocess.Popen(
+              [exe],
+              env=env,
+              stdout=subprocess.PIPE,
+              stderr=subprocess.STDOUT,
+              text=True,
+          )
+          result = {"ok": False, "health": None, "poc_total": None, "home_status": None, "last_error": ""}
+          try:
+              deadline = time.time() + 45
+              while time.time() < deadline:
+                  try:
+                      with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=2) as response:
+                          result["health"] = json.loads(response.read().decode("utf-8"))
+                          result["ok"] = True
+                          break
+                  except Exception as exc:
+                      result["last_error"] = str(exc)
+                      time.sleep(1)
+
+              if not result["ok"]:
+                  raise RuntimeError(f"health check failed: {result['last_error']}")
+
+              with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/list_pocs", timeout=10) as response:
+                  pocs = json.loads(response.read().decode("utf-8"))
+                  result["poc_total"] = pocs.get("total")
+                  if int(result["poc_total"] or 0) <= 0:
+                      raise RuntimeError("packaged PoC registry is empty")
+
+              with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=10) as response:
+                  result["home_status"] = response.status
+                  if response.status != 200:
+                      raise RuntimeError(f"frontend returned {response.status}")
+          finally:
+              proc.terminate()
+              try:
+                  proc.wait(timeout=10)
+              except Exception:
+                  proc.kill()
+
+          print(json.dumps(result, ensure_ascii=False))
+          PY
+
+      - name: Upload workstation package
+        uses: actions/upload-artifact@v4
+        with:
+          name: autosec-guard-edge-${{ matrix.target }}
+          path: ${{ matrix.release_zip }}
+          if-no-files-found: error
+
+  release:
+    name: Publish Release Assets
+    needs: build
+    runs-on: ubuntu-latest
+    if: ${{ startsWith(github.ref, 'refs/tags/') && (github.event_name == 'push' || inputs.upload_release) }}
+
+    steps:
+      - name: Download workstation packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: autosec-guard-edge-*
+          path: edge-workstation-artifacts
+          merge-multiple: true
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" edge-workstation-artifacts/*.zip --clobber
+          else
+            gh release create "$TAG_NAME" edge-workstation-artifacts/*.zip \
+              --title "AutoSec Guard Edge Workstation $TAG_NAME" \
+              --notes "Packaged edge-side workstation builds for Linux, Windows, and macOS. Source code and PoC source directories are not included in these artifacts."
+          fi
