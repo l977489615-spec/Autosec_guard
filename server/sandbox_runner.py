@@ -8,7 +8,11 @@ import traceback
 import logging
 import errno
 import ipaddress
-import resource
+try:
+    import resource
+    _HAS_RESOURCE = True
+except ImportError:
+    _HAS_RESOURCE = False
 import socket
 from pathlib import Path
 from types import ModuleType
@@ -30,6 +34,8 @@ def _parse_int_env(name, default):
 
 
 def _apply_resource_limits():
+    if not _HAS_RESOURCE:
+        return
     cpu_seconds = _parse_int_env("SANDBOX_CPU_SECONDS", 60)
     memory_mb = _parse_int_env("SANDBOX_MEMORY_MB", 256)
     output_mb = _parse_int_env("SANDBOX_OUTPUT_MB", 8)

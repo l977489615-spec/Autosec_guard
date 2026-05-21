@@ -4,7 +4,10 @@ import errno
 import ipaddress
 import json
 import os
-import resource
+try:
+    import resource
+except ImportError:
+    resource = None  # Windows: resource module unavailable
 import shutil
 import socket
 import subprocess
