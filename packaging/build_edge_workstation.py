@@ -123,7 +123,8 @@ exec "./{exe_name}"
 
 
 def _build_frontend() -> None:
-    _run(["npm", "run", "build"], cwd=CLIENT_DIR)
+    npm_cmd = "npm.cmd" if platform.system().lower() == "windows" else "npm"
+    _run([npm_cmd, "run", "build"], cwd=CLIENT_DIR)
 
 
 def _generate_registry() -> None:
@@ -237,6 +238,14 @@ def _build_with_pyinstaller(work_dir: Path, output_name: str) -> Path:
         "paramiko",
         "--collect-all",
         "requests",
+        "--collect-all",
+        "cryptography",
+        "--collect-all",
+        "bcrypt",
+        "--hidden-import",
+        "_cffi_backend",
+        "--hidden-import",
+        "jwt",
         "--exclude-module",
         "torch",
         "--exclude-module",

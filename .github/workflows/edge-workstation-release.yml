@@ -108,10 +108,10 @@ jobs:
           import time
           import urllib.request
 
-          exe = os.environ["AUTOSEC_RELEASE_EXE"]
+          exe = os.path.normpath(os.environ["AUTOSEC_RELEASE_EXE"])
           port = os.environ["AUTOSEC_TEST_PORT"]
           env = os.environ.copy()
-          env["AUTOSEC_DATA_DIR"] = os.environ["AUTOSEC_TEST_DATA_DIR"]
+          env["AUTOSEC_DATA_DIR"] = os.path.normpath(os.environ["AUTOSEC_TEST_DATA_DIR"])
           env["AUTOSEC_PORT"] = port
           env["AUTOSEC_HOST"] = "127.0.0.1"
 
