@@ -42,7 +42,7 @@ from benchmark_suite import (
     score_session_against_benchmark as evaluate_session_against_benchmark,
 )
 from poc_worker import get_poc_worker
-from poc_catalog import list_available_poc_names, resolve_poc_path, resolve_poc_source
+from poc_catalog import is_executable_poc_name, list_available_poc_names, resolve_poc_path, resolve_poc_source
 from local_requirements import (
     classify_poc_execution_mode,
     local_capability_flags,
@@ -609,7 +609,7 @@ def _scan_poc_registry() -> dict:
         for dirpath, dirnames, filenames in os.walk(POCS_DIR):
             dirnames[:] = [d for d in dirnames if not d.startswith('.') and d != '.venv' and d != '__pycache__']
             for filename in sorted(filenames):
-                if filename.endswith('.py') and not filename.startswith('__') and filename != 'iv_plugin_base.py':
+                if is_executable_poc_name(filename):
                     filepath = os.path.join(dirpath, filename)
                     rel_path = os.path.relpath(filepath, POCS_DIR)
                     seen.add(rel_path)
@@ -2292,7 +2292,7 @@ if __name__ == '__main__':
         if dp != POCS_DIR:
             categories.append(os.path.basename(dp))
         for f in fn:
-            if f.endswith('.py') and f != 'iv_plugin_base.py' and not f.startswith('__'):
+            if is_executable_poc_name(f):
                 poc_count += 1
                 
     logger.info(f"Available PoC files: {poc_count} across {len(categories)} categories: {', '.join(sorted(categories))}")

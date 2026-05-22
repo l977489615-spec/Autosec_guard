@@ -96,7 +96,12 @@ class GPSSpoofingPlugin(IVIVulnerabilityPlugin):
         self.logger.info("准备执行 GPS 欺骗攻击 (HackRF Pcap/Bin Replay)...")
         
         # 3. 检查是否有预生成的基带信号文件
-        bin_file = "gpssim.bin"
+        bin_file = (
+            self.params.get("gpssim_path")
+            or self.params.get("baseband_file")
+            or os.environ.get("AUTOSEC_GPS_BASEBAND")
+            or "gpssim.bin"
+        )
         if not os.path.exists(bin_file):
             self.logger.warning(f"未找到预生成的 GPS 基带信号文件：{bin_file}")
             self.logger.warning(">>> 提示：您可以使用 gps-sdr-sim 开源工具预先生成此文件。")

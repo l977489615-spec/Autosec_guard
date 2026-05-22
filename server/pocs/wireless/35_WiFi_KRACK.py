@@ -43,11 +43,12 @@ class WiFiKRACKPlugin(IVIVulnerabilityPlugin):
             self.logger.warning(">>> 安装指令: git clone https://github.com/vanhoefm/krackattacks-scripts")
             return {
                 "status": "error",
+                "vulnerable": False,
                 "details": "Requirement missing: krack-test-client.py not found in PATH."
             }
             
         cmd = [
-            "krack-test-client.py",
+            tool_path,
             "--test-ap",
             "--nic", self.interface
         ]

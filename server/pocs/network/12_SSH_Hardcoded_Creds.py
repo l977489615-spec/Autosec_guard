@@ -15,6 +15,23 @@ import socket
 import time
 from iv_plugin_base import IVIVulnerabilityPlugin
 
+
+def _resolve_credentials_path():
+    candidates = []
+    configured_dir = os.environ.get("AUTOSEC_POC_WORDLIST_DIR")
+    if configured_dir:
+        candidates.append(os.path.join(configured_dir, "credentials.txt"))
+    candidates.extend([
+        os.path.join(os.path.dirname(__file__), '..', 'wordlists', 'credentials.txt'),
+        os.path.join(os.getcwd(), 'pocs', 'wordlists', 'credentials.txt'),
+        os.path.join(os.getcwd(), 'wordlists', 'credentials.txt'),
+    ])
+    for candidate in candidates:
+        if candidate and os.path.exists(candidate):
+            return candidate
+    return candidates[0] if candidates else "credentials.txt"
+
+
 class ToyotaHarmanSSHExploit(IVIVulnerabilityPlugin):
     meta_poc_name = "SSH Hardcoded Creds"
     meta_cve_id = "N/A"
@@ -29,14 +46,16 @@ class ToyotaHarmanSSHExploit(IVIVulnerabilityPlugin):
         # 检查网络可达性
         if not self.target_ip:
             raise RuntimeError("需要指定目标IP地址。")
-        response = os.system(f"ping -c 1 {self.target_ip} > /dev/null 2>&1")
-        if response != 0:
-            self.logger.warning(f"目标 {self.target_ip} Ping不通, 但仍尝试连接...")
+        try:
+            probe = socket.create_connection((self.target_ip, 22), timeout=3)
+            probe.close()
+        except OSError:
+            self.logger.warning(f"目标 {self.target_ip}:22 暂不可达, 但仍尝试连接...")
         return True
 
     def exploit(self):
         port = 22
-        wordlist_path = os.path.join(os.path.dirname(__file__), '..', 'wordlists', 'credentials.txt')
+        wordlist_path = _resolve_credentials_path()
         if not os.path.exists(wordlist_path):
             self.logger.error("未找到字典文件 credentials.txt")
             return self.results

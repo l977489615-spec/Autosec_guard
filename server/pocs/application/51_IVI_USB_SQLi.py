@@ -12,7 +12,20 @@ Usage: sudo python3 51_IVI_USB_SQLi.py
 import sys
 import os
 import time
+import subprocess
 from iv_plugin_base import IVIVulnerabilityPlugin
+
+
+def _remove_path(path, *, directory=False):
+    try:
+        if directory:
+            os.rmdir(path)
+        else:
+            os.unlink(path)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        pass
 
 class IVIUsbSqliPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = "IVI USB SQLi"
@@ -32,7 +45,10 @@ class IVIUsbSqliPlugin(IVIVulnerabilityPlugin):
         if not os.path.isdir("/sys/kernel/config/usb_gadget"):
             self.logger.error("系统不支持 ConfigFS USB Gadget，或者内核未加载 libcomposite 模块。")
             self.logger.warning(">>> 尝试执行 modprobe libcomposite")
-            os.system("modprobe libcomposite")
+            try:
+                subprocess.run(["modprobe", "libcomposite"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except OSError:
+                pass
             if not os.path.exists("/sys/kernel/config/usb_gadget"):
                 return False
                 
@@ -47,12 +63,12 @@ class IVIUsbSqliPlugin(IVIVulnerabilityPlugin):
             # 清理旧的遗留 gadget
             if os.path.exists(base_path):
                 self.logger.info("清理先前的遗留 Gadget 配置...")
-                os.system(f"rm {base_path}/configs/c.1/mass_storage.usb0 2>/dev/null")
-                os.system(f"rmdir {base_path}/configs/c.1/strings/0x409 2>/dev/null")
-                os.system(f"rmdir {base_path}/configs/c.1 2>/dev/null")
-                os.system(f"rmdir {base_path}/functions/mass_storage.usb0 2>/dev/null")
-                os.system(f"rmdir {base_path}/strings/0x409 2>/dev/null")
-                os.system(f"rmdir {base_path} 2>/dev/null")
+                _remove_path(f"{base_path}/configs/c.1/mass_storage.usb0")
+                _remove_path(f"{base_path}/configs/c.1/strings/0x409", directory=True)
+                _remove_path(f"{base_path}/configs/c.1", directory=True)
+                _remove_path(f"{base_path}/functions/mass_storage.usb0", directory=True)
+                _remove_path(f"{base_path}/strings/0x409", directory=True)
+                _remove_path(base_path, directory=True)
 
             self.logger.info("创建全新的 USB Gadget 挂载结构 (ConfigFS)...")
             os.makedirs(base_path, exist_ok=True)
@@ -78,10 +94,16 @@ class IVIUsbSqliPlugin(IVIVulnerabilityPlugin):
             
             os.makedirs(f"{base_path}/functions/mass_storage.usb0", exist_ok=True)
             # Link it
-            os.symlink(f"{base_path}/functions/mass_storage.usb0", f"{base_path}/configs/c.1/mass_storage.usb0")
+            link_path = f"{base_path}/configs/c.1/mass_storage.usb0"
+            if not os.path.exists(link_path):
+                os.symlink(f"{base_path}/functions/mass_storage.usb0", link_path)
             
             self.logger.info("激活 USB 控制器端口 (UDC)...")
-            udc_file = os.popen("ls /sys/class/udc | head -n 1").read().strip()
+            try:
+                udc_candidates = sorted(os.listdir("/sys/class/udc"))
+            except OSError:
+                udc_candidates = []
+            udc_file = udc_candidates[0] if udc_candidates else ""
             
             if not udc_file:
                 self.logger.error("未找到任何支持的外围设备 USB 控制器！当前硬件可能不支持 OTG 功能（如普通 Mac / PC）。")

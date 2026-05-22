@@ -24,6 +24,7 @@ SERVER_DIR = Path(__file__).resolve().parent
 if getattr(sys, "frozen", False):
     SERVER_DIR = Path(getattr(sys, "_MEIPASS"))
 POCS_DIR = SERVER_DIR / "pocs"
+POC_WORDLISTS_DIR = POCS_DIR / "wordlists"
 SANDBOX_RUNNER = SERVER_DIR / "sandbox_runner.py"
 
 
@@ -141,6 +142,7 @@ def _build_sandbox_env(params: dict, allowed_hosts: Optional[List[str]] = None) 
     env["SANDBOX_OUTPUT_MB"] = str(params.get("sandbox_output_mb", _parse_int_env("SANDBOX_OUTPUT_MB", 8)))
     env["SANDBOX_NOFILE"] = str(params.get("sandbox_nofile", _parse_int_env("SANDBOX_NOFILE", 256)))
     env["SANDBOX_ALLOWED_HOSTS"] = ",".join(allowed_hosts or [])
+    env["AUTOSEC_POC_WORDLIST_DIR"] = str(POC_WORDLISTS_DIR)
     return env
 
 

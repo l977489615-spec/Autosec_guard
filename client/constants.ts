@@ -154,7 +154,7 @@ class BTSDPEnumPlugin(IVIVulnerabilityPlugin):
 {
         id: 'POC-RECON-007', name: 'T-Box/TCU Port Scan',
         category: Category.RECON, severity: Severity.MEDIUM, cvssScore: 5.0,
-        pocFile: 'reconnaissance/07_TBOX_Port_Scan.py',
+        pocFile: 'reconnaissance/07_TBox_Port_Scan.py',
         description: '扫描T-Box/TCU特有端口(MQTT/OTA/诊断等)',
         impact: '远程管理服务暴露',
         remediation: '限制T-Box网络暴露面',
@@ -1782,6 +1782,30 @@ Usage: python3 69_USB_Unsigned_Update.py
 import sys
 import os
 import zipfile
+from iv_plugin_base import IVIVulnerabilityPlugin
+# ... (script truncated for display)`,
+    },
+{
+        id: 'POC-DYN-099',
+        name: 'Dynamic Unknown Service Probe',
+        category: Category.NETWORK,
+        severity: Severity.MEDIUM,
+        cvssScore: 5.0,
+        cveId: 'N/A',
+        pocFile: '99_Dynamic_Unknown_Service_Probe.py',
+        description: '针对未知 TCP 服务执行协议感知型动态探测',
+        impact: '发现异常崩溃、调试输出或协议状态差异',
+        remediation: '限制未知服务暴露并增强异常输入处理',
+        requiredParams: ['ip', 'port'],
+        codeSnippet: `"""
+PoC Name: Dynamic Unknown Service Probe
+CVE: N/A
+Component: Unknown Network Service
+Category: Network
+Severity: Medium
+Description: 面向未知服务的协议感知型动态探测脚本。
+Prerequisites: 目标 TCP 服务可达。
+"""
 from iv_plugin_base import IVIVulnerabilityPlugin
 # ... (script truncated for display)`,
     },

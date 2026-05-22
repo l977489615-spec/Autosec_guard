@@ -5,7 +5,7 @@
 
 <p>
   <img src="https://img.shields.io/badge/Product-Edge%20Workstation-16c47f?style=flat-square" />
-  <img src="https://img.shields.io/badge/PoC-72-f59e0b?style=flat-square" />
+  <img src="https://img.shields.io/badge/PoC-71-f59e0b?style=flat-square" />
   <img src="https://img.shields.io/badge/Attack%20Surfaces-6-2563eb?style=flat-square" />
   <img src="https://img.shields.io/badge/UI-React%20%2B%20Vite-0ea5e9?style=flat-square" />
   <img src="https://img.shields.io/badge/API-Flask-64748b?style=flat-square" />
@@ -31,7 +31,7 @@
 
 因此，本项目现在按 **边缘端产品** 组织：
 
-- 🧪 **本机执行 72 个 PoC**，不依赖远端节点调度
+- 🧪 **本机执行 71 个 PoC**，不依赖远端节点调度
 - 🔌 **本机硬件能力检测**，展示 USB、CAN、PCAN、蓝牙、Wi-Fi、SDR 状态
 - 🛡️ **高风险 PoC 审批与后端强校验**
 - 🧱 **本机沙箱 Runner**，限制 CPU、内存、输出大小、文件句柄和访问目标
@@ -183,13 +183,13 @@ flowchart TD
 
 ## 🧩 PoC Matrix
 
-当前内置 `72` 个 PoC：
+当前内置 `71` 个业务 PoC：
 
 | Category | Count | ID Range | Focus | 本机依赖 |
 | --- | ---: | --- | --- | --- |
 | Reconnaissance | 8 | `01-08` | 主机发现、端口扫描、服务枚举 | 网络可达 |
 | Network | 13 | `09-21` | ADB、SSH、FTP、MQTT、SOME/IP 等 | 网络可达 |
-| CAN Bus | 11 | `22-31` | CAN、UDS、OBD、注入、重放、诊断访问 | CAN / PCAN / SocketCAN |
+| CAN Bus | 10 | `22-31` | CAN、UDS、OBD、注入、重放、诊断访问 | CAN / PCAN / SocketCAN |
 | Wireless | 18 | `32-49` | Wi-Fi、Bluetooth、QNX 无线面 | Wi-Fi / Bluetooth |
 | Application | 13 | `50-62` | 车机应用、AirPlay、CarPlay、USB、WebView | 网络 / USB / 人工辅助 |
 | Advanced | 8 | `63-70` | OTA、RF、GPS、TPMS、V2X、固件 | SDR / RF / USB / 台架 |

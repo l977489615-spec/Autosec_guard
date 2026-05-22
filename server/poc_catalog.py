@@ -3,6 +3,20 @@ import os
 from poc_registry import get_poc_code, list_builtin_pocs
 
 
+SUPPORT_MODULES = {"iv_plugin_base.py", "canbus/can_bus_utils.py", "can_bus_utils.py"}
+
+
+def is_executable_poc_name(name: str) -> bool:
+    normalized = str(name or "").replace("\\", "/").lstrip("./")
+    basename = os.path.basename(normalized)
+    return (
+        normalized.endswith(".py")
+        and not basename.startswith("__")
+        and basename not in SUPPORT_MODULES
+        and normalized not in SUPPORT_MODULES
+    )
+
+
 def resolve_poc_path(pocs_dir: str, poc_filename: str) -> tuple[str | None, str | None]:
     if not poc_filename:
         return None, None
@@ -45,7 +59,7 @@ def list_available_poc_names(pocs_dir: str) -> list[str]:
         for dirpath, dirnames, filenames in os.walk(pocs_dir):
             dirnames[:] = [d for d in dirnames if not d.startswith('.') and d != '.venv' and d != '__pycache__']
             for filename in filenames:
-                if filename.endswith('.py') and not filename.startswith('__') and filename != 'iv_plugin_base.py':
+                if is_executable_poc_name(filename):
                     names.add(os.path.relpath(os.path.join(dirpath, filename), pocs_dir))
-    names.update(name for name in list_builtin_pocs() if not name.endswith('iv_plugin_base.py'))
+    names.update(name for name in list_builtin_pocs() if is_executable_poc_name(name))
     return sorted(names)

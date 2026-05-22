@@ -472,13 +472,13 @@ def _direct_tool_call(
                 return {"pocs": pocs, "count": len(pocs)}
             # 降级：直接扫描 PoC 目录
             import glob
+            from poc_catalog import is_executable_poc_name
             pocs_dir = os.path.join(os.path.dirname(__file__), "pocs")
             files = glob.glob(os.path.join(pocs_dir, "**", "*.py"), recursive=True)
             pocs = [{"filename": os.path.relpath(f, pocs_dir),
                      "category_dir": os.path.basename(os.path.dirname(f))}
                     for f in files
-                    if not os.path.basename(f).startswith("_")
-                    and os.path.basename(f) != "iv_plugin_base.py"]
+                    if is_executable_poc_name(os.path.relpath(f, pocs_dir))]
             if on_log:
                 on_log({"type": "info", "message": f"[Scanner] 本地加载 {len(pocs)} 个 PoC 脚本"})
             return {"pocs": pocs, "count": len(pocs)}
@@ -1855,13 +1855,19 @@ class AgentOrchestrator:
 
     def _get_poc_inventory_context(self) -> str:
         """扫描 pocs 目录并返回分类后的文件名清单，供 Agent 决策参考"""
+        from poc_catalog import is_executable_poc_name
+
         inventory = {}
         pocs_root = os.path.join(os.path.dirname(__file__), "pocs")
         if not os.path.exists(pocs_root):
             return "PoC 仓库为空或路径不存在。"
             
         for root, dirs, files in os.walk(pocs_root):
-            py_files = [f for f in files if f.endswith(".py") and not f.startswith("__")]
+            rel_root = os.path.relpath(root, pocs_root)
+            py_files = [
+                f for f in files
+                if is_executable_poc_name(os.path.join(rel_root, f) if rel_root != "." else f)
+            ]
             if py_files:
                 category = os.path.basename(root)
                 inventory[category] = py_files

@@ -25,6 +25,7 @@ CLIENT_DIR = PROJECT_ROOT / "client"
 BUILD_DIR = PROJECT_ROOT / "build" / "edge_workstation"
 RELEASE_ROOT = BUILD_DIR / "release"
 CLIENT_DIST = CLIENT_DIR / "dist"
+POC_WORDLISTS_DIR = SERVER_DIR / "pocs" / "wordlists"
 ENTRYPOINT = SERVER_DIR / "server.py"
 REGISTRY_GENERATOR = SERVER_DIR / "generate_poc_registry.py"
 
@@ -131,6 +132,14 @@ def _generate_registry() -> None:
     _run([sys.executable, str(REGISTRY_GENERATOR)], cwd=SERVER_DIR)
 
 
+def _copy_runtime_resources(release_dir: Path) -> None:
+    if POC_WORDLISTS_DIR.exists():
+        destination = release_dir / "pocs" / "wordlists"
+        if destination.exists():
+            shutil.rmtree(destination)
+        shutil.copytree(POC_WORDLISTS_DIR, destination)
+
+
 def _build_with_nuitka(work_dir: Path, output_name: str) -> Path:
     out_dir = work_dir / "nuitka"
     cache_dir = work_dir / "nuitka-cache"
@@ -148,6 +157,7 @@ def _build_with_nuitka(work_dir: Path, output_name: str) -> Path:
         f"--output-dir={out_dir}",
         f"--output-filename={output_name}",
         f"--include-data-dir={CLIENT_DIST}=web_dist",
+        f"--include-data-dir={POC_WORDLISTS_DIR}=pocs/wordlists",
         "--include-module=sandbox_runner",
         "--include-module=local_capability_probe",
         "--include-module=poc_worker",
@@ -260,6 +270,8 @@ def _build_with_pyinstaller(work_dir: Path, output_name: str) -> Path:
         str(spec_dir),
         "--add-data",
         f"{CLIENT_DIST}{sep}web_dist",
+        "--add-data",
+        f"{POC_WORDLISTS_DIR}{sep}pocs/wordlists",
         "--hidden-import",
         "sandbox_runner",
         "--hidden-import",
@@ -412,6 +424,7 @@ def build(backend: str) -> Path:
         shutil.copy2(executable, platform_release / output_name)
     if platform.system().lower() != "windows":
         (platform_release / output_name).chmod(0o755)
+    _copy_runtime_resources(platform_release)
     _write_release_files(platform_release, output_name)
 
     archive = shutil.make_archive(str(platform_release), "zip", platform_release)

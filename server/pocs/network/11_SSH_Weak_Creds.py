@@ -15,6 +15,23 @@ import time
 import os
 from iv_plugin_base import IVIVulnerabilityPlugin
 
+
+def _resolve_credentials_path():
+    candidates = []
+    configured_dir = os.environ.get("AUTOSEC_POC_WORDLIST_DIR")
+    if configured_dir:
+        candidates.append(os.path.join(configured_dir, "credentials.txt"))
+    candidates.extend([
+        os.path.join(os.path.dirname(__file__), '..', 'wordlists', 'credentials.txt'),
+        os.path.join(os.getcwd(), 'pocs', 'wordlists', 'credentials.txt'),
+        os.path.join(os.getcwd(), 'wordlists', 'credentials.txt'),
+    ])
+    for candidate in candidates:
+        if candidate and os.path.exists(candidate):
+            return candidate
+    return candidates[0] if candidates else "credentials.txt"
+
+
 class SSHWeakCredsPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = "SSH Weak Creds"
     meta_cve_id = "N/A"
@@ -47,7 +64,7 @@ class SSHWeakCredsPlugin(IVIVulnerabilityPlugin):
             return self.results
 
         # 2. 加载字典
-        wordlist_path = os.path.join(os.path.dirname(__file__), '..', 'wordlists', 'credentials.txt')
+        wordlist_path = _resolve_credentials_path()
         if not os.path.exists(wordlist_path):
             self.logger.error("未找到字典文件 credentials.txt")
             return self.results
