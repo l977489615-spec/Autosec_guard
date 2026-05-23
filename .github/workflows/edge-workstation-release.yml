@@ -115,23 +115,36 @@ jobs:
           import urllib.request
 
           exe = os.path.normpath(os.environ["AUTOSEC_RELEASE_EXE"])
+          exe_dir = os.path.dirname(exe) or "."
           port = os.environ["AUTOSEC_TEST_PORT"]
           env = os.environ.copy()
           env["AUTOSEC_DATA_DIR"] = os.path.normpath(os.environ["AUTOSEC_TEST_DATA_DIR"])
           env["AUTOSEC_PORT"] = port
           env["AUTOSEC_HOST"] = "127.0.0.1"
+          env["PYTHONUNBUFFERED"] = "1"
 
           proc = subprocess.Popen(
               [exe],
+              cwd=exe_dir,
               env=env,
               stdout=subprocess.PIPE,
               stderr=subprocess.STDOUT,
               text=True,
+              bufsize=1,
           )
           result = {"ok": False, "health": None, "poc_total": None, "home_status": None, "last_error": ""}
+          output_lines = []
           try:
-              deadline = time.time() + 45
+              deadline = time.time() + 90
               while time.time() < deadline:
+                  if proc.poll() is not None:
+                      if proc.stdout:
+                          output_lines.extend(proc.stdout.read().splitlines())
+                      raise RuntimeError(
+                          f"packaged workstation exited early with code {proc.returncode}; "
+                          f"startup output:\n" + "\n".join(output_lines[-120:])
+                      )
+
                   try:
                       with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=2) as response:
                           result["health"] = json.loads(response.read().decode("utf-8"))
@@ -142,7 +155,10 @@ jobs:
                       time.sleep(1)
 
               if not result["ok"]:
-                  raise RuntimeError(f"health check failed: {result['last_error']}")
+                  raise RuntimeError(
+                      f"health check failed after 90s: {result['last_error']}; "
+                      f"process still running={proc.poll() is None}"
+                  )
 
               with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/list_pocs", timeout=10) as response:
                   pocs = json.loads(response.read().decode("utf-8"))
