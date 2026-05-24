@@ -562,7 +562,7 @@ def call_mcp_tool(
 
 
 # ──────────────────────────────────────────────
-# Qwen (OpenAI SDK) LLM 调用包装
+# Qwen / OpenAI-compatible LLM 调用包装
 # ──────────────────────────────────────────────
 
 class QwenAgent:
@@ -614,6 +614,36 @@ class QwenAgent:
                 "type": "warning" if severity != "info" else "info",
                 "message": f"[Supervisor:{self.agent_name}] {message}",
             })
+
+    def _chat_completion(self, messages: List[dict], tools: Optional[List[dict]]) -> Dict[str, Any]:
+        """Call an OpenAI-compatible chat completions endpoint without the SDK.
+
+        The packaged edge workstation avoids bundling the OpenAI Python SDK
+        because Nuitka compiles its transitive dependency graph very slowly on
+        CI runners. The wire protocol used here is the same chat/completions
+        JSON shape expected by Qwen and OpenAI-compatible gateways.
+        """
+        base_url = self._base_url.rstrip("/")
+        endpoint = base_url if base_url.endswith("/chat/completions") else f"{base_url}/chat/completions"
+        payload: Dict[str, Any] = {
+            "model": self._model_name,
+            "messages": messages,
+        }
+        if tools:
+            payload["tools"] = tools
+
+        response = requests.post(
+            endpoint,
+            headers={
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=120,
+        )
+        if response.status_code >= 400:
+            raise RuntimeError(f"HTTP {response.status_code}: {response.text[:500]}")
+        return response.json()
 
     def _tool_signature(self, tool_name: str, tool_params: Dict[str, Any]) -> str:
         return json.dumps({"tool": tool_name, "params": tool_params}, sort_keys=True, ensure_ascii=False)
@@ -711,12 +741,6 @@ class QwenAgent:
         if not self._base_url:
             raise RuntimeError(f"[{self.agent_name}] base_url 未配置。")
 
-        from openai import OpenAI
-        client = OpenAI(
-            api_key=self._api_key,
-            base_url=self._base_url
-        )
-
         full_prompt = f"上下文信息:\n{context}\n\n任务:\n{user_message}"
 
         messages = [
@@ -736,13 +760,10 @@ class QwenAgent:
             for attempt in range(3):
                 try:
                     start_llm = time.time()
-                    response = client.chat.completions.create(
-                        model=self._model_name,
-                        messages=messages,
-                        tools=openai_tools
-                    )
+                    response = self._chat_completion(messages, openai_tools)
                     llm_latency = int((time.time() - start_llm) * 1000)
-                    token_count = response.usage.total_tokens if response.usage else 0
+                    usage = response.get("usage") or {}
+                    token_count = usage.get("total_tokens", 0)
                     if self.on_log:
                         self.on_log({"type": "info", "message": f"[{self.agent_name}] LLM 调用完成 (延迟: {llm_latency}ms, 消耗Token: {token_count})"})
                     last_err = None
@@ -765,20 +786,26 @@ class QwenAgent:
                 logger.error(f"[{self.agent_name}] 请求失败: {str(last_err)[:200]}\n{full_err}")
                 return f"[{self.agent_name}] 请求失败或配额耗尽，请稍后重试。错误: {str(last_err)[:200]}"
 
-            message = response.choices[0].message
+            choices = response.get("choices") or []
+            if not choices:
+                return f"[{self.agent_name}] API 未返回 choices"
+
+            message = choices[0].get("message") or {}
 
             # 如果没有工具调用，说明是最终文本响应
-            if not message.tool_calls:
-                return message.content or "Agent 未返回有效响应"
+            tool_calls = message.get("tool_calls") or []
+            if not tool_calls:
+                return message.get("content") or "Agent 未返回有效响应"
 
             # 记录助理的工具调用请求
             messages.append(message)
 
             # 执行所有工具调用
-            for tool_call in message.tool_calls:
-                tool_name = tool_call.function.name
+            for tool_call in tool_calls:
+                function_call = tool_call.get("function") or {}
+                tool_name = function_call.get("name", "")
                 try:
-                    tool_params = json.loads(tool_call.function.arguments)
+                    tool_params = json.loads(function_call.get("arguments") or "{}")
                 except Exception:
                     tool_params = {}
                 
@@ -821,7 +848,7 @@ class QwenAgent:
                 # 将工具执行结果作为 tool 角色消息返回给大模型
                 messages.append({
                     "role": "tool",
-                    "tool_call_id": tool_call.id,
+                    "tool_call_id": tool_call.get("id"),
                     "content": json.dumps(result, ensure_ascii=False)
                 })
 

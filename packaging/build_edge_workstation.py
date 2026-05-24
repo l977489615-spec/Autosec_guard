@@ -148,11 +148,15 @@ def _build_with_nuitka(work_dir: Path, output_name: str) -> Path:
     nuitka_mode = os.environ.get("AUTOSEC_NUITKA_MODE", "standalone").strip().lower()
     if nuitka_mode not in {"standalone", "onefile"}:
         raise RuntimeError("AUTOSEC_NUITKA_MODE must be 'standalone' or 'onefile'")
+    nuitka_jobs = os.environ.get("AUTOSEC_NUITKA_JOBS", "1").strip() or "1"
     cmd = [
         sys.executable,
         "-m",
         "nuitka",
         "--standalone",
+        "--low-memory",
+        f"--jobs={nuitka_jobs}",
+        "--lto=no",
         "--assume-yes-for-downloads",
         f"--output-dir={out_dir}",
         f"--output-filename={output_name}",
@@ -174,7 +178,6 @@ def _build_with_nuitka(work_dir: Path, output_name: str) -> Path:
         "--include-module=agent_orchestrator",
         "--include-module=physical_safety_monitor",
         "--include-module=topology_scanner",
-        "--include-module=openai",
         "--include-module=scapy.all",
         "--include-module=scapy.layers.dot11",
         "--include-module=scapy.layers.inet",
@@ -189,8 +192,11 @@ def _build_with_nuitka(work_dir: Path, output_name: str) -> Path:
         "--include-module=cryptography",
         "--include-module=bcrypt",
         "--include-module=jwt",
-        "--nofollow-import-to=*.tests",
-        "--nofollow-import-to=*.testing",
+        "--nofollow-import-to=openai",
+        "--nofollow-import-to=sqlalchemy.dialects.mysql",
+        "--nofollow-import-to=sqlalchemy.dialects.postgresql",
+        "--nofollow-import-to=sqlalchemy.dialects.oracle",
+        "--nofollow-import-to=sqlalchemy.dialects.mssql",
         "--nofollow-import-to=PIL",
         "--nofollow-import-to=MySQLdb",
         "--nofollow-import-to=matplotlib",
@@ -203,6 +209,8 @@ def _build_with_nuitka(work_dir: Path, output_name: str) -> Path:
         "--nofollow-import-to=tkinter",
         str(ENTRYPOINT),
     ]
+    if os.environ.get("AUTOSEC_NUITKA_SHOW_MEMORY", "").strip().lower() in {"1", "true", "yes", "on"}:
+        cmd.insert(8, "--show-memory")
     if nuitka_mode == "onefile":
         cmd.insert(4, "--onefile")
         cmd.insert(5, "--onefile-no-compression")

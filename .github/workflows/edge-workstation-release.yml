@@ -31,7 +31,7 @@ jobs:
   build:
     name: ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 120
+    timeout-minutes: 240
     strategy:
       fail-fast: false
       matrix:
@@ -90,6 +90,7 @@ jobs:
         env:
           AUTOSEC_PYINSTALLER_MODE: onedir
           AUTOSEC_NUITKA_MODE: standalone
+          AUTOSEC_NUITKA_JOBS: "1"
         run: python packaging/build_edge_workstation.py --backend "${{ github.event.inputs.backend || 'pyinstaller' }}"
 
       - name: Verify release files
@@ -114,7 +115,7 @@ jobs:
           import time
           import urllib.request
 
-          exe = os.path.normpath(os.environ["AUTOSEC_RELEASE_EXE"])
+          exe = os.path.abspath(os.path.normpath(os.environ["AUTOSEC_RELEASE_EXE"]))
           exe_dir = os.path.dirname(exe) or "."
           port = os.environ["AUTOSEC_TEST_PORT"]
           env = os.environ.copy()
