@@ -14,6 +14,7 @@ import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class SNMPInfoLeakPlugin(IVIVulnerabilityPlugin):
+    meta_display_id = "POC-RECON-005"
     meta_poc_name = "SNMP Info Leak"
     meta_cve_id = "N/A"
     meta_severity = "Medium"

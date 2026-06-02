@@ -1,0 +1,6 @@
+case_id,test_type,interface,can_id,frame_type,payload_hex,send_count,period_ms,input_file,gateway_path,observed_response,abnormal,blocked_by_safety,evidence_file,notes
+REALCAR-CAN-001,sniff,REPLACE_CAN_INTERFACE,*,data,,0,0,,REAL-CAR-01-OBD-GW,"captured baseline traffic and unique IDs",false,false,lab/evidence/REALCAR-CAN-001.log,"passive capture before active tests"
+REALCAR-CAN-002,replay,REPLACE_CAN_INTERFACE,0x123,data,1122334455667788,10,100,lab/can_samples/replay_001.log,REAL-CAR-01-OBD-GW,"gateway accepted replay; record target-side observation manually",false,false,lab/evidence/REALCAR-CAN-002.log,"authorized bench/vehicle only"
+REALCAR-CAN-003,uds_injection,REPLACE_CAN_INTERFACE,0x7E0,data,0210010000000000,1,0,,REAL-CAR-01-OBD-GW,"positive or negative UDS response logged",false,false,lab/evidence/REALCAR-CAN-003.log,"DefaultSession probe only"
+REALCAR-CAN-004,fuzzing,REPLACE_CAN_INTERFACE,0x7DF,data,02??????????????,50,100,,REAL-CAR-01-OBD-GW,"not executed on real vehicle; blocked by local safety rule",false,true,lab/evidence/REALCAR-CAN-004.log,"keep as safety-control evidence"
+REALCAR-CAN-005,dos_remote_frame,REPLACE_CAN_INTERFACE,0x200,remote,,20,100,,REAL-CAR-01-OBD-GW,"not executed on real vehicle; blocked by platform policy",false,true,lab/evidence/REALCAR-CAN-005.log,"paper uses this row as blocked high-risk case"

@@ -24,11 +24,11 @@
       "domain": "ivi",
       "error": "",
       "id": "477f152d-5ab",
-      "name": "network/14_Telnet_Weak_Creds.py",
+      "name": "network/07_Telnet_Weak_Creds.py",
       "parameters": {
         "target_ip": "172.16.64.129"
       },
-      "pocId": "network/14_Telnet_Weak_Creds.py",
+      "pocId": "network/07_Telnet_Weak_Creds.py",
       "severity": "High",
       "source": "stepwise_executor",
       "target_ip": "172.16.64.129",
@@ -36,7 +36,7 @@
       "timestamp": "2026-04-07T07:30:54Z"
     }
   ],
-  "aiReport": "# 安全评估报告\n\n## 执行摘要\n本次安全评估针对智能网联汽车目标 'KALI' (IP: 172.16.64.129) 进行了全面的渗透测试。测试范围包括多个高风险服务，如 ADB、QNX Qconn、Telnet 和 SSH 等。通过执行一系列 PoC 测试，我们发现了一个高危漏洞：Telnet 弱口令认证。此漏洞允许攻击者通过弱口令（root:123456）直接登录到目标系统，获取完全控制权。总体风险评级为 HIGH。\n\n## 总体风险评级\n- **风险等级**: HIGH\n\n## 实际测试范围概述\n本次实际执行了以下 PoC 测试项：\n- `network/09_ADB_Debug_Port.py`\n- `wireless/32_QNX_Qnet_File_Read.py`\n- `network/14_Telnet_Weak_Creds.py`\n- `network/11_SSH_Weak_Creds.py`\n- `application/60_RTSP_CarPlay_DoS.py`\n- `application/52_CarPlay_Stack_Overflow.py`\n- `network/18_RTSP_Log_Leak.py`\n- `application/50_AirPlay_AirBorne_UAF.py`\n\n## 漏洞详细分析\n\n### 漏洞 1: Telnet 弱口令认证\n- **漏洞名称**: Telnet 弱口令认证\n- **协议类型**: Telnet\n- **影响的 ECU 组件**: IVI 系统\n- **实际执行的 PoC 名称**: `network/14_Telnet_Weak_Creds.py`\n- **返回的证据原文**: `Telnet login successful with root:123456`\n\n#### TARA 威胁分析表格\n| 威胁场景 | 影响程度 | 攻击可行性 | 风险等级 |\n|----------|-----------|-------------|----------|\n| 攻击者通过弱口令登录 Telnet 服务，获取系统控制权 | 高 | 中 | 高 |\n\n#### CVSS 评分参考\n- **CVSS v3.1 评分**: 8.1 (High)\n\n## 未发现漏洞的测试项\n- `network/09_ADB_Debug_Port.py`\n- `wireless/32_QNX_Qnet_File_Read.py`\n- `network/11_SSH_Weak_Creds.py`\n- `application/60_RTSP_CarPlay_DoS.py`\n- `application/52_CarPlay_Stack_Overflow.py`\n- `network/18_RTSP_Log_Leak.py`\n- `application/50_AirPlay_AirBorne_UAF.py`\n\n## 修复建议\n针对发现的 Telnet 弱口令认证漏洞，建议采取以下措施：\n1. **更改默认密码**：立即更改所有默认密码，特别是管理员账户的密码。\n2. **启用强密码策略**：确保所有用户账户使用强密码，并定期更新。\n3. **禁用不必要的服务**：如果 Telnet 服务不是必须的，建议禁用该服务以减少攻击面。\n4. **实施多因素认证**：在可能的情况下，启用多因素认证以增加安全性。\n\n## 合规性评估\n根据 UN R155 CSMS 要求，本次评估发现的漏洞表明目标系统在以下几个方面存在合规差距：\n- **网络安全管理**：需要加强密码管理和访问控制策略。\n- **风险评估**：应定期进行风险评估和漏洞扫描，及时发现并修复潜在的安全问题。\n- **事件响应**：建立有效的事件响应机制，以便在发生安全事件时能够迅速应对。\n\n## 建议的后续测试\n- **蓝牙相关测试**：由于缺少蓝牙 MAC 地址，本次测试未覆盖蓝牙相关的 PoC。建议在未来测试中加入蓝牙相关测试。\n- **CAN 总线测试**：虽然提供了 CAN 接口，但本次测试未覆盖 CAN 总线相关的 PoC。建议在未来测试中加入 CAN 总线测试。\n- **固件更新测试**：建议在未来测试中加入固件更新相关的 PoC，以确保固件更新过程的安全性。\n\n---\n\n**评估日期**: 2026-04-07 15:31:01  \n**评估团队**: BIOS团队",
+  "aiReport": "# 安全评估报告\n\n## 执行摘要\n本次安全评估针对智能网联汽车目标 'KALI' (IP: 172.16.64.129) 进行了全面的渗透测试。测试范围包括多个高风险服务，如 ADB、QNX Qconn、Telnet 和 SSH 等。通过执行一系列 PoC 测试，我们发现了一个高危漏洞：Telnet 弱口令认证。此漏洞允许攻击者通过弱口令（root:123456）直接登录到目标系统，获取完全控制权。总体风险评级为 HIGH。\n\n## 总体风险评级\n- **风险等级**: HIGH\n\n## 实际测试范围概述\n本次实际执行了以下 PoC 测试项：\n- `network/02_ADB_Debug_Port.py`\n- `wireless/01_QNX_Qnet_File_Read.py`\n- `network/07_Telnet_Weak_Creds.py`\n- `network/04_SSH_Weak_Creds.py`\n- `application/11_RTSP_CarPlay_DoS.py`\n- `application/03_CarPlay_Stack_Overflow.py`\n- `network/11_RTSP_Log_Leak.py`\n- `application/01_AirPlay_AirBorne_UAF.py`\n\n## 漏洞详细分析\n\n### 漏洞 1: Telnet 弱口令认证\n- **漏洞名称**: Telnet 弱口令认证\n- **协议类型**: Telnet\n- **影响的 ECU 组件**: IVI 系统\n- **实际执行的 PoC 名称**: `network/07_Telnet_Weak_Creds.py`\n- **返回的证据原文**: `Telnet login successful with root:123456`\n\n#### TARA 威胁分析表格\n| 威胁场景 | 影响程度 | 攻击可行性 | 风险等级 |\n|----------|-----------|-------------|----------|\n| 攻击者通过弱口令登录 Telnet 服务，获取系统控制权 | 高 | 中 | 高 |\n\n#### CVSS 评分参考\n- **CVSS v3.1 评分**: 8.1 (High)\n\n## 未发现漏洞的测试项\n- `network/02_ADB_Debug_Port.py`\n- `wireless/01_QNX_Qnet_File_Read.py`\n- `network/04_SSH_Weak_Creds.py`\n- `application/11_RTSP_CarPlay_DoS.py`\n- `application/03_CarPlay_Stack_Overflow.py`\n- `network/11_RTSP_Log_Leak.py`\n- `application/01_AirPlay_AirBorne_UAF.py`\n\n## 修复建议\n针对发现的 Telnet 弱口令认证漏洞，建议采取以下措施：\n1. **更改默认密码**：立即更改所有默认密码，特别是管理员账户的密码。\n2. **启用强密码策略**：确保所有用户账户使用强密码，并定期更新。\n3. **禁用不必要的服务**：如果 Telnet 服务不是必须的，建议禁用该服务以减少攻击面。\n4. **实施多因素认证**：在可能的情况下，启用多因素认证以增加安全性。\n\n## 合规性评估\n根据 UN R155 CSMS 要求，本次评估发现的漏洞表明目标系统在以下几个方面存在合规差距：\n- **网络安全管理**：需要加强密码管理和访问控制策略。\n- **风险评估**：应定期进行风险评估和漏洞扫描，及时发现并修复潜在的安全问题。\n- **事件响应**：建立有效的事件响应机制，以便在发生安全事件时能够迅速应对。\n\n## 建议的后续测试\n- **蓝牙相关测试**：由于缺少蓝牙 MAC 地址，本次测试未覆盖蓝牙相关的 PoC。建议在未来测试中加入蓝牙相关测试。\n- **CAN 总线测试**：虽然提供了 CAN 接口，但本次测试未覆盖 CAN 总线相关的 PoC。建议在未来测试中加入 CAN 总线测试。\n- **固件更新测试**：建议在未来测试中加入固件更新相关的 PoC，以确保固件更新过程的安全性。\n\n---\n\n**评估日期**: 2026-04-07 15:31:01  \n**评估团队**: BIOS团队",
   "connection": {
     "ip": "172.16.64.129",
     "bluetoothMac": "",
@@ -122,7 +122,7 @@
           "domain": "ivi",
           "evidence": "Telnet login successful with root:123456",
           "id": "vuln_2",
-          "label": "network/14_Telnet_Weak_Creds.py",
+          "label": "network/07_Telnet_Weak_Creds.py",
           "severity": "High",
           "type": "vulnerability"
         },
@@ -164,7 +164,7 @@
           ],
           "physicalImpact": "IVI 控制权获取",
           "riskScore": 78,
-          "title": "Telnet -> network/14_Telnet_Weak_Creds.py -> IVI 控制权获取"
+          "title": "Telnet -> network/07_Telnet_Weak_Creds.py -> IVI 控制权获取"
         }
       ],
       "summary": "KALI 形成 2 条可解释攻击路径，最高风险路径评分 78。"
@@ -242,7 +242,7 @@
           ],
           "physicalImpact": "IVI 控制权获取",
           "riskScore": 78,
-          "title": "Telnet -> network/14_Telnet_Weak_Creds.py -> IVI 控制权获取"
+          "title": "Telnet -> network/07_Telnet_Weak_Creds.py -> IVI 控制权获取"
         }
       ],
       "findings": [
@@ -255,7 +255,7 @@
         {
           "domain": "ivi",
           "evidence": "Telnet login successful with root:123456",
-          "name": "network/14_Telnet_Weak_Creds.py",
+          "name": "network/07_Telnet_Weak_Creds.py",
           "severity": "High"
         }
       ],
@@ -339,11 +339,11 @@
       "domain": "ivi",
       "error": "",
       "id": "477f152d-5ab",
-      "name": "network/14_Telnet_Weak_Creds.py",
+      "name": "network/07_Telnet_Weak_Creds.py",
       "parameters": {
         "target_ip": "172.16.64.129"
       },
-      "pocId": "network/14_Telnet_Weak_Creds.py",
+      "pocId": "network/07_Telnet_Weak_Creds.py",
       "severity": "High",
       "source": "stepwise_executor",
       "target_ip": "172.16.64.129",
@@ -558,7 +558,7 @@
         }
       ],
       "phase": "decision",
-      "raw_output": "根据侦察结果和可用资源，我们已获取目标 `172.16.64.129` 的详细服务指纹，并确认其开放多个高风险端口（如 8080/HTTP Diag、5555/ADB、8000/QNX Qconn、23/Telnet），且 **HTTP Diag（8080）明确为无认证（`auth_type: \"none\"`）**，是最高优先级攻击入口。\n\n同时，【可用资源】中：\n- ✅ 提供了 `can_interface=PCAN_USBBUS1` → 允许执行所有 `canbus/` 类 PoC；\n- ❌ 未提供 `bluetooth_mac` → **跳过所有含 `\"bluetooth\"`/`\"BT\"`/`\"ble\"` 的 PoC（如 `wireless/40_BT_...`, `wireless/41_BT_...` 等共 10+ 个）；\n- ✅ 提供了 `wifi_interface=en0` → 允许执行 `wireless/` 类 PoC（如 Wi-Fi Deauth、Evil Twin 等）；\n- ✅ 目标存在 `telnet`、`qnx`、`adb`、`ssh`、`http`、`carplay` 等服务 → 对应 PoC 均可启用。\n\n我们调用 `check_safety` 对每个候选 PoC 进行策略推荐校验（此处省略中间调用过程，直接汇总最终安全推荐结果），并严格过滤掉不满足资源条件的 PoC。\n\n特别注意：  \n- 侦察中发现 `SSH (port 22)` 初始连接失败（`Errno 64 Host is down`），但后续 `adaptive_context` 中又捕获到有效 banner `SSH-2.0-OpenSSH_10.2p1 Debian-5`，表明服务实际存活，推荐策略为 `credential_bruteforce`；  \n- `HTTP Diag (8080)` 明确 `auth_type: \"none\"`，推荐策略为 `direct_exploit`，是最优首攻点；  \n- `QNX Qconn (8000)` 和 `ADB (5555)` 在 `detected_services` 中被明确识别，对应 PoC 启用；  \n- `Telnet (23)` 虽未明示认证方式，但属于高危明文协议，PoC 启用；  \n- `CarPlay RTSP (7000)` 和 `Vehicle API (6800)` 属于应用层服务，`application/` 类 PoC 启用；  \n- 所有蓝牙相关 PoC（`wireless/40_` 至 `wireless/49_` 中涉及 BT 的）因缺少 `bluetooth_mac`，**全部跳过**；  \n- `SOME/IP`、`MQTT`、`D-Bus` 等协议虽在开放端口列表中未显式列出，但 `adaptive_context.detected_services` 包含 `\"carplay\"`、`\"qnx\"`、`\"adb\"`，说明其上下文可信，对应 PoC 可信启用。\n\n最终生成的攻击计划按**风险等级 + 认证状态 + 依赖关系**排序，优先无认证、低干扰、高成功率 PoC，并确保每项均满足资源约束与安全策略（`strategy` 字段体现）。\n\n```json\n[\n  {\n    \"poc_name\": \"network/09_ADB_Debug_Port.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"direct_exploit\",\n    \"reason\": \"ADB (5555) 已在侦察中确认开放，且 adaptive_context 明确检测到 'adb' 服务；该 PoC 安全、非破坏性，用于快速验证远程 ADB Shell 是否可直连。\"\n  },\n  {\n    \"poc_name\": \"wireless/32_QNX_Qnet_File_Read.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"direct_exploit\",\n    \"reason\": \"QNX Qconn (8000) 已在侦察中确认开放，且 adaptive_context 明确检测到 'qnx' 服务；该 PoC 尝试利用经典 Qconn 未授权文件读取漏洞，无需认证，风险可控。\"\n  },\n  {\n    \"poc_name\": \"network/14_Telnet_Weak_Creds.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"credential_bruteforce\",\n    \"reason\": \"Telnet (23) 已在侦察中确认开放，且 adaptive_context 明确检测到 'telnet' 服务；该 PoC 使用字典爆破弱口令，符合 'telnet' 协议典型风险模式。\"\n  },\n  {\n    \"poc_name\": \"network/11_SSH_Weak_Creds.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"credential_bruteforce\",\n    \"reason\": \"SSH (22) 在 adaptive_context 中被二次确认存活（banner: SSH-2.0-OpenSSH_10.2p1 Debian-5），且 auth_type 为 'ssh_password'；该 PoC 针对密码认证 SSH 进行安全字典爆破，符合推荐策略。\"\n  },\n  {\n    \"poc_name\": \"application/60_RTSP_CarPlay_DoS.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"weaponize\",\n    \"reason\": \"CarPlay RTSP (7000) 是侦察中明确开放的服务，且 adaptive_context 检测到 'carplay'；该 PoC 具有 DoS 破坏性（is_disruptive=True），需降级为 weaponize 模式以规避自动拦截，由人工决策是否执行。\"\n  },\n  {\n    \"poc_name\": \"application/52_CarPlay_Stack_Overflow.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"weaponize\",\n    \"reason\": \"CarPlay 服务 (7000) 存在，但当前 PoC 默认端口为 55555，与侦察不符；需动态适配端口并注入 payload，属定制化 exploit，触发 Weaponize Agent 生成专用测试代码。\"\n  },\n  {\n    \"poc_name\": \"network/18_RTSP_Log_Leak.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"direct_exploit\",\n    \"reason\": \"RTSP (7000) 已在侦察中确认开放，且 adaptive_context 检测到 'carplay'；该 PoC 发送 ANY /logs?id=0 请求探测日志泄露，无认证、低风险，适合首轮探测。\"\n  },\n  {\n    \"poc_name\": \"application/50_AirPlay_AirBorne_UAF.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"weaponize\",\n    \"reason\": \"CarPlay/RTSP (7000) 存在，但 AirPlay UAF (CVE-2025-24252) 是高危零点击 RCE 漏洞，需构造特定畸形 SDP payload；当前 PoC 为通用模板，需 Weaponize Agent 动态生成针对目标 banner 的精准载荷。\"\n  }\n]\n```",
+      "raw_output": "根据侦察结果和可用资源，我们已获取目标 `172.16.64.129` 的详细服务指纹，并确认其开放多个高风险端口（如 8080/HTTP Diag、5555/ADB、8000/QNX Qconn、23/Telnet），且 **HTTP Diag（8080）明确为无认证（`auth_type: \"none\"`）**，是最高优先级攻击入口。\n\n同时，【可用资源】中：\n- ✅ 提供了 `can_interface=PCAN_USBBUS1` → 允许执行所有 `canbus/` 类 PoC；\n- ❌ 未提供 `bluetooth_mac` → **跳过所有含 `\"bluetooth\"`/`\"BT\"`/`\"ble\"` 的 PoC（如 `wireless/40_BT_...`, `wireless/41_BT_...` 等共 10+ 个）；\n- ✅ 提供了 `wifi_interface=en0` → 允许执行 `wireless/` 类 PoC（如 Wi-Fi Deauth、Evil Twin 等）；\n- ✅ 目标存在 `telnet`、`qnx`、`adb`、`ssh`、`http`、`carplay` 等服务 → 对应 PoC 均可启用。\n\n我们调用 `check_safety` 对每个候选 PoC 进行策略推荐校验（此处省略中间调用过程，直接汇总最终安全推荐结果），并严格过滤掉不满足资源条件的 PoC。\n\n特别注意：  \n- 侦察中发现 `SSH (port 22)` 初始连接失败（`Errno 64 Host is down`），但后续 `adaptive_context` 中又捕获到有效 banner `SSH-2.0-OpenSSH_10.2p1 Debian-5`，表明服务实际存活，推荐策略为 `credential_bruteforce`；  \n- `HTTP Diag (8080)` 明确 `auth_type: \"none\"`，推荐策略为 `direct_exploit`，是最优首攻点；  \n- `QNX Qconn (8000)` 和 `ADB (5555)` 在 `detected_services` 中被明确识别，对应 PoC 启用；  \n- `Telnet (23)` 虽未明示认证方式，但属于高危明文协议，PoC 启用；  \n- `CarPlay RTSP (7000)` 和 `Vehicle API (6800)` 属于应用层服务，`application/` 类 PoC 启用；  \n- 所有蓝牙相关 PoC（`wireless/40_` 至 `wireless/49_` 中涉及 BT 的）因缺少 `bluetooth_mac`，**全部跳过**；  \n- `SOME/IP`、`MQTT`、`D-Bus` 等协议虽在开放端口列表中未显式列出，但 `adaptive_context.detected_services` 包含 `\"carplay\"`、`\"qnx\"`、`\"adb\"`，说明其上下文可信，对应 PoC 可信启用。\n\n最终生成的攻击计划按**风险等级 + 认证状态 + 依赖关系**排序，优先无认证、低干扰、高成功率 PoC，并确保每项均满足资源约束与安全策略（`strategy` 字段体现）。\n\n```json\n[\n  {\n    \"poc_name\": \"network/02_ADB_Debug_Port.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"direct_exploit\",\n    \"reason\": \"ADB (5555) 已在侦察中确认开放，且 adaptive_context 明确检测到 'adb' 服务；该 PoC 安全、非破坏性，用于快速验证远程 ADB Shell 是否可直连。\"\n  },\n  {\n    \"poc_name\": \"wireless/01_QNX_Qnet_File_Read.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"direct_exploit\",\n    \"reason\": \"QNX Qconn (8000) 已在侦察中确认开放，且 adaptive_context 明确检测到 'qnx' 服务；该 PoC 尝试利用经典 Qconn 未授权文件读取漏洞，无需认证，风险可控。\"\n  },\n  {\n    \"poc_name\": \"network/07_Telnet_Weak_Creds.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"credential_bruteforce\",\n    \"reason\": \"Telnet (23) 已在侦察中确认开放，且 adaptive_context 明确检测到 'telnet' 服务；该 PoC 使用字典爆破弱口令，符合 'telnet' 协议典型风险模式。\"\n  },\n  {\n    \"poc_name\": \"network/04_SSH_Weak_Creds.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"credential_bruteforce\",\n    \"reason\": \"SSH (22) 在 adaptive_context 中被二次确认存活（banner: SSH-2.0-OpenSSH_10.2p1 Debian-5），且 auth_type 为 'ssh_password'；该 PoC 针对密码认证 SSH 进行安全字典爆破，符合推荐策略。\"\n  },\n  {\n    \"poc_name\": \"application/11_RTSP_CarPlay_DoS.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"weaponize\",\n    \"reason\": \"CarPlay RTSP (7000) 是侦察中明确开放的服务，且 adaptive_context 检测到 'carplay'；该 PoC 具有 DoS 破坏性（is_disruptive=True），需降级为 weaponize 模式以规避自动拦截，由人工决策是否执行。\"\n  },\n  {\n    \"poc_name\": \"application/03_CarPlay_Stack_Overflow.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"weaponize\",\n    \"reason\": \"CarPlay 服务 (7000) 存在，但当前 PoC 默认端口为 55555，与侦察不符；需动态适配端口并注入 payload，属定制化 exploit，触发 Weaponize Agent 生成专用测试代码。\"\n  },\n  {\n    \"poc_name\": \"network/11_RTSP_Log_Leak.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"direct_exploit\",\n    \"reason\": \"RTSP (7000) 已在侦察中确认开放，且 adaptive_context 检测到 'carplay'；该 PoC 发送 ANY /logs?id=0 请求探测日志泄露，无认证、低风险，适合首轮探测。\"\n  },\n  {\n    \"poc_name\": \"application/01_AirPlay_AirBorne_UAF.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"weaponize\",\n    \"reason\": \"CarPlay/RTSP (7000) 存在，但 AirPlay UAF (CVE-2025-24252) 是高危零点击 RCE 漏洞，需构造特定畸形 SDP payload；当前 PoC 为通用模板，需 Weaponize Agent 动态生成针对目标 banner 的精准载荷。\"\n  }\n]\n```",
       "status": "done",
       "structured_output": {
         "item_count": 8,
@@ -567,7 +567,7 @@
             "parameters": {
               "target_ip": "172.16.64.129"
             },
-            "poc_name": "network/09_ADB_Debug_Port.py",
+            "poc_name": "network/02_ADB_Debug_Port.py",
             "protocol": "",
             "reason": "ADB (5555) 已在侦察中确认开放，且 adaptive_context 明确检测到 'adb' 服务；该 PoC 安全、非破坏性，用于快速验证远程 ADB Shell 是否可直连。",
             "status": "completed",
@@ -578,7 +578,7 @@
             "parameters": {
               "target_ip": "172.16.64.129"
             },
-            "poc_name": "wireless/32_QNX_Qnet_File_Read.py",
+            "poc_name": "wireless/01_QNX_Qnet_File_Read.py",
             "protocol": "",
             "reason": "QNX Qconn (8000) 已在侦察中确认开放，且 adaptive_context 明确检测到 'qnx' 服务；该 PoC 尝试利用经典 Qconn 未授权文件读取漏洞，无需认证，风险可控。",
             "status": "completed",
@@ -589,7 +589,7 @@
             "parameters": {
               "target_ip": "172.16.64.129"
             },
-            "poc_name": "network/14_Telnet_Weak_Creds.py",
+            "poc_name": "network/07_Telnet_Weak_Creds.py",
             "protocol": "",
             "reason": "Telnet (23) 已在侦察中确认开放，且 adaptive_context 明确检测到 'telnet' 服务；该 PoC 使用字典爆破弱口令，符合 'telnet' 协议典型风险模式。",
             "status": "vulnerable",
@@ -600,7 +600,7 @@
             "parameters": {
               "target_ip": "172.16.64.129"
             },
-            "poc_name": "network/11_SSH_Weak_Creds.py",
+            "poc_name": "network/04_SSH_Weak_Creds.py",
             "protocol": "",
             "reason": "SSH (22) 在 adaptive_context 中被二次确认存活（banner: SSH-2.0-OpenSSH_10.2p1 Debian-5），且 auth_type 为 'ssh_password'；该 PoC 针对密码认证 SSH 进行安全字典爆破，符合推荐策略。",
             "status": "completed",
@@ -611,7 +611,7 @@
             "parameters": {
               "target_ip": "172.16.64.129"
             },
-            "poc_name": "application/60_RTSP_CarPlay_DoS.py",
+            "poc_name": "application/11_RTSP_CarPlay_DoS.py",
             "protocol": "",
             "reason": "CarPlay RTSP (7000) 是侦察中明确开放的服务，且 adaptive_context 检测到 'carplay'；该 PoC 具有 DoS 破坏性（is_disruptive=True），需降级为 weaponize 模式以规避自动拦截，由人工决策是否执行。",
             "status": "completed",
@@ -622,7 +622,7 @@
             "parameters": {
               "target_ip": "172.16.64.129"
             },
-            "poc_name": "application/52_CarPlay_Stack_Overflow.py",
+            "poc_name": "application/03_CarPlay_Stack_Overflow.py",
             "protocol": "",
             "reason": "CarPlay 服务 (7000) 存在，但当前 PoC 默认端口为 55555，与侦察不符；需动态适配端口并注入 payload，属定制化 exploit，触发 Weaponize Agent 生成专用测试代码。",
             "status": "completed",
@@ -633,7 +633,7 @@
             "parameters": {
               "target_ip": "172.16.64.129"
             },
-            "poc_name": "network/18_RTSP_Log_Leak.py",
+            "poc_name": "network/11_RTSP_Log_Leak.py",
             "protocol": "",
             "reason": "RTSP (7000) 已在侦察中确认开放，且 adaptive_context 检测到 'carplay'；该 PoC 发送 ANY /logs?id=0 请求探测日志泄露，无认证、低风险，适合首轮探测。",
             "status": "completed",
@@ -644,7 +644,7 @@
             "parameters": {
               "target_ip": "172.16.64.129"
             },
-            "poc_name": "application/50_AirPlay_AirBorne_UAF.py",
+            "poc_name": "application/01_AirPlay_AirBorne_UAF.py",
             "protocol": "",
             "reason": "CarPlay/RTSP (7000) 存在，但 AirPlay UAF (CVE-2025-24252) 是高危零点击 RCE 漏洞，需构造特定畸形 SDP payload；当前 PoC 为通用模板，需 Weaponize Agent 动态生成针对目标 banner 的精准载荷。",
             "status": "completed",
@@ -653,7 +653,7 @@
           }
         ],
         "parse_error": null,
-        "summary": "根据侦察结果和可用资源，我们已获取目标 `172.16.64.129` 的详细服务指纹，并确认其开放多个高风险端口（如 8080/HTTP Diag、5555/ADB、8000/QNX Qconn、23/Telnet），且 **HTTP Diag（8080）明确为无认证（`auth_type: \"none\"`）**，是最高优先级攻击入口。\n\n同时，【可用资源】中：\n- ✅ 提供了 `can_interface=PCAN_USBBUS1` → 允许执行所有 `canbus/` 类 PoC；\n- ❌ 未提供 `bluetooth_mac` → **跳过所有含 `\"bluetooth\"`/`\"BT\"`/`\"ble\"` 的 PoC（如 `wireless/40_BT_...`, `wireless/41_BT_...` 等共 10+ 个）；\n- ✅ 提供了 `wifi_interface=en0` → 允许执行 `wireless/` 类 PoC（如 Wi-Fi Deauth、Evil Twin 等）；\n- ✅ 目标存在 `telnet`、`qnx`、`adb`、`ssh`、`http`、`carplay` 等服务 → 对应 PoC 均可启用。\n\n我们调用 `check_safety` 对每个候选 PoC 进行策略推荐校验（此处省略中间调用过程，直接汇总最终安全推荐结果），并严格过滤掉不满足资源条件的 PoC。\n\n特别注意：  \n- 侦察中发现 `SSH (port 22)` 初始连接失败（`Errno 64 Host is down`），但后续 `adaptive_context` 中又捕获到有效 banner `SSH-2.0-OpenSSH_10.2p1 Debian-5`，表明服务实际存活，推荐策略为 `credential_bruteforce`；  \n- `HTTP Diag (8080)` 明确 `auth_type: \"none\"`，推荐策略为 `direct_exploit`，是最优首攻点；  \n- `QNX Qconn (8000)` 和 `ADB (5555)` 在 `detected_services` 中被明确识别，对应 PoC 启用；  \n- `Telnet (23)` 虽未明示认证方式，但属于高危明文协议，PoC 启用；  \n- `CarPlay RTSP (7000)` 和 `Vehicle API (6800)` 属于应用层服务，`application/` 类 PoC 启用；  \n- 所有蓝牙相关 PoC（`wireless/40_` 至 `wireless/49_` 中涉及 BT 的）因缺少 `bluetooth_mac`，**全部跳过**；  \n- `SOME/IP`、`MQTT`、`D-Bus` 等协议虽在开放端口列表中未显式列出，但 `adaptive_context.detected_services` 包含 `\"carplay\"`、`\"qnx\"`、`\"adb\"`，说明其上下文可信，对应 PoC 可信启用。\n\n最终生成的攻击计划按**风险等级 + 认证状态 + 依赖关系**排序，优先无认证、低干扰、高成功率 PoC，并确保每项均满足资源约束与安全策略（`strategy` 字段体现）。\n\n```json\n[\n  {\n    \"poc_name\": \"network/09_ADB_Debug_Port.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"direct_exploit\",\n    \"reason\": \"ADB (5555) 已在侦察中确认开放，且 adaptive_context 明确检测到 'adb' 服务；该 PoC 安全、非破坏性，用于快速验证远程 ADB Shell 是否可直连。\"\n  },\n  {\n    \"poc_name\": \"wireless/32_QNX_Qnet_File_Read.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"direct_exploit\",\n    \"reason\": \"QNX Qconn (8000) 已在侦察中确认开放，且 adaptive_context 明确检测到 'qnx' 服务；该 PoC 尝试利用经典 Qconn 未授权文件读取漏洞，无需认证，风险可控。\"\n  },\n  {\n    \"poc_name\": \"network/14_Telnet_Weak_Creds.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"credential_bruteforce\",\n    \"reason\": \"Telnet (23) 已在侦察中确认开放，且 adaptive_context 明确检测到 'telnet' 服务；该 PoC 使用字典爆破弱口令，符合 'telnet' 协议典型风险模式。\"\n  },\n  {\n    \"poc_name\": \"network/11_SSH_Weak_Creds.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"credential_bruteforce\",\n    \"reason\": \"SSH (22) 在 adaptive_context 中被二次确认存活（banner: SSH-2.0-OpenSSH_10.2p1 Debian-5），且 auth_type 为 'ssh_password'；该 PoC 针对密码认证 SSH 进行安全字典爆破，符合推荐策略。\"\n  },\n  {\n    \"poc_name\": \"application/60_RTSP_CarPlay_DoS.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"weaponize\",\n    \"reason\": \"CarPlay RTSP (7000) 是侦察中明确开放的服务，且 adaptive_context 检测到 'carplay'；该 PoC 具有 DoS 破坏性（is_disruptive=True），需降级为 weaponize 模式以规避自动拦截，由人工决策是否执行。\"\n  },\n  {\n    \"poc_name\": \"application/52_CarPlay_Stack_Overflow.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"weaponize\",\n    \"reason\": \"CarPlay 服务 (7000) 存在，但当前 PoC 默认端口为 55555，与侦察不符；需动态适配端口并注入 payload，属定制化 exploit，触发 Weaponize Agent 生成专用测试代码。\"\n  },\n  {\n    \"poc_name\": \"network/18_RTSP_Log_Leak.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"direct_exploit\",\n    \"reason\": \"RTSP (7000) 已在侦察中确认开放，且 adaptive_context 检测到 'carplay'；该 PoC 发送 ANY /logs?id=0 请求探测日志泄露，无认证、低风险，适合首轮探测。\"\n  },\n  {\n    \"poc_name\": \"application/50_AirPlay_AirBorne_UAF.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"weaponize\",\n    \"reason\": \"CarPlay/RTSP (7000) 存在，但 AirPlay UAF (CVE-2025-24252) 是高危零点击 RCE 漏洞，需构造特定畸形 SDP payload；当前 PoC 为通用模板，需 Weaponize Agent 动态生成针对目标 banner 的精准载荷。\"\n  }\n]\n```"
+        "summary": "根据侦察结果和可用资源，我们已获取目标 `172.16.64.129` 的详细服务指纹，并确认其开放多个高风险端口（如 8080/HTTP Diag、5555/ADB、8000/QNX Qconn、23/Telnet），且 **HTTP Diag（8080）明确为无认证（`auth_type: \"none\"`）**，是最高优先级攻击入口。\n\n同时，【可用资源】中：\n- ✅ 提供了 `can_interface=PCAN_USBBUS1` → 允许执行所有 `canbus/` 类 PoC；\n- ❌ 未提供 `bluetooth_mac` → **跳过所有含 `\"bluetooth\"`/`\"BT\"`/`\"ble\"` 的 PoC（如 `wireless/40_BT_...`, `wireless/41_BT_...` 等共 10+ 个）；\n- ✅ 提供了 `wifi_interface=en0` → 允许执行 `wireless/` 类 PoC（如 Wi-Fi Deauth、Evil Twin 等）；\n- ✅ 目标存在 `telnet`、`qnx`、`adb`、`ssh`、`http`、`carplay` 等服务 → 对应 PoC 均可启用。\n\n我们调用 `check_safety` 对每个候选 PoC 进行策略推荐校验（此处省略中间调用过程，直接汇总最终安全推荐结果），并严格过滤掉不满足资源条件的 PoC。\n\n特别注意：  \n- 侦察中发现 `SSH (port 22)` 初始连接失败（`Errno 64 Host is down`），但后续 `adaptive_context` 中又捕获到有效 banner `SSH-2.0-OpenSSH_10.2p1 Debian-5`，表明服务实际存活，推荐策略为 `credential_bruteforce`；  \n- `HTTP Diag (8080)` 明确 `auth_type: \"none\"`，推荐策略为 `direct_exploit`，是最优首攻点；  \n- `QNX Qconn (8000)` 和 `ADB (5555)` 在 `detected_services` 中被明确识别，对应 PoC 启用；  \n- `Telnet (23)` 虽未明示认证方式，但属于高危明文协议，PoC 启用；  \n- `CarPlay RTSP (7000)` 和 `Vehicle API (6800)` 属于应用层服务，`application/` 类 PoC 启用；  \n- 所有蓝牙相关 PoC（`wireless/40_` 至 `wireless/49_` 中涉及 BT 的）因缺少 `bluetooth_mac`，**全部跳过**；  \n- `SOME/IP`、`MQTT`、`D-Bus` 等协议虽在开放端口列表中未显式列出，但 `adaptive_context.detected_services` 包含 `\"carplay\"`、`\"qnx\"`、`\"adb\"`，说明其上下文可信，对应 PoC 可信启用。\n\n最终生成的攻击计划按**风险等级 + 认证状态 + 依赖关系**排序，优先无认证、低干扰、高成功率 PoC，并确保每项均满足资源约束与安全策略（`strategy` 字段体现）。\n\n```json\n[\n  {\n    \"poc_name\": \"network/02_ADB_Debug_Port.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"direct_exploit\",\n    \"reason\": \"ADB (5555) 已在侦察中确认开放，且 adaptive_context 明确检测到 'adb' 服务；该 PoC 安全、非破坏性，用于快速验证远程 ADB Shell 是否可直连。\"\n  },\n  {\n    \"poc_name\": \"wireless/01_QNX_Qnet_File_Read.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"direct_exploit\",\n    \"reason\": \"QNX Qconn (8000) 已在侦察中确认开放，且 adaptive_context 明确检测到 'qnx' 服务；该 PoC 尝试利用经典 Qconn 未授权文件读取漏洞，无需认证，风险可控。\"\n  },\n  {\n    \"poc_name\": \"network/07_Telnet_Weak_Creds.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"credential_bruteforce\",\n    \"reason\": \"Telnet (23) 已在侦察中确认开放，且 adaptive_context 明确检测到 'telnet' 服务；该 PoC 使用字典爆破弱口令，符合 'telnet' 协议典型风险模式。\"\n  },\n  {\n    \"poc_name\": \"network/04_SSH_Weak_Creds.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"credential_bruteforce\",\n    \"reason\": \"SSH (22) 在 adaptive_context 中被二次确认存活（banner: SSH-2.0-OpenSSH_10.2p1 Debian-5），且 auth_type 为 'ssh_password'；该 PoC 针对密码认证 SSH 进行安全字典爆破，符合推荐策略。\"\n  },\n  {\n    \"poc_name\": \"application/11_RTSP_CarPlay_DoS.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"weaponize\",\n    \"reason\": \"CarPlay RTSP (7000) 是侦察中明确开放的服务，且 adaptive_context 检测到 'carplay'；该 PoC 具有 DoS 破坏性（is_disruptive=True），需降级为 weaponize 模式以规避自动拦截，由人工决策是否执行。\"\n  },\n  {\n    \"poc_name\": \"application/03_CarPlay_Stack_Overflow.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"weaponize\",\n    \"reason\": \"CarPlay 服务 (7000) 存在，但当前 PoC 默认端口为 55555，与侦察不符；需动态适配端口并注入 payload，属定制化 exploit，触发 Weaponize Agent 生成专用测试代码。\"\n  },\n  {\n    \"poc_name\": \"network/11_RTSP_Log_Leak.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"direct_exploit\",\n    \"reason\": \"RTSP (7000) 已在侦察中确认开放，且 adaptive_context 检测到 'carplay'；该 PoC 发送 ANY /logs?id=0 请求探测日志泄露，无认证、低风险，适合首轮探测。\"\n  },\n  {\n    \"poc_name\": \"application/01_AirPlay_AirBorne_UAF.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"weaponize\",\n    \"reason\": \"CarPlay/RTSP (7000) 存在，但 AirPlay UAF (CVE-2025-24252) 是高危零点击 RCE 漏洞，需构造特定畸形 SDP payload；当前 PoC 为通用模板，需 Weaponize Agent 动态生成针对目标 banner 的精准载荷。\"\n  }\n]\n```"
       },
       "timestamp": "2026-04-07T07:30:17Z"
     },
@@ -706,7 +706,7 @@
         }
       ],
       "phase": "execute",
-      "raw_output": "- network/09_ADB_Debug_Port.py [primary]: completed\n- wireless/32_QNX_Qnet_File_Read.py [primary]: completed\n- network/14_Telnet_Weak_Creds.py [primary]: vulnerable | evidence=Telnet login successful with root:123456\n- network/11_SSH_Weak_Creds.py [primary]: completed\n- application/60_RTSP_CarPlay_DoS.py [primary]: completed\n- application/52_CarPlay_Stack_Overflow.py [primary]: completed\n- network/18_RTSP_Log_Leak.py [primary]: completed\n- application/50_AirPlay_AirBorne_UAF.py [primary]: completed",
+      "raw_output": "- network/02_ADB_Debug_Port.py [primary]: completed\n- wireless/01_QNX_Qnet_File_Read.py [primary]: completed\n- network/07_Telnet_Weak_Creds.py [primary]: vulnerable | evidence=Telnet login successful with root:123456\n- network/04_SSH_Weak_Creds.py [primary]: completed\n- application/11_RTSP_CarPlay_DoS.py [primary]: completed\n- application/03_CarPlay_Stack_Overflow.py [primary]: completed\n- network/11_RTSP_Log_Leak.py [primary]: completed\n- application/01_AirPlay_AirBorne_UAF.py [primary]: completed",
       "status": "done",
       "structured_output": {
         "item_count": 8,
@@ -726,7 +726,7 @@
             ],
             "error": "",
             "evidence": "未发现任何已知 ADB 端口开放（共检测 13 个端口）",
-            "poc_name": "network/09_ADB_Debug_Port.py",
+            "poc_name": "network/02_ADB_Debug_Port.py",
             "status": "completed",
             "step": 1,
             "strategy": "default",
@@ -747,7 +747,7 @@
             ],
             "error": "",
             "evidence": "",
-            "poc_name": "wireless/32_QNX_Qnet_File_Read.py",
+            "poc_name": "wireless/01_QNX_Qnet_File_Read.py",
             "status": "completed",
             "step": 2,
             "strategy": "default",
@@ -768,7 +768,7 @@
             ],
             "error": "",
             "evidence": "Telnet login successful with root:123456",
-            "poc_name": "network/14_Telnet_Weak_Creds.py",
+            "poc_name": "network/07_Telnet_Weak_Creds.py",
             "status": "vulnerable",
             "step": 3,
             "strategy": "default",
@@ -789,7 +789,7 @@
             ],
             "error": "",
             "evidence": "",
-            "poc_name": "network/11_SSH_Weak_Creds.py",
+            "poc_name": "network/04_SSH_Weak_Creds.py",
             "status": "completed",
             "step": 4,
             "strategy": "default",
@@ -810,7 +810,7 @@
             ],
             "error": "",
             "evidence": "TCP:7000 未开放",
-            "poc_name": "application/60_RTSP_CarPlay_DoS.py",
+            "poc_name": "application/11_RTSP_CarPlay_DoS.py",
             "status": "completed",
             "step": 5,
             "strategy": "default",
@@ -831,7 +831,7 @@
             ],
             "error": "",
             "evidence": "",
-            "poc_name": "application/52_CarPlay_Stack_Overflow.py",
+            "poc_name": "application/03_CarPlay_Stack_Overflow.py",
             "status": "completed",
             "step": 6,
             "strategy": "default",
@@ -852,7 +852,7 @@
             ],
             "error": "",
             "evidence": "",
-            "poc_name": "network/18_RTSP_Log_Leak.py",
+            "poc_name": "network/11_RTSP_Log_Leak.py",
             "status": "completed",
             "step": 7,
             "strategy": "default",
@@ -873,7 +873,7 @@
             ],
             "error": "",
             "evidence": "",
-            "poc_name": "application/50_AirPlay_AirBorne_UAF.py",
+            "poc_name": "application/01_AirPlay_AirBorne_UAF.py",
             "status": "completed",
             "step": 8,
             "strategy": "default",
@@ -881,7 +881,7 @@
           }
         ],
         "parse_error": null,
-        "summary": "- network/09_ADB_Debug_Port.py [primary]: completed\n- wireless/32_QNX_Qnet_File_Read.py [primary]: completed\n- network/14_Telnet_Weak_Creds.py [primary]: vulnerable | evidence=Telnet login successful with root:123456\n- network/11_SSH_Weak_Creds.py [primary]: completed\n- application/60_RTSP_CarPlay_DoS.py [primary]: completed\n- application/52_CarPlay_Stack_Overflow.py [primary]: completed\n- network/18_RTSP_Log_Leak.py [primary]: completed\n- application/50_AirPlay_AirBorne_UAF.py [primary]: completed"
+        "summary": "- network/02_ADB_Debug_Port.py [primary]: completed\n- wireless/01_QNX_Qnet_File_Read.py [primary]: completed\n- network/07_Telnet_Weak_Creds.py [primary]: vulnerable | evidence=Telnet login successful with root:123456\n- network/04_SSH_Weak_Creds.py [primary]: completed\n- application/11_RTSP_CarPlay_DoS.py [primary]: completed\n- application/03_CarPlay_Stack_Overflow.py [primary]: completed\n- network/11_RTSP_Log_Leak.py [primary]: completed\n- application/01_AirPlay_AirBorne_UAF.py [primary]: completed"
       },
       "timestamp": "2026-04-07T07:31:01Z"
     },
@@ -903,11 +903,11 @@
         }
       ],
       "phase": "assess",
-      "raw_output": "# 安全评估报告\n\n## 执行摘要\n本次安全评估针对智能网联汽车目标 'KALI' (IP: 172.16.64.129) 进行了全面的渗透测试。测试范围包括多个高风险服务，如 ADB、QNX Qconn、Telnet 和 SSH 等。通过执行一系列 PoC 测试，我们发现了一个高危漏洞：Telnet 弱口令认证。此漏洞允许攻击者通过弱口令（root:123456）直接登录到目标系统，获取完全控制权。总体风险评级为 HIGH。\n\n## 总体风险评级\n- **风险等级**: HIGH\n\n## 实际测试范围概述\n本次实际执行了以下 PoC 测试项：\n- `network/09_ADB_Debug_Port.py`\n- `wireless/32_QNX_Qnet_File_Read.py`\n- `network/14_Telnet_Weak_Creds.py`\n- `network/11_SSH_Weak_Creds.py`\n- `application/60_RTSP_CarPlay_DoS.py`\n- `application/52_CarPlay_Stack_Overflow.py`\n- `network/18_RTSP_Log_Leak.py`\n- `application/50_AirPlay_AirBorne_UAF.py`\n\n## 漏洞详细分析\n\n### 漏洞 1: Telnet 弱口令认证\n- **漏洞名称**: Telnet 弱口令认证\n- **协议类型**: Telnet\n- **影响的 ECU 组件**: IVI 系统\n- **实际执行的 PoC 名称**: `network/14_Telnet_Weak_Creds.py`\n- **返回的证据原文**: `Telnet login successful with root:123456`\n\n#### TARA 威胁分析表格\n| 威胁场景 | 影响程度 | 攻击可行性 | 风险等级 |\n|----------|-----------|-------------|----------|\n| 攻击者通过弱口令登录 Telnet 服务，获取系统控制权 | 高 | 中 | 高 |\n\n#### CVSS 评分参考\n- **CVSS v3.1 评分**: 8.1 (High)\n\n## 未发现漏洞的测试项\n- `network/09_ADB_Debug_Port.py`\n- `wireless/32_QNX_Qnet_File_Read.py`\n- `network/11_SSH_Weak_Creds.py`\n- `application/60_RTSP_CarPlay_DoS.py`\n- `application/52_CarPlay_Stack_Overflow.py`\n- `network/18_RTSP_Log_Leak.py`\n- `application/50_AirPlay_AirBorne_UAF.py`\n\n## 修复建议\n针对发现的 Telnet 弱口令认证漏洞，建议采取以下措施：\n1. **更改默认密码**：立即更改所有默认密码，特别是管理员账户的密码。\n2. **启用强密码策略**：确保所有用户账户使用强密码，并定期更新。\n3. **禁用不必要的服务**：如果 Telnet 服务不是必须的，建议禁用该服务以减少攻击面。\n4. **实施多因素认证**：在可能的情况下，启用多因素认证以增加安全性。\n\n## 合规性评估\n根据 UN R155 CSMS 要求，本次评估发现的漏洞表明目标系统在以下几个方面存在合规差距：\n- **网络安全管理**：需要加强密码管理和访问控制策略。\n- **风险评估**：应定期进行风险评估和漏洞扫描，及时发现并修复潜在的安全问题。\n- **事件响应**：建立有效的事件响应机制，以便在发生安全事件时能够迅速应对。\n\n## 建议的后续测试\n- **蓝牙相关测试**：由于缺少蓝牙 MAC 地址，本次测试未覆盖蓝牙相关的 PoC。建议在未来测试中加入蓝牙相关测试。\n- **CAN 总线测试**：虽然提供了 CAN 接口，但本次测试未覆盖 CAN 总线相关的 PoC。建议在未来测试中加入 CAN 总线测试。\n- **固件更新测试**：建议在未来测试中加入固件更新相关的 PoC，以确保固件更新过程的安全性。\n\n---\n\n**评估日期**: 2026-04-07 15:31:01  \n**评估团队**: BIOS团队",
+      "raw_output": "# 安全评估报告\n\n## 执行摘要\n本次安全评估针对智能网联汽车目标 'KALI' (IP: 172.16.64.129) 进行了全面的渗透测试。测试范围包括多个高风险服务，如 ADB、QNX Qconn、Telnet 和 SSH 等。通过执行一系列 PoC 测试，我们发现了一个高危漏洞：Telnet 弱口令认证。此漏洞允许攻击者通过弱口令（root:123456）直接登录到目标系统，获取完全控制权。总体风险评级为 HIGH。\n\n## 总体风险评级\n- **风险等级**: HIGH\n\n## 实际测试范围概述\n本次实际执行了以下 PoC 测试项：\n- `network/02_ADB_Debug_Port.py`\n- `wireless/01_QNX_Qnet_File_Read.py`\n- `network/07_Telnet_Weak_Creds.py`\n- `network/04_SSH_Weak_Creds.py`\n- `application/11_RTSP_CarPlay_DoS.py`\n- `application/03_CarPlay_Stack_Overflow.py`\n- `network/11_RTSP_Log_Leak.py`\n- `application/01_AirPlay_AirBorne_UAF.py`\n\n## 漏洞详细分析\n\n### 漏洞 1: Telnet 弱口令认证\n- **漏洞名称**: Telnet 弱口令认证\n- **协议类型**: Telnet\n- **影响的 ECU 组件**: IVI 系统\n- **实际执行的 PoC 名称**: `network/07_Telnet_Weak_Creds.py`\n- **返回的证据原文**: `Telnet login successful with root:123456`\n\n#### TARA 威胁分析表格\n| 威胁场景 | 影响程度 | 攻击可行性 | 风险等级 |\n|----------|-----------|-------------|----------|\n| 攻击者通过弱口令登录 Telnet 服务，获取系统控制权 | 高 | 中 | 高 |\n\n#### CVSS 评分参考\n- **CVSS v3.1 评分**: 8.1 (High)\n\n## 未发现漏洞的测试项\n- `network/02_ADB_Debug_Port.py`\n- `wireless/01_QNX_Qnet_File_Read.py`\n- `network/04_SSH_Weak_Creds.py`\n- `application/11_RTSP_CarPlay_DoS.py`\n- `application/03_CarPlay_Stack_Overflow.py`\n- `network/11_RTSP_Log_Leak.py`\n- `application/01_AirPlay_AirBorne_UAF.py`\n\n## 修复建议\n针对发现的 Telnet 弱口令认证漏洞，建议采取以下措施：\n1. **更改默认密码**：立即更改所有默认密码，特别是管理员账户的密码。\n2. **启用强密码策略**：确保所有用户账户使用强密码，并定期更新。\n3. **禁用不必要的服务**：如果 Telnet 服务不是必须的，建议禁用该服务以减少攻击面。\n4. **实施多因素认证**：在可能的情况下，启用多因素认证以增加安全性。\n\n## 合规性评估\n根据 UN R155 CSMS 要求，本次评估发现的漏洞表明目标系统在以下几个方面存在合规差距：\n- **网络安全管理**：需要加强密码管理和访问控制策略。\n- **风险评估**：应定期进行风险评估和漏洞扫描，及时发现并修复潜在的安全问题。\n- **事件响应**：建立有效的事件响应机制，以便在发生安全事件时能够迅速应对。\n\n## 建议的后续测试\n- **蓝牙相关测试**：由于缺少蓝牙 MAC 地址，本次测试未覆盖蓝牙相关的 PoC。建议在未来测试中加入蓝牙相关测试。\n- **CAN 总线测试**：虽然提供了 CAN 接口，但本次测试未覆盖 CAN 总线相关的 PoC。建议在未来测试中加入 CAN 总线测试。\n- **固件更新测试**：建议在未来测试中加入固件更新相关的 PoC，以确保固件更新过程的安全性。\n\n---\n\n**评估日期**: 2026-04-07 15:31:01  \n**评估团队**: BIOS团队",
       "status": "done",
       "structured_output": {
         "finding_count": 2,
-        "report_markdown": "# 安全评估报告\n\n## 执行摘要\n本次安全评估针对智能网联汽车目标 'KALI' (IP: 172.16.64.129) 进行了全面的渗透测试。测试范围包括多个高风险服务，如 ADB、QNX Qconn、Telnet 和 SSH 等。通过执行一系列 PoC 测试，我们发现了一个高危漏洞：Telnet 弱口令认证。此漏洞允许攻击者通过弱口令（root:123456）直接登录到目标系统，获取完全控制权。总体风险评级为 HIGH。\n\n## 总体风险评级\n- **风险等级**: HIGH\n\n## 实际测试范围概述\n本次实际执行了以下 PoC 测试项：\n- `network/09_ADB_Debug_Port.py`\n- `wireless/32_QNX_Qnet_File_Read.py`\n- `network/14_Telnet_Weak_Creds.py`\n- `network/11_SSH_Weak_Creds.py`\n- `application/60_RTSP_CarPlay_DoS.py`\n- `application/52_CarPlay_Stack_Overflow.py`\n- `network/18_RTSP_Log_Leak.py`\n- `application/50_AirPlay_AirBorne_UAF.py`\n\n## 漏洞详细分析\n\n### 漏洞 1: Telnet 弱口令认证\n- **漏洞名称**: Telnet 弱口令认证\n- **协议类型**: Telnet\n- **影响的 ECU 组件**: IVI 系统\n- **实际执行的 PoC 名称**: `network/14_Telnet_Weak_Creds.py`\n- **返回的证据原文**: `Telnet login successful with root:123456`\n\n#### TARA 威胁分析表格\n| 威胁场景 | 影响程度 | 攻击可行性 | 风险等级 |\n|----------|-----------|-------------|----------|\n| 攻击者通过弱口令登录 Telnet 服务，获取系统控制权 | 高 | 中 | 高 |\n\n#### CVSS 评分参考\n- **CVSS v3.1 评分**: 8.1 (High)\n\n## 未发现漏洞的测试项\n- `network/09_ADB_Debug_Port.py`\n- `wireless/32_QNX_Qnet_File_Read.py`\n- `network/11_SSH_Weak_Creds.py`\n- `application/60_RTSP_CarPlay_DoS.py`\n- `application/52_CarPlay_Stack_Overflow.py`\n- `network/18_RTSP_Log_Leak.py`\n- `application/50_AirPlay_AirBorne_UAF.py`\n\n## 修复建议\n针对发现的 Telnet 弱口令认证漏洞，建议采取以下措施：\n1. **更改默认密码**：立即更改所有默认密码，特别是管理员账户的密码。\n2. **启用强密码策略**：确保所有用户账户使用强密码，并定期更新。\n3. **禁用不必要的服务**：如果 Telnet 服务不是必须的，建议禁用该服务以减少攻击面。\n4. **实施多因素认证**：在可能的情况下，启用多因素认证以增加安全性。\n\n## 合规性评估\n根据 UN R155 CSMS 要求，本次评估发现的漏洞表明目标系统在以下几个方面存在合规差距：\n- **网络安全管理**：需要加强密码管理和访问控制策略。\n- **风险评估**：应定期进行风险评估和漏洞扫描，及时发现并修复潜在的安全问题。\n- **事件响应**：建立有效的事件响应机制，以便在发生安全事件时能够迅速应对。\n\n## 建议的后续测试\n- **蓝牙相关测试**：由于缺少蓝牙 MAC 地址，本次测试未覆盖蓝牙相关的 PoC。建议在未来测试中加入蓝牙相关测试。\n- **CAN 总线测试**：虽然提供了 CAN 接口，但本次测试未覆盖 CAN 总线相关的 PoC。建议在未来测试中加入 CAN 总线测试。\n- **固件更新测试**：建议在未来测试中加入固件更新相关的 PoC，以确保固件更新过程的安全性。\n\n---\n\n**评估日期**: 2026-04-07 15:31:01  \n**评估团队**: BIOS团队"
+        "report_markdown": "# 安全评估报告\n\n## 执行摘要\n本次安全评估针对智能网联汽车目标 'KALI' (IP: 172.16.64.129) 进行了全面的渗透测试。测试范围包括多个高风险服务，如 ADB、QNX Qconn、Telnet 和 SSH 等。通过执行一系列 PoC 测试，我们发现了一个高危漏洞：Telnet 弱口令认证。此漏洞允许攻击者通过弱口令（root:123456）直接登录到目标系统，获取完全控制权。总体风险评级为 HIGH。\n\n## 总体风险评级\n- **风险等级**: HIGH\n\n## 实际测试范围概述\n本次实际执行了以下 PoC 测试项：\n- `network/02_ADB_Debug_Port.py`\n- `wireless/01_QNX_Qnet_File_Read.py`\n- `network/07_Telnet_Weak_Creds.py`\n- `network/04_SSH_Weak_Creds.py`\n- `application/11_RTSP_CarPlay_DoS.py`\n- `application/03_CarPlay_Stack_Overflow.py`\n- `network/11_RTSP_Log_Leak.py`\n- `application/01_AirPlay_AirBorne_UAF.py`\n\n## 漏洞详细分析\n\n### 漏洞 1: Telnet 弱口令认证\n- **漏洞名称**: Telnet 弱口令认证\n- **协议类型**: Telnet\n- **影响的 ECU 组件**: IVI 系统\n- **实际执行的 PoC 名称**: `network/07_Telnet_Weak_Creds.py`\n- **返回的证据原文**: `Telnet login successful with root:123456`\n\n#### TARA 威胁分析表格\n| 威胁场景 | 影响程度 | 攻击可行性 | 风险等级 |\n|----------|-----------|-------------|----------|\n| 攻击者通过弱口令登录 Telnet 服务，获取系统控制权 | 高 | 中 | 高 |\n\n#### CVSS 评分参考\n- **CVSS v3.1 评分**: 8.1 (High)\n\n## 未发现漏洞的测试项\n- `network/02_ADB_Debug_Port.py`\n- `wireless/01_QNX_Qnet_File_Read.py`\n- `network/04_SSH_Weak_Creds.py`\n- `application/11_RTSP_CarPlay_DoS.py`\n- `application/03_CarPlay_Stack_Overflow.py`\n- `network/11_RTSP_Log_Leak.py`\n- `application/01_AirPlay_AirBorne_UAF.py`\n\n## 修复建议\n针对发现的 Telnet 弱口令认证漏洞，建议采取以下措施：\n1. **更改默认密码**：立即更改所有默认密码，特别是管理员账户的密码。\n2. **启用强密码策略**：确保所有用户账户使用强密码，并定期更新。\n3. **禁用不必要的服务**：如果 Telnet 服务不是必须的，建议禁用该服务以减少攻击面。\n4. **实施多因素认证**：在可能的情况下，启用多因素认证以增加安全性。\n\n## 合规性评估\n根据 UN R155 CSMS 要求，本次评估发现的漏洞表明目标系统在以下几个方面存在合规差距：\n- **网络安全管理**：需要加强密码管理和访问控制策略。\n- **风险评估**：应定期进行风险评估和漏洞扫描，及时发现并修复潜在的安全问题。\n- **事件响应**：建立有效的事件响应机制，以便在发生安全事件时能够迅速应对。\n\n## 建议的后续测试\n- **蓝牙相关测试**：由于缺少蓝牙 MAC 地址，本次测试未覆盖蓝牙相关的 PoC。建议在未来测试中加入蓝牙相关测试。\n- **CAN 总线测试**：虽然提供了 CAN 接口，但本次测试未覆盖 CAN 总线相关的 PoC。建议在未来测试中加入 CAN 总线测试。\n- **固件更新测试**：建议在未来测试中加入固件更新相关的 PoC，以确保固件更新过程的安全性。\n\n---\n\n**评估日期**: 2026-04-07 15:31:01  \n**评估团队**: BIOS团队"
       },
       "timestamp": "2026-04-07T07:32:12Z"
     }
@@ -915,7 +915,7 @@
   "structured": {
     "assessment": {
       "finding_count": 2,
-      "report_markdown": "# 安全评估报告\n\n## 执行摘要\n本次安全评估针对智能网联汽车目标 'KALI' (IP: 172.16.64.129) 进行了全面的渗透测试。测试范围包括多个高风险服务，如 ADB、QNX Qconn、Telnet 和 SSH 等。通过执行一系列 PoC 测试，我们发现了一个高危漏洞：Telnet 弱口令认证。此漏洞允许攻击者通过弱口令（root:123456）直接登录到目标系统，获取完全控制权。总体风险评级为 HIGH。\n\n## 总体风险评级\n- **风险等级**: HIGH\n\n## 实际测试范围概述\n本次实际执行了以下 PoC 测试项：\n- `network/09_ADB_Debug_Port.py`\n- `wireless/32_QNX_Qnet_File_Read.py`\n- `network/14_Telnet_Weak_Creds.py`\n- `network/11_SSH_Weak_Creds.py`\n- `application/60_RTSP_CarPlay_DoS.py`\n- `application/52_CarPlay_Stack_Overflow.py`\n- `network/18_RTSP_Log_Leak.py`\n- `application/50_AirPlay_AirBorne_UAF.py`\n\n## 漏洞详细分析\n\n### 漏洞 1: Telnet 弱口令认证\n- **漏洞名称**: Telnet 弱口令认证\n- **协议类型**: Telnet\n- **影响的 ECU 组件**: IVI 系统\n- **实际执行的 PoC 名称**: `network/14_Telnet_Weak_Creds.py`\n- **返回的证据原文**: `Telnet login successful with root:123456`\n\n#### TARA 威胁分析表格\n| 威胁场景 | 影响程度 | 攻击可行性 | 风险等级 |\n|----------|-----------|-------------|----------|\n| 攻击者通过弱口令登录 Telnet 服务，获取系统控制权 | 高 | 中 | 高 |\n\n#### CVSS 评分参考\n- **CVSS v3.1 评分**: 8.1 (High)\n\n## 未发现漏洞的测试项\n- `network/09_ADB_Debug_Port.py`\n- `wireless/32_QNX_Qnet_File_Read.py`\n- `network/11_SSH_Weak_Creds.py`\n- `application/60_RTSP_CarPlay_DoS.py`\n- `application/52_CarPlay_Stack_Overflow.py`\n- `network/18_RTSP_Log_Leak.py`\n- `application/50_AirPlay_AirBorne_UAF.py`\n\n## 修复建议\n针对发现的 Telnet 弱口令认证漏洞，建议采取以下措施：\n1. **更改默认密码**：立即更改所有默认密码，特别是管理员账户的密码。\n2. **启用强密码策略**：确保所有用户账户使用强密码，并定期更新。\n3. **禁用不必要的服务**：如果 Telnet 服务不是必须的，建议禁用该服务以减少攻击面。\n4. **实施多因素认证**：在可能的情况下，启用多因素认证以增加安全性。\n\n## 合规性评估\n根据 UN R155 CSMS 要求，本次评估发现的漏洞表明目标系统在以下几个方面存在合规差距：\n- **网络安全管理**：需要加强密码管理和访问控制策略。\n- **风险评估**：应定期进行风险评估和漏洞扫描，及时发现并修复潜在的安全问题。\n- **事件响应**：建立有效的事件响应机制，以便在发生安全事件时能够迅速应对。\n\n## 建议的后续测试\n- **蓝牙相关测试**：由于缺少蓝牙 MAC 地址，本次测试未覆盖蓝牙相关的 PoC。建议在未来测试中加入蓝牙相关测试。\n- **CAN 总线测试**：虽然提供了 CAN 接口，但本次测试未覆盖 CAN 总线相关的 PoC。建议在未来测试中加入 CAN 总线测试。\n- **固件更新测试**：建议在未来测试中加入固件更新相关的 PoC，以确保固件更新过程的安全性。\n\n---\n\n**评估日期**: 2026-04-07 15:31:01  \n**评估团队**: BIOS团队"
+      "report_markdown": "# 安全评估报告\n\n## 执行摘要\n本次安全评估针对智能网联汽车目标 'KALI' (IP: 172.16.64.129) 进行了全面的渗透测试。测试范围包括多个高风险服务，如 ADB、QNX Qconn、Telnet 和 SSH 等。通过执行一系列 PoC 测试，我们发现了一个高危漏洞：Telnet 弱口令认证。此漏洞允许攻击者通过弱口令（root:123456）直接登录到目标系统，获取完全控制权。总体风险评级为 HIGH。\n\n## 总体风险评级\n- **风险等级**: HIGH\n\n## 实际测试范围概述\n本次实际执行了以下 PoC 测试项：\n- `network/02_ADB_Debug_Port.py`\n- `wireless/01_QNX_Qnet_File_Read.py`\n- `network/07_Telnet_Weak_Creds.py`\n- `network/04_SSH_Weak_Creds.py`\n- `application/11_RTSP_CarPlay_DoS.py`\n- `application/03_CarPlay_Stack_Overflow.py`\n- `network/11_RTSP_Log_Leak.py`\n- `application/01_AirPlay_AirBorne_UAF.py`\n\n## 漏洞详细分析\n\n### 漏洞 1: Telnet 弱口令认证\n- **漏洞名称**: Telnet 弱口令认证\n- **协议类型**: Telnet\n- **影响的 ECU 组件**: IVI 系统\n- **实际执行的 PoC 名称**: `network/07_Telnet_Weak_Creds.py`\n- **返回的证据原文**: `Telnet login successful with root:123456`\n\n#### TARA 威胁分析表格\n| 威胁场景 | 影响程度 | 攻击可行性 | 风险等级 |\n|----------|-----------|-------------|----------|\n| 攻击者通过弱口令登录 Telnet 服务，获取系统控制权 | 高 | 中 | 高 |\n\n#### CVSS 评分参考\n- **CVSS v3.1 评分**: 8.1 (High)\n\n## 未发现漏洞的测试项\n- `network/02_ADB_Debug_Port.py`\n- `wireless/01_QNX_Qnet_File_Read.py`\n- `network/04_SSH_Weak_Creds.py`\n- `application/11_RTSP_CarPlay_DoS.py`\n- `application/03_CarPlay_Stack_Overflow.py`\n- `network/11_RTSP_Log_Leak.py`\n- `application/01_AirPlay_AirBorne_UAF.py`\n\n## 修复建议\n针对发现的 Telnet 弱口令认证漏洞，建议采取以下措施：\n1. **更改默认密码**：立即更改所有默认密码，特别是管理员账户的密码。\n2. **启用强密码策略**：确保所有用户账户使用强密码，并定期更新。\n3. **禁用不必要的服务**：如果 Telnet 服务不是必须的，建议禁用该服务以减少攻击面。\n4. **实施多因素认证**：在可能的情况下，启用多因素认证以增加安全性。\n\n## 合规性评估\n根据 UN R155 CSMS 要求，本次评估发现的漏洞表明目标系统在以下几个方面存在合规差距：\n- **网络安全管理**：需要加强密码管理和访问控制策略。\n- **风险评估**：应定期进行风险评估和漏洞扫描，及时发现并修复潜在的安全问题。\n- **事件响应**：建立有效的事件响应机制，以便在发生安全事件时能够迅速应对。\n\n## 建议的后续测试\n- **蓝牙相关测试**：由于缺少蓝牙 MAC 地址，本次测试未覆盖蓝牙相关的 PoC。建议在未来测试中加入蓝牙相关测试。\n- **CAN 总线测试**：虽然提供了 CAN 接口，但本次测试未覆盖 CAN 总线相关的 PoC。建议在未来测试中加入 CAN 总线测试。\n- **固件更新测试**：建议在未来测试中加入固件更新相关的 PoC，以确保固件更新过程的安全性。\n\n---\n\n**评估日期**: 2026-04-07 15:31:01  \n**评估团队**: BIOS团队"
     },
     "attack_plan": {
       "item_count": 8,
@@ -924,7 +924,7 @@
           "parameters": {
             "target_ip": "172.16.64.129"
           },
-          "poc_name": "network/09_ADB_Debug_Port.py",
+          "poc_name": "network/02_ADB_Debug_Port.py",
           "protocol": "",
           "reason": "ADB (5555) 已在侦察中确认开放，且 adaptive_context 明确检测到 'adb' 服务；该 PoC 安全、非破坏性，用于快速验证远程 ADB Shell 是否可直连。",
           "status": "completed",
@@ -935,7 +935,7 @@
           "parameters": {
             "target_ip": "172.16.64.129"
           },
-          "poc_name": "wireless/32_QNX_Qnet_File_Read.py",
+          "poc_name": "wireless/01_QNX_Qnet_File_Read.py",
           "protocol": "",
           "reason": "QNX Qconn (8000) 已在侦察中确认开放，且 adaptive_context 明确检测到 'qnx' 服务；该 PoC 尝试利用经典 Qconn 未授权文件读取漏洞，无需认证，风险可控。",
           "status": "completed",
@@ -946,7 +946,7 @@
           "parameters": {
             "target_ip": "172.16.64.129"
           },
-          "poc_name": "network/14_Telnet_Weak_Creds.py",
+          "poc_name": "network/07_Telnet_Weak_Creds.py",
           "protocol": "",
           "reason": "Telnet (23) 已在侦察中确认开放，且 adaptive_context 明确检测到 'telnet' 服务；该 PoC 使用字典爆破弱口令，符合 'telnet' 协议典型风险模式。",
           "status": "vulnerable",
@@ -957,7 +957,7 @@
           "parameters": {
             "target_ip": "172.16.64.129"
           },
-          "poc_name": "network/11_SSH_Weak_Creds.py",
+          "poc_name": "network/04_SSH_Weak_Creds.py",
           "protocol": "",
           "reason": "SSH (22) 在 adaptive_context 中被二次确认存活（banner: SSH-2.0-OpenSSH_10.2p1 Debian-5），且 auth_type 为 'ssh_password'；该 PoC 针对密码认证 SSH 进行安全字典爆破，符合推荐策略。",
           "status": "completed",
@@ -968,7 +968,7 @@
           "parameters": {
             "target_ip": "172.16.64.129"
           },
-          "poc_name": "application/60_RTSP_CarPlay_DoS.py",
+          "poc_name": "application/11_RTSP_CarPlay_DoS.py",
           "protocol": "",
           "reason": "CarPlay RTSP (7000) 是侦察中明确开放的服务，且 adaptive_context 检测到 'carplay'；该 PoC 具有 DoS 破坏性（is_disruptive=True），需降级为 weaponize 模式以规避自动拦截，由人工决策是否执行。",
           "status": "completed",
@@ -979,7 +979,7 @@
           "parameters": {
             "target_ip": "172.16.64.129"
           },
-          "poc_name": "application/52_CarPlay_Stack_Overflow.py",
+          "poc_name": "application/03_CarPlay_Stack_Overflow.py",
           "protocol": "",
           "reason": "CarPlay 服务 (7000) 存在，但当前 PoC 默认端口为 55555，与侦察不符；需动态适配端口并注入 payload，属定制化 exploit，触发 Weaponize Agent 生成专用测试代码。",
           "status": "completed",
@@ -990,7 +990,7 @@
           "parameters": {
             "target_ip": "172.16.64.129"
           },
-          "poc_name": "network/18_RTSP_Log_Leak.py",
+          "poc_name": "network/11_RTSP_Log_Leak.py",
           "protocol": "",
           "reason": "RTSP (7000) 已在侦察中确认开放，且 adaptive_context 检测到 'carplay'；该 PoC 发送 ANY /logs?id=0 请求探测日志泄露，无认证、低风险，适合首轮探测。",
           "status": "completed",
@@ -1001,7 +1001,7 @@
           "parameters": {
             "target_ip": "172.16.64.129"
           },
-          "poc_name": "application/50_AirPlay_AirBorne_UAF.py",
+          "poc_name": "application/01_AirPlay_AirBorne_UAF.py",
           "protocol": "",
           "reason": "CarPlay/RTSP (7000) 存在，但 AirPlay UAF (CVE-2025-24252) 是高危零点击 RCE 漏洞，需构造特定畸形 SDP payload；当前 PoC 为通用模板，需 Weaponize Agent 动态生成针对目标 banner 的精准载荷。",
           "status": "completed",
@@ -1010,7 +1010,7 @@
         }
       ],
       "parse_error": null,
-      "summary": "根据侦察结果和可用资源，我们已获取目标 `172.16.64.129` 的详细服务指纹，并确认其开放多个高风险端口（如 8080/HTTP Diag、5555/ADB、8000/QNX Qconn、23/Telnet），且 **HTTP Diag（8080）明确为无认证（`auth_type: \"none\"`）**，是最高优先级攻击入口。\n\n同时，【可用资源】中：\n- ✅ 提供了 `can_interface=PCAN_USBBUS1` → 允许执行所有 `canbus/` 类 PoC；\n- ❌ 未提供 `bluetooth_mac` → **跳过所有含 `\"bluetooth\"`/`\"BT\"`/`\"ble\"` 的 PoC（如 `wireless/40_BT_...`, `wireless/41_BT_...` 等共 10+ 个）；\n- ✅ 提供了 `wifi_interface=en0` → 允许执行 `wireless/` 类 PoC（如 Wi-Fi Deauth、Evil Twin 等）；\n- ✅ 目标存在 `telnet`、`qnx`、`adb`、`ssh`、`http`、`carplay` 等服务 → 对应 PoC 均可启用。\n\n我们调用 `check_safety` 对每个候选 PoC 进行策略推荐校验（此处省略中间调用过程，直接汇总最终安全推荐结果），并严格过滤掉不满足资源条件的 PoC。\n\n特别注意：  \n- 侦察中发现 `SSH (port 22)` 初始连接失败（`Errno 64 Host is down`），但后续 `adaptive_context` 中又捕获到有效 banner `SSH-2.0-OpenSSH_10.2p1 Debian-5`，表明服务实际存活，推荐策略为 `credential_bruteforce`；  \n- `HTTP Diag (8080)` 明确 `auth_type: \"none\"`，推荐策略为 `direct_exploit`，是最优首攻点；  \n- `QNX Qconn (8000)` 和 `ADB (5555)` 在 `detected_services` 中被明确识别，对应 PoC 启用；  \n- `Telnet (23)` 虽未明示认证方式，但属于高危明文协议，PoC 启用；  \n- `CarPlay RTSP (7000)` 和 `Vehicle API (6800)` 属于应用层服务，`application/` 类 PoC 启用；  \n- 所有蓝牙相关 PoC（`wireless/40_` 至 `wireless/49_` 中涉及 BT 的）因缺少 `bluetooth_mac`，**全部跳过**；  \n- `SOME/IP`、`MQTT`、`D-Bus` 等协议虽在开放端口列表中未显式列出，但 `adaptive_context.detected_services` 包含 `\"carplay\"`、`\"qnx\"`、`\"adb\"`，说明其上下文可信，对应 PoC 可信启用。\n\n最终生成的攻击计划按**风险等级 + 认证状态 + 依赖关系**排序，优先无认证、低干扰、高成功率 PoC，并确保每项均满足资源约束与安全策略（`strategy` 字段体现）。\n\n```json\n[\n  {\n    \"poc_name\": \"network/09_ADB_Debug_Port.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"direct_exploit\",\n    \"reason\": \"ADB (5555) 已在侦察中确认开放，且 adaptive_context 明确检测到 'adb' 服务；该 PoC 安全、非破坏性，用于快速验证远程 ADB Shell 是否可直连。\"\n  },\n  {\n    \"poc_name\": \"wireless/32_QNX_Qnet_File_Read.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"direct_exploit\",\n    \"reason\": \"QNX Qconn (8000) 已在侦察中确认开放，且 adaptive_context 明确检测到 'qnx' 服务；该 PoC 尝试利用经典 Qconn 未授权文件读取漏洞，无需认证，风险可控。\"\n  },\n  {\n    \"poc_name\": \"network/14_Telnet_Weak_Creds.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"credential_bruteforce\",\n    \"reason\": \"Telnet (23) 已在侦察中确认开放，且 adaptive_context 明确检测到 'telnet' 服务；该 PoC 使用字典爆破弱口令，符合 'telnet' 协议典型风险模式。\"\n  },\n  {\n    \"poc_name\": \"network/11_SSH_Weak_Creds.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"credential_bruteforce\",\n    \"reason\": \"SSH (22) 在 adaptive_context 中被二次确认存活（banner: SSH-2.0-OpenSSH_10.2p1 Debian-5），且 auth_type 为 'ssh_password'；该 PoC 针对密码认证 SSH 进行安全字典爆破，符合推荐策略。\"\n  },\n  {\n    \"poc_name\": \"application/60_RTSP_CarPlay_DoS.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"weaponize\",\n    \"reason\": \"CarPlay RTSP (7000) 是侦察中明确开放的服务，且 adaptive_context 检测到 'carplay'；该 PoC 具有 DoS 破坏性（is_disruptive=True），需降级为 weaponize 模式以规避自动拦截，由人工决策是否执行。\"\n  },\n  {\n    \"poc_name\": \"application/52_CarPlay_Stack_Overflow.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"weaponize\",\n    \"reason\": \"CarPlay 服务 (7000) 存在，但当前 PoC 默认端口为 55555，与侦察不符；需动态适配端口并注入 payload，属定制化 exploit，触发 Weaponize Agent 生成专用测试代码。\"\n  },\n  {\n    \"poc_name\": \"network/18_RTSP_Log_Leak.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"direct_exploit\",\n    \"reason\": \"RTSP (7000) 已在侦察中确认开放，且 adaptive_context 检测到 'carplay'；该 PoC 发送 ANY /logs?id=0 请求探测日志泄露，无认证、低风险，适合首轮探测。\"\n  },\n  {\n    \"poc_name\": \"application/50_AirPlay_AirBorne_UAF.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"weaponize\",\n    \"reason\": \"CarPlay/RTSP (7000) 存在，但 AirPlay UAF (CVE-2025-24252) 是高危零点击 RCE 漏洞，需构造特定畸形 SDP payload；当前 PoC 为通用模板，需 Weaponize Agent 动态生成针对目标 banner 的精准载荷。\"\n  }\n]\n```"
+      "summary": "根据侦察结果和可用资源，我们已获取目标 `172.16.64.129` 的详细服务指纹，并确认其开放多个高风险端口（如 8080/HTTP Diag、5555/ADB、8000/QNX Qconn、23/Telnet），且 **HTTP Diag（8080）明确为无认证（`auth_type: \"none\"`）**，是最高优先级攻击入口。\n\n同时，【可用资源】中：\n- ✅ 提供了 `can_interface=PCAN_USBBUS1` → 允许执行所有 `canbus/` 类 PoC；\n- ❌ 未提供 `bluetooth_mac` → **跳过所有含 `\"bluetooth\"`/`\"BT\"`/`\"ble\"` 的 PoC（如 `wireless/40_BT_...`, `wireless/41_BT_...` 等共 10+ 个）；\n- ✅ 提供了 `wifi_interface=en0` → 允许执行 `wireless/` 类 PoC（如 Wi-Fi Deauth、Evil Twin 等）；\n- ✅ 目标存在 `telnet`、`qnx`、`adb`、`ssh`、`http`、`carplay` 等服务 → 对应 PoC 均可启用。\n\n我们调用 `check_safety` 对每个候选 PoC 进行策略推荐校验（此处省略中间调用过程，直接汇总最终安全推荐结果），并严格过滤掉不满足资源条件的 PoC。\n\n特别注意：  \n- 侦察中发现 `SSH (port 22)` 初始连接失败（`Errno 64 Host is down`），但后续 `adaptive_context` 中又捕获到有效 banner `SSH-2.0-OpenSSH_10.2p1 Debian-5`，表明服务实际存活，推荐策略为 `credential_bruteforce`；  \n- `HTTP Diag (8080)` 明确 `auth_type: \"none\"`，推荐策略为 `direct_exploit`，是最优首攻点；  \n- `QNX Qconn (8000)` 和 `ADB (5555)` 在 `detected_services` 中被明确识别，对应 PoC 启用；  \n- `Telnet (23)` 虽未明示认证方式，但属于高危明文协议，PoC 启用；  \n- `CarPlay RTSP (7000)` 和 `Vehicle API (6800)` 属于应用层服务，`application/` 类 PoC 启用；  \n- 所有蓝牙相关 PoC（`wireless/40_` 至 `wireless/49_` 中涉及 BT 的）因缺少 `bluetooth_mac`，**全部跳过**；  \n- `SOME/IP`、`MQTT`、`D-Bus` 等协议虽在开放端口列表中未显式列出，但 `adaptive_context.detected_services` 包含 `\"carplay\"`、`\"qnx\"`、`\"adb\"`，说明其上下文可信，对应 PoC 可信启用。\n\n最终生成的攻击计划按**风险等级 + 认证状态 + 依赖关系**排序，优先无认证、低干扰、高成功率 PoC，并确保每项均满足资源约束与安全策略（`strategy` 字段体现）。\n\n```json\n[\n  {\n    \"poc_name\": \"network/02_ADB_Debug_Port.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"direct_exploit\",\n    \"reason\": \"ADB (5555) 已在侦察中确认开放，且 adaptive_context 明确检测到 'adb' 服务；该 PoC 安全、非破坏性，用于快速验证远程 ADB Shell 是否可直连。\"\n  },\n  {\n    \"poc_name\": \"wireless/01_QNX_Qnet_File_Read.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"direct_exploit\",\n    \"reason\": \"QNX Qconn (8000) 已在侦察中确认开放，且 adaptive_context 明确检测到 'qnx' 服务；该 PoC 尝试利用经典 Qconn 未授权文件读取漏洞，无需认证，风险可控。\"\n  },\n  {\n    \"poc_name\": \"network/07_Telnet_Weak_Creds.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"credential_bruteforce\",\n    \"reason\": \"Telnet (23) 已在侦察中确认开放，且 adaptive_context 明确检测到 'telnet' 服务；该 PoC 使用字典爆破弱口令，符合 'telnet' 协议典型风险模式。\"\n  },\n  {\n    \"poc_name\": \"network/04_SSH_Weak_Creds.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"credential_bruteforce\",\n    \"reason\": \"SSH (22) 在 adaptive_context 中被二次确认存活（banner: SSH-2.0-OpenSSH_10.2p1 Debian-5），且 auth_type 为 'ssh_password'；该 PoC 针对密码认证 SSH 进行安全字典爆破，符合推荐策略。\"\n  },\n  {\n    \"poc_name\": \"application/11_RTSP_CarPlay_DoS.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"weaponize\",\n    \"reason\": \"CarPlay RTSP (7000) 是侦察中明确开放的服务，且 adaptive_context 检测到 'carplay'；该 PoC 具有 DoS 破坏性（is_disruptive=True），需降级为 weaponize 模式以规避自动拦截，由人工决策是否执行。\"\n  },\n  {\n    \"poc_name\": \"application/03_CarPlay_Stack_Overflow.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"weaponize\",\n    \"reason\": \"CarPlay 服务 (7000) 存在，但当前 PoC 默认端口为 55555，与侦察不符；需动态适配端口并注入 payload，属定制化 exploit，触发 Weaponize Agent 生成专用测试代码。\"\n  },\n  {\n    \"poc_name\": \"network/11_RTSP_Log_Leak.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"direct_exploit\",\n    \"reason\": \"RTSP (7000) 已在侦察中确认开放，且 adaptive_context 检测到 'carplay'；该 PoC 发送 ANY /logs?id=0 请求探测日志泄露，无认证、低风险，适合首轮探测。\"\n  },\n  {\n    \"poc_name\": \"application/01_AirPlay_AirBorne_UAF.py\",\n    \"parameters\": {\n      \"target_ip\": \"172.16.64.129\"\n    },\n    \"strategy\": \"weaponize\",\n    \"reason\": \"CarPlay/RTSP (7000) 存在，但 AirPlay UAF (CVE-2025-24252) 是高危零点击 RCE 漏洞，需构造特定畸形 SDP payload；当前 PoC 为通用模板，需 Weaponize Agent 动态生成针对目标 banner 的精准载荷。\"\n  }\n]\n```"
     },
     "execution": {
       "item_count": 8,
@@ -1030,7 +1030,7 @@
           ],
           "error": "",
           "evidence": "未发现任何已知 ADB 端口开放（共检测 13 个端口）",
-          "poc_name": "network/09_ADB_Debug_Port.py",
+          "poc_name": "network/02_ADB_Debug_Port.py",
           "status": "completed",
           "step": 1,
           "strategy": "default",
@@ -1051,7 +1051,7 @@
           ],
           "error": "",
           "evidence": "",
-          "poc_name": "wireless/32_QNX_Qnet_File_Read.py",
+          "poc_name": "wireless/01_QNX_Qnet_File_Read.py",
           "status": "completed",
           "step": 2,
           "strategy": "default",
@@ -1072,7 +1072,7 @@
           ],
           "error": "",
           "evidence": "Telnet login successful with root:123456",
-          "poc_name": "network/14_Telnet_Weak_Creds.py",
+          "poc_name": "network/07_Telnet_Weak_Creds.py",
           "status": "vulnerable",
           "step": 3,
           "strategy": "default",
@@ -1093,7 +1093,7 @@
           ],
           "error": "",
           "evidence": "",
-          "poc_name": "network/11_SSH_Weak_Creds.py",
+          "poc_name": "network/04_SSH_Weak_Creds.py",
           "status": "completed",
           "step": 4,
           "strategy": "default",
@@ -1114,7 +1114,7 @@
           ],
           "error": "",
           "evidence": "TCP:7000 未开放",
-          "poc_name": "application/60_RTSP_CarPlay_DoS.py",
+          "poc_name": "application/11_RTSP_CarPlay_DoS.py",
           "status": "completed",
           "step": 5,
           "strategy": "default",
@@ -1135,7 +1135,7 @@
           ],
           "error": "",
           "evidence": "",
-          "poc_name": "application/52_CarPlay_Stack_Overflow.py",
+          "poc_name": "application/03_CarPlay_Stack_Overflow.py",
           "status": "completed",
           "step": 6,
           "strategy": "default",
@@ -1156,7 +1156,7 @@
           ],
           "error": "",
           "evidence": "",
-          "poc_name": "network/18_RTSP_Log_Leak.py",
+          "poc_name": "network/11_RTSP_Log_Leak.py",
           "status": "completed",
           "step": 7,
           "strategy": "default",
@@ -1177,7 +1177,7 @@
           ],
           "error": "",
           "evidence": "",
-          "poc_name": "application/50_AirPlay_AirBorne_UAF.py",
+          "poc_name": "application/01_AirPlay_AirBorne_UAF.py",
           "status": "completed",
           "step": 8,
           "strategy": "default",
@@ -1185,7 +1185,7 @@
         }
       ],
       "parse_error": null,
-      "summary": "- network/09_ADB_Debug_Port.py [primary]: completed\n- wireless/32_QNX_Qnet_File_Read.py [primary]: completed\n- network/14_Telnet_Weak_Creds.py [primary]: vulnerable | evidence=Telnet login successful with root:123456\n- network/11_SSH_Weak_Creds.py [primary]: completed\n- application/60_RTSP_CarPlay_DoS.py [primary]: completed\n- application/52_CarPlay_Stack_Overflow.py [primary]: completed\n- network/18_RTSP_Log_Leak.py [primary]: completed\n- application/50_AirPlay_AirBorne_UAF.py [primary]: completed"
+      "summary": "- network/02_ADB_Debug_Port.py [primary]: completed\n- wireless/01_QNX_Qnet_File_Read.py [primary]: completed\n- network/07_Telnet_Weak_Creds.py [primary]: vulnerable | evidence=Telnet login successful with root:123456\n- network/04_SSH_Weak_Creds.py [primary]: completed\n- application/11_RTSP_CarPlay_DoS.py [primary]: completed\n- application/03_CarPlay_Stack_Overflow.py [primary]: completed\n- network/11_RTSP_Log_Leak.py [primary]: completed\n- application/01_AirPlay_AirBorne_UAF.py [primary]: completed"
     },
     "planner": {
       "guardrails": [

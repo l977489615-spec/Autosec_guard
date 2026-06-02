@@ -13,6 +13,7 @@ import socket
 import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
 class TBOXPortScanPlugin(IVIVulnerabilityPlugin):
+    meta_display_id = "POC-RECON-007"
     meta_poc_name = "TBox Port Scan"
     meta_cve_id = "N/A"
     meta_severity = "Medium"

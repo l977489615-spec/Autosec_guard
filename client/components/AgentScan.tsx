@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Bot, Shield, Network, Cpu, FileText, Play, Loader, CheckCircle, XCircle, Key, Sliders, Download, RotateCcw, AlertTriangle, ShieldCheck, Zap } from 'lucide-react';
-import { saveScanSession } from '../services/api';
+import { saveScanSession, submitPocManualVerdict } from '../services/api';
 import ScanLogs from './ScanLogs';
-import { POC_DATABASE } from '../data/pocDatabase';
 import { PhaseRecord, PlannerStep, Severity, SupervisorAdjustment, SupervisorEvent, SupervisorMetrics } from '../types';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Environment, ContactShadows } from '@react-three/drei';
@@ -12,6 +11,8 @@ import remarkGfm from 'remark-gfm';
 import AttackGraph from './AttackGraph';
 import { assessPhysicalImpact, buildAiConfigPayload, generateAttackGraph, generateStructuredReport, simulateRemediation, getBackendUrl, setBackendUrl } from '../services/api';
 import { AssessmentArtifacts } from '../types';
+import { findPocInCatalog } from '../services/pocCatalog';
+import { usePocCatalog } from '../hooks/usePocCatalog';
 
 interface AgentPhase {
   name: string;
@@ -42,6 +43,20 @@ interface TopologyData {
   node_count: number;
   nodes: Array<{ ip: string; name: string; open_ports: number[]; is_behind_gateway: boolean }>;
 }
+
+type AgentManualVerdict = 'confirmed_vulnerable' | 'confirmed_not_vulnerable' | 'inconclusive' | 'needs_retest';
+
+type AgentManualReviewState = {
+  item: any;
+  note: string;
+  evidenceFile: string;
+} | null;
+
+type AgentManualReviewDecision = {
+  verdict: AgentManualVerdict;
+  note: string;
+  evidenceFile: string;
+} | null;
 
 interface AdaptiveContext {
   detected_services: string[];
@@ -244,17 +259,20 @@ const detectLowResourceMode = () => {
 };
 
 const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComplete, engineUrl }) => {
+  const { pocs: pocCatalog } = usePocCatalog();
   const [targetIp, setTargetIp] = useState('');
   const [targetName, setTargetName] = useState('IVI System');
   const [isFullMode, setIsFullMode] = useState(true);
   const [showAdvanced, setShowAdvanced] = useState(true);
-  const [lowResourceMode, setLowResourceMode] = useState(false);
+  const [lowResourceMode, setLowResourceMode] = useState(() => detectLowResourceMode());
+  const [webglFailed, setWebglFailed] = useState(false);
 
   // 可选参数 — 控制 Agent 选择哪类 PoC
-  const [canInterface, setCanInterface] = useState('PCAN_USBBUS1');
+  const [canInterface, setCanInterface] = useState('');
   const [bluetoothMac, setBluetoothMac] = useState('');
   const [wifiInterface, setWifiInterface] = useState('');
   const [rfFrequency, setRfFrequency] = useState('');
+  const [usbAdbSerial, setUsbAdbSerial] = useState('');
 
   const [topology, setTopology] = useState<TopologyData | null>(null);
   const [adaptiveCtx, setAdaptiveCtx] = useState<AdaptiveContext | null>(null);
@@ -272,6 +290,8 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
   const [phaseRecords, setPhaseRecords] = useState<PhaseRecord[]>([]);
   const [structuredState, setStructuredState] = useState<Record<string, any>>({});
   const [findings, setFindings] = useState<any[]>([]);
+  const [manualReviewState, setManualReviewState] = useState<AgentManualReviewState>(null);
+  const manualReviewResolverRef = React.useRef<((decision: AgentManualReviewDecision) => void) | null>(null);
 
   const STORAGE_KEY = 'autosec_agent_scan_state';
 
@@ -309,6 +329,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
         if (s.bluetoothMac) setBluetoothMac(s.bluetoothMac);
         if (s.wifiInterface) setWifiInterface(s.wifiInterface);
         if (s.rfFrequency) setRfFrequency(s.rfFrequency);
+        if (s.usbAdbSerial) setUsbAdbSerial(s.usbAdbSerial);
         setActiveStep(-1);
         if (s.riskScore) setRiskScore(s.riskScore);
         if (s.results) setResults(compactForBrowserStorage(s.results));
@@ -327,7 +348,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
       const current: any = {
         targetIp, targetName, phases, finalReport,
         topology, adaptiveCtx, scanTime, activeStep,
-        canInterface, bluetoothMac, wifiInterface, rfFrequency, lowResourceMode,
+        canInterface, bluetoothMac, wifiInterface, rfFrequency, usbAdbSerial, lowResourceMode,
         riskScore, results, logs, assessment, phaseRecords, structuredState, findings,
         ...override,
       };
@@ -373,7 +394,8 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
 
     // Display vulnerabilities that have been confirmed
     results.forEach(r => {
-      const n = r.name.toLowerCase();
+      const n = String(r?.name || r?.poc_name || r?.pocId || '').toLowerCase();
+      if (!n) return;
       if (n.includes('wifi') || n.includes('wireless') || n.includes('network') || n.includes('qnx')) zones.add('wireless');
       if (n.includes('bluetooth') || n.includes('bt') || n.includes('snoo')) zones.add('bluetooth');
       if (n.includes('can') || n.includes('uds') || n.includes('obd')) zones.add('canbus');
@@ -419,7 +441,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
     setTargetIp('');
     setTargetName('IVI System');
     setIsFullMode(true);
-    setCanInterface('PCAN_USBBUS1');
+    setCanInterface('');
     setBluetoothMac('');
     setWifiInterface('');
     setRfFrequency('');
@@ -475,6 +497,23 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
       activeStep: nextActiveStep ?? activeStep,
       phases: nextPhases ?? phases,
     });
+  };
+
+  const requestAgentManualVerdict = (item: any): Promise<AgentManualReviewDecision> => {
+    return new Promise((resolve) => {
+      manualReviewResolverRef.current = resolve;
+      setManualReviewState({ item, note: '', evidenceFile: '' });
+    });
+  };
+
+  const resolveAgentManualVerdict = (verdict: AgentManualVerdict | null) => {
+    const resolver = manualReviewResolverRef.current;
+    const decision = verdict && manualReviewState
+      ? { verdict, note: manualReviewState.note, evidenceFile: manualReviewState.evidenceFile }
+      : null;
+    manualReviewResolverRef.current = null;
+    setManualReviewState(null);
+    resolver?.(decision);
   };
 
   const runAssessment = async (resumeFrom?: string) => {
@@ -557,6 +596,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
             ...(bluetoothMac && { bluetooth_mac: bluetoothMac }),
             ...(wifiInterface && { wifi_interface: wifiInterface }),
             ...(rfFrequency && { frequency: rfFrequency }),
+            ...(usbAdbSerial && { expected_usb_serial: usbAdbSerial, usb_device_serial: usbAdbSerial }),
             state: {
               logs: collectedLogs,
               findings: collectedFindings,
@@ -610,6 +650,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
       } else {
       // 统一使用逐阶段顺序执行，让每个 Agent 的结果依次显现
       let prevContext = '';
+      let reflectorRerouteCount = 0;
       for (let i = 0; i < PHASES.length; i++) {
         setActiveStep(i);
         updatePhase(i, { status: 'running', output: '执行中...' });
@@ -630,6 +671,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
               ...(bluetoothMac && { bluetooth_mac: bluetoothMac }),
               ...(wifiInterface && { wifi_interface: wifiInterface }),
               ...(rfFrequency && { frequency: rfFrequency }),
+              ...(usbAdbSerial && { expected_usb_serial: usbAdbSerial, usb_device_serial: usbAdbSerial }),
               state: {
                 logs: collectedLogs,
                 findings: collectedFindings,
@@ -670,11 +712,159 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
           }
 
           if (data.structured_result) {
-            structuredPhases[PHASES[i].name] = compactForBrowserStorage(data.structured_result);
+            const compactStructured = compactForBrowserStorage(data.structured_result);
+            structuredPhases[PHASES[i].name] = compactStructured;
+            if (compactStructured?.attack_surface_gate) {
+              structuredPhases.attack_surface_gate = compactStructured.attack_surface_gate;
+            }
+          }
+
+          if (data.structured && typeof data.structured === 'object') {
+            const mergedStructured = compactForBrowserStorage({
+              ...structuredPhases,
+              ...data.structured,
+            });
+            structuredPhases = mergedStructured;
+            setStructuredState(mergedStructured);
+          } else if (data.structured_result) {
             setStructuredState(compactForBrowserStorage({ ...structuredPhases }));
           }
 
-          // 集成结构化漏洞发现
+          if (
+            PHASES[i].name === 'recon'
+            && (data.skip_to_assess || data.reroute?.next_action === 'skip_to_assess')
+          ) {
+            const targetIndex = PHASES.findIndex(phase => phase.name === 'assess');
+            if (targetIndex > i) {
+              const reason = data.reroute?.reason || data.structured_result?.attack_surface_gate?.reason || '未发现可验证攻击面';
+              collectedLogs.push({
+                timestamp: new Date().toLocaleTimeString(),
+                type: 'warning',
+                message: `[Attack Surface Gate] ${reason}，跳过规划/执行阶段，直接生成最简评估报告。`,
+              });
+              collectedLogs = compactLogs(collectedLogs);
+              setLogs(collectedLogs);
+              for (let skipped = i + 1; skipped < targetIndex; skipped += 1) {
+                updatePhase(skipped, { status: 'done', output: `已跳过：${reason}` });
+              }
+              persistRunState({
+                nextLogs: collectedLogs,
+                nextPhaseRecords: [...collectedPhaseRecords],
+                nextStructured: { ...structuredPhases },
+                nextActiveStep: targetIndex,
+              });
+              prevContext += stringifyPhaseContext('攻击面 Gate', output, data.structured_result);
+              i = targetIndex - 1;
+              continue;
+            }
+          }
+
+          if (PHASES[i].name === 'reflector' && data.reroute?.next_phase) {
+	            const targetIndex = PHASES.findIndex(phase => phase.name === data.reroute.next_phase);
+	            if (targetIndex >= 0 && targetIndex < i && reflectorRerouteCount < 2) {
+	              reflectorRerouteCount += 1;
+	              collectedLogs.push({
+	                timestamp: new Date().toLocaleTimeString(),
+	                type: 'warning',
+	                message: `[Reflector] 检测到流程无效或证据不足，回跳到 ${data.reroute.next_phase} 重新执行。原因: ${data.reroute.reason || '未提供'}`,
+	              });
+	              collectedLogs = compactLogs(collectedLogs);
+	              setLogs(collectedLogs);
+	              persistRunState({
+	                nextLogs: collectedLogs,
+	                nextPhaseRecords: [...collectedPhaseRecords],
+	                nextStructured: { ...structuredPhases },
+	                nextActiveStep: targetIndex,
+	              });
+	              i = targetIndex - 1;
+	              prevContext += stringifyPhaseContext('反思 Agent 回跳指令', output, data.structured_result);
+	              continue;
+	            }
+	            if (targetIndex >= 0 && reflectorRerouteCount >= 2) {
+	              collectedLogs.push({
+	                timestamp: new Date().toLocaleTimeString(),
+	                type: 'warning',
+	                message: '[Reflector] 已达到前端回跳保护上限，停止自动重入并进入最终评估。',
+	              });
+	              collectedLogs = compactLogs(collectedLogs);
+	              setLogs(collectedLogs);
+	            }
+	          }
+
+	          if (PHASES[i].name === 'execute') {
+	            const executionItems = Array.isArray(data.structured_result?.items) ? data.structured_result.items : [];
+	            for (const item of executionItems) {
+	              if (!(item.requires_human_review || item.status === 'pending_manual_review')) continue;
+	              const decision = await requestAgentManualVerdict(item);
+	              if (!decision) {
+	                item.status = 'manual_review_skipped';
+	                item.verification_status = 'manual_review_skipped';
+	                continue;
+	              }
+	              const firstBranch = Array.isArray(item.branch_results)
+	                ? item.branch_results.find((br: any) => br.requires_human_review) || item.branch_results[0]
+	                : {};
+	              const review = await submitPocManualVerdict({
+	                trace_id: firstBranch?.trace_id,
+	                session_id: `AGENT-${Date.now().toString().slice(-6)}`,
+	                poc_id: firstBranch?.poc_id || item.poc_name,
+	                poc_name: item.poc_name,
+	                target_ip: targetIp,
+	                bluetooth_mac: bluetoothMac,
+	                verdict: decision.verdict,
+	                operator_note: decision.note,
+	                evidence_file: decision.evidenceFile,
+	              }, token, activeBackendUrl);
+
+	              item.requires_human_review = true;
+	              item.manual_review = review.manual_review || {
+	                state: 'completed',
+	                verdict: decision.verdict,
+	                operator_note: decision.note,
+	                evidence_file: decision.evidenceFile,
+	              };
+	              item.verification_status = review.verification_status || `manual_${decision.verdict}`;
+	              item.vulnerable = review.vulnerable;
+	              item.status = review.vulnerable === true
+	                ? 'vulnerable'
+	                : review.vulnerable === false
+	                  ? 'completed'
+	                  : item.verification_status;
+	              item.evidence = decision.note || item.evidence || item.verification_status;
+
+	              collectedLogs.push({
+	                timestamp: new Date().toLocaleTimeString(),
+	                type: review.vulnerable === true ? 'error' : 'warning',
+	                message: `[Manual Review] ${item.poc_name}: ${item.verification_status}`,
+	              });
+
+	              if (review.vulnerable === true && !collectedFindings.find(existing => existing.name === item.poc_name)) {
+	                const finding = {
+	                  id: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+	                  name: item.poc_name,
+	                  pocId: item.poc_name,
+	                  vulnerable: true,
+	                  severity: 'High',
+	                  domain: 'agent_manual_review',
+	                  description: decision.note || 'Operator confirmed exploit effect during Agent scan.',
+	                  details: decision.note || '',
+	                  source: 'agent_manual_review',
+	                  target_ip: targetIp,
+	                  detectedAt: new Date().toISOString(),
+	                  manualReview: item.manual_review,
+	                };
+	                collectedFindings.push(finding);
+	                collectedResults.push({ ...finding, timestamp: new Date().toISOString() });
+	              }
+	            }
+	            structuredPhases.execute = compactForBrowserStorage(data.structured_result);
+	            setStructuredState(compactForBrowserStorage({ ...structuredPhases }));
+	            setLogs(compactLogs(collectedLogs));
+	            setFindings(compactForBrowserStorage([...collectedFindings]));
+	            setResults(compactForBrowserStorage([...collectedResults]));
+	          }
+
+	          // 集成结构化漏洞发现
           if (data.findings && Array.isArray(data.findings)) {
             data.findings.forEach((f: any) => {
               if (!collectedFindings.find(existing => existing.name === f.name)) {
@@ -730,9 +920,9 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
 
       let calculatedRisk = 0;
 
-      // 1. 累加逻辑：遍历所有结构化发现，根据 POC_DATABASE 中的生命等级折算分数 (与 Scan Engine 一致)
+      // 1. 累加逻辑：遍历所有结构化发现，根据后端动态 PoC 目录中的严重级别折算分数。
       collectedResults.forEach(res => {
-        const poc = POC_DATABASE.find(p => p.name === res.name);
+        const poc = findPocInCatalog(pocCatalog, res as any);
         if (poc) {
           const score = poc.severity === Severity.CRITICAL ? 10 : poc.severity === Severity.HIGH ? 7 : 3;
           calculatedRisk += score;
@@ -766,6 +956,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
           ip: targetIp,
           bluetoothMac: bluetoothMac,
           canInterface: canInterface,
+          usbAdbSerial: usbAdbSerial,
           interface: wifiInterface,
           port: '', url: '', frequency: ''
         },
@@ -799,6 +990,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
           ip: targetIp,
           bluetoothMac: bluetoothMac,
           canInterface: canInterface,
+          usbAdbSerial: usbAdbSerial,
           interface: wifiInterface,
           port: '', url: '', frequency: ''
         },
@@ -953,6 +1145,55 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
 
   return (
     <div className="flex flex-col gap-4 h-full overflow-y-auto p-4">
+      {manualReviewState && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-xl rounded-xl border border-amber-500/50 bg-slate-950 shadow-[0_0_40px_rgba(245,158,11,0.2)]">
+            <div className="border-b border-cyan-900/50 px-6 py-4">
+              <div className="flex items-center gap-3 text-amber-300">
+                <AlertTriangle size={20} />
+                <h3 className="text-lg font-semibold">Agent 等待人工判定</h3>
+              </div>
+            </div>
+            <div className="space-y-4 px-6 py-5 text-sm text-gray-300">
+              <p className="font-mono text-amber-200">{manualReviewState.item?.poc_name}</p>
+              <p>{manualReviewState.item?.manual_review?.prompt || '该 PoC 已执行完成，但目标侧物理/业务效果无法自动判定。'}</p>
+              {manualReviewState.item?.manual_review?.required_observations?.length ? (
+                <ul className="list-disc pl-5 space-y-1 text-xs text-gray-400">
+                  {manualReviewState.item.manual_review.required_observations.map((text: string, idx: number) => (
+                    <li key={idx}>{text}</li>
+                  ))}
+                </ul>
+              ) : null}
+              <textarea
+                value={manualReviewState.note}
+                onChange={(e) => setManualReviewState(prev => prev ? { ...prev, note: e.target.value } : prev)}
+                placeholder="观察说明，例如：车门解锁、双闪闪烁、无明显响应、ECU 返回异常帧..."
+                className="w-full min-h-20 rounded border border-cyan-900/60 bg-black p-3 text-gray-100 outline-none focus:border-amber-400"
+              />
+              <input
+                value={manualReviewState.evidenceFile}
+                onChange={(e) => setManualReviewState(prev => prev ? { ...prev, evidenceFile: e.target.value } : prev)}
+                placeholder="证据文件路径，可选"
+                className="w-full rounded border border-cyan-900/60 bg-black p-3 text-gray-100 outline-none focus:border-amber-400"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3 border-t border-cyan-900/50 px-6 py-4">
+              <button onClick={() => resolveAgentManualVerdict('confirmed_vulnerable')} className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500">
+                确认成功
+              </button>
+              <button onClick={() => resolveAgentManualVerdict('confirmed_not_vulnerable')} className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500">
+                确认失败
+              </button>
+              <button onClick={() => resolveAgentManualVerdict('inconclusive')} className="rounded-md border border-gray-700 px-4 py-2 text-sm text-gray-300 hover:border-gray-500 hover:text-white">
+                无法确认
+              </button>
+              <button onClick={() => resolveAgentManualVerdict('needs_retest')} className="rounded-md border border-cyan-700 px-4 py-2 text-sm text-cyan-300 hover:bg-cyan-950/50">
+                标记复测
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 pb-3 border-b border-cyan-900/40">
@@ -1027,6 +1268,16 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
             className="w-full bg-black/40 border border-cyan-900/50 text-cyan-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500"
           />
         </div>
+        <div>
+          <label className="text-xs text-gray-400 mb-1 block">USB ADB Serial</label>
+          <input
+            type="text"
+            placeholder="adb devices 显示的 serial"
+            value={usbAdbSerial}
+            onChange={e => setUsbAdbSerial(e.target.value.trim())}
+            className="w-full bg-black/40 border border-cyan-900/50 text-cyan-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500"
+          />
+        </div>
         <div className="flex flex-col">
           <label className="text-xs text-gray-400 mb-1 block">模式</label>
           <select
@@ -1076,7 +1327,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
           <span className="text-xs text-gray-500">{showAdvanced ? '▲ 收起' : '▼ 展开设定'}</span>
         </button>
         {showAdvanced && (
-          <div className="p-4 pt-2 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 bg-black/5 border-t border-cyan-900/20">
+          <div className="p-4 pt-2 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 bg-black/5 border-t border-cyan-900/20">
             <div>
               <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">蓝牙 MAC</label>
               <input
@@ -1117,6 +1368,16 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
                 className="w-full bg-black/40 border border-cyan-900/40 text-cyan-300 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-cyan-500"
               />
             </div>
+            <div>
+              <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">USB ADB Serial</label>
+              <input
+                type="text"
+                placeholder="adb devices serial"
+                value={usbAdbSerial}
+                onChange={e => setUsbAdbSerial(e.target.value.trim())}
+                className="w-full bg-black/40 border border-cyan-900/40 text-cyan-300 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-cyan-500"
+              />
+            </div>
           </div>
         )}
       </div>
@@ -1135,7 +1396,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
           )}
         </div>
 
-        {lowResourceMode ? (
+        {lowResourceMode || webglFailed ? (
           <div className="w-full h-full flex items-center justify-center px-6">
             <div className="w-full max-w-2xl rounded-xl border border-cyan-900/40 bg-black/50 p-5 backdrop-blur-sm">
               <div className="flex items-center gap-2 text-cyan-300 text-sm font-semibold">
@@ -1157,13 +1418,29 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
                 </div>
                 <div className="rounded-lg border border-cyan-900/30 bg-black/30 p-3">
                   <div className="text-gray-500">说明</div>
-                  <div className="mt-1 text-gray-300">已关闭 3D 场景，优先保证 Kali/虚拟机浏览器稳定性。</div>
+                  <div className="mt-1 text-gray-300">
+                    {webglFailed ? 'WebGL 不可用，已自动降级为 2D 面板。' : '已关闭 3D 场景，优先保证 Kali/虚拟机浏览器稳定性。'}
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         ) : (
-          <Canvas camera={{ position: [3, 2, 5], fov: 45 }} className="w-full h-full">
+          <Canvas
+            camera={{ position: [3, 2, 5], fov: 45 }}
+            className="w-full h-full"
+            onCreated={({ gl }) => {
+              try {
+                const ctx = gl.getContext();
+                if (!ctx || (typeof ctx.isContextLost === 'function' && ctx.isContextLost())) {
+                  setWebglFailed(true);
+                }
+              } catch {
+                setWebglFailed(true);
+              }
+            }}
+            onError={() => setWebglFailed(true)}
+          >
             <ambientLight intensity={0.5} />
             <pointLight position={[10, 10, 10]} intensity={1} />
             <OrbitControls

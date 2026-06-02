@@ -1,0 +1,64 @@
+{
+  "cve_id": "N/A",
+  "elapsed_seconds": 0.07,
+  "errors": [],
+  "evidence": "Open: [(1883, 'MQTT'), (5555, 'ADB'), (7000, 'AirPlay/Ctrl'), (8080, 'HTTP-Alt')]",
+  "logs": [
+    "[*] Executing sandbox command: /Library/Frameworks/Python.framework/Versions/3.13/bin/python3 /Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/server/sandbox_runner.py /Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/server/pocs/reconnaissance/07_TBox_Port_Scan.py {\"target_ip\": \"127.0.0.1\", \"candidate_ports\": \"5555,1883,7000,19090,13400,30490\"}",
+    "[2026-06-02 14:53:59,342][INFO] 已初始化漏洞验证模块: TBOXPortScanPlugin，目标: 127.0.0.1",
+    "[2026-06-02 14:53:59,342][INFO] 正在执行前置条件检查...",
+    "[2026-06-02 14:53:59,342][INFO] 前置条件满足。开始执行漏洞验证...",
+    "[2026-06-02 14:53:59,342][INFO] T-Box端口扫描 127.0.0.1...",
+    "[2026-06-02 14:53:59,346][WARNING] [+] 1883/tcp (MQTT) OPEN",
+    "[2026-06-02 14:53:59,349][WARNING] [+] 5555/tcp (ADB) OPEN",
+    "[2026-06-02 14:53:59,351][WARNING] [+] 7000/tcp (AirPlay/Ctrl) OPEN",
+    "[2026-06-02 14:53:59,351][WARNING] [+] 8080/tcp (HTTP-Alt) OPEN",
+    "[2026-06-02 14:53:59,354][INFO] 共发现 4 个开放端口",
+    "[2026-06-02 14:53:59,354][INFO] 漏洞验证流程结束。",
+    "",
+    "[*] 正在启动检测任务: TBOXPortScanPlugin",
+    "[*] 描述: ",
+    "",
+    "==================================================",
+    "检测结果报告: TBOXPortScanPlugin",
+    "--------------------------------------------------",
+    "[!] 状态: 【漏洞存在】 (VULNERABLE)",
+    "[!] 证据: Open: [(1883, 'MQTT'), (5555, 'ADB'), (7000, 'AirPlay/Ctrl'), (8080, 'HTTP-Alt')]",
+    "==================================================",
+    ""
+  ],
+  "manual_review": {
+    "state": "not_required"
+  },
+  "poc_id": "reconnaissance/07_TBox_Port_Scan.py",
+  "requires_human_review": false,
+  "sandbox_profile": {
+    "allowed_hosts": [
+      "127.0.0.1"
+    ],
+    "cpu_seconds": 60,
+    "memory_mb": 256,
+    "nofile": 256,
+    "output_mb": 8
+  },
+  "security_profile": {
+    "cve_id": "N/A",
+    "destructive_level": "Safe",
+    "is_disruptive": false,
+    "poc_name": "TBox Port Scan",
+    "protocol": "unknown",
+    "required_params": [
+      "target_ip"
+    ],
+    "severity": "Medium",
+    "target_os": [
+      "all"
+    ]
+  },
+  "success": true,
+  "trace_id": "MOCK-LOCAL_07_TBox_Port_Scan.py_20260602_145359",
+  "verification_status": "auto_confirmed_vulnerable",
+  "vulnerable": true,
+  "worker_mode": "local_sandbox",
+  "http_status": 200
+}

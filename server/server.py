@@ -41,7 +41,7 @@ from benchmark_suite import (
     score_benchmark_suite as run_benchmark_suite,
     score_session_against_benchmark as evaluate_session_against_benchmark,
 )
-from poc_worker import get_poc_worker
+from poc_worker import apply_manual_review_state, get_poc_worker, poc_requires_human_review
 from poc_catalog import is_executable_poc_name, list_available_poc_names, resolve_poc_path, resolve_poc_source
 from local_requirements import (
     classify_poc_execution_mode,
@@ -50,6 +50,33 @@ from local_requirements import (
 from poc_security import extract_poc_security_profile, should_require_disruptive_approval
 from poc_execution_service import normalize_poc_params, resolve_target_label
 from auth_service import resolve_user_from_bearer
+
+
+def _list_local_usb_adb_serials(timeout: int = 4) -> List[str]:
+    try:
+        proc = subprocess.run(
+            ["adb", "devices", "-l"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except Exception:
+        return []
+    if proc.returncode != 0:
+        return []
+    serials: List[str] = []
+    for raw_line in proc.stdout.splitlines()[1:]:
+        line = raw_line.strip()
+        if not line or line.startswith("*"):
+            continue
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        serial, state = parts[0], parts[1]
+        if ":" in serial or serial.startswith("emulator-") or state not in {"device", "unauthorized", "offline"}:
+            continue
+        serials.append(serial)
+    return serials
 
 # This server must be running on the device connected to the vehicle (e.g., Raspberry Pi/Laptop)
 # Run with: python3 server.py
@@ -538,6 +565,7 @@ def _build_poc_registry_entry(filepath: str, source_text: str | None = None, rel
         "filepath": filepath,
         "category": os.path.basename(os.path.dirname(filepath)) if os.path.exists(filepath) and os.path.dirname(filepath) != POCS_DIR else category_dir,
         "size": os.path.getsize(filepath) if os.path.exists(filepath) else len(source_text or ""),
+        "display_id": "",
         "poc_name": os.path.basename(filepath),
         "class_name": None,
         "cve_id": "",
@@ -545,6 +573,7 @@ def _build_poc_registry_entry(filepath: str, source_text: str | None = None, rel
         "protocol": "",
         "target_os": [],
         "required_params": [],
+        "profiles": [],
         "destructive_level": "Safe",
         "is_disruptive": False,
         "status": "unknown",
@@ -571,7 +600,9 @@ def _build_poc_registry_entry(filepath: str, source_text: str | None = None, rel
                 for target_node in body_item.targets:
                     if isinstance(target_node, ast.Name):
                         name = target_node.id
-                        if name == "meta_poc_name":
+                        if name == "meta_display_id":
+                            entry["display_id"] = value
+                        elif name == "meta_poc_name":
                             entry["poc_name"] = value
                         elif name == "meta_cve_id":
                             entry["cve_id"] = value
@@ -583,6 +614,8 @@ def _build_poc_registry_entry(filepath: str, source_text: str | None = None, rel
                             entry["target_os"] = value
                         elif name == "meta_required_params":
                             entry["required_params"] = value
+                        elif name == "meta_profiles":
+                            entry["profiles"] = value
                         elif name == "meta_destructive_level":
                             entry["destructive_level"] = value
                         elif name == "is_disruptive":
@@ -1181,7 +1214,7 @@ def list_pocs():
                             for target in item.targets:
                                 if isinstance(target, ast.Name):
                                     name = target.id
-                                    if name in ['is_disruptive', 'meta_poc_name', 'meta_cve_id', 'meta_severity', 'meta_protocol', 'meta_destructive_level', 'meta_target_os', 'meta_required_params']:
+                                    if name in ['is_disruptive', 'meta_display_id', 'meta_poc_name', 'meta_cve_id', 'meta_severity', 'meta_protocol', 'meta_destructive_level', 'meta_target_os', 'meta_required_params', 'meta_profiles']:
                                         try:
                                             poc_info[name] = ast.literal_eval(item.value)
                                         except Exception:
@@ -1200,7 +1233,10 @@ def list_pocs():
         if 'is_disruptive' not in poc_info:
              poc_info['is_disruptive'] = False
         profile = _extract_poc_security_profile(filepath)
-        poc_info["manual_confirmation_required"] = _should_require_disruptive_approval(profile, {})
+        poc_info["manual_confirmation_required"] = (
+            _should_require_disruptive_approval(profile, {})
+            or poc_requires_human_review(normalized, profile)
+        )
         poc_info.update(classify_poc_execution_mode(POCS_DIR, filepath, profile, normalized))
         pocs.append(poc_info)
 
@@ -1361,6 +1397,12 @@ def run_poc():
             "sandbox_profile": sandbox_profile,
             "worker_mode": worker_mode,
         }
+        response = apply_manual_review_state(
+            response,
+            poc_filename=poc_filename,
+            security_profile=security_profile,
+            plugin_results=plugin_results,
+        )
         if current_user:
             try:
                 _persist_execution_artifact(
@@ -1388,7 +1430,7 @@ def run_poc():
                 db.session.rollback()
                 logger.error(f"Failed to persist execution artifact: {artifact_exc}")
 
-        status_msg = "VULNERABLE" if response["vulnerable"] else "SECURE"
+        status_msg = "PENDING_MANUAL_REVIEW" if response.get("vulnerable") is None else ("VULNERABLE" if response["vulnerable"] else "SECURE")
         if not response["success"]:
             status_msg = "ERROR"
         logger.info(f"PoC Result [{poc_filename}]: {status_msg} (Elapsed: {elapsed}s)")
@@ -1426,6 +1468,13 @@ def run_poc_stream():
     poc_filename = normalized_filename
 
     trace_id = data.get("trace_id") or data.get("session_id") or uuid.uuid4().hex
+    auth_header = request.headers.get('Authorization')
+    remote_addr = request.remote_addr
+    current_user_for_stream = resolve_user_from_bearer(
+        auth_header,
+        app.config['SECRET_KEY'],
+        User,
+    ) if auth_header else None
     security_profile = _extract_poc_security_profile(poc_path)
     if _should_require_disruptive_approval(security_profile, params):
         try:
@@ -1441,7 +1490,7 @@ def run_poc_stream():
                     "mode": "stream",
                     "reason": "approval_required",
                 }, ensure_ascii=False),
-                ip_address=request.remote_addr
+                ip_address=remote_addr
             )
             db.session.add(audit)
             db.session.commit()
@@ -1470,7 +1519,7 @@ def run_poc_stream():
                     "security_profile": security_profile,
                     "trace_id": trace_id,
                 }, ensure_ascii=False),
-                ip_address=request.remote_addr
+                ip_address=remote_addr
             )
             db.session.add(audit)
             db.session.commit()
@@ -1509,16 +1558,17 @@ def run_poc_stream():
                     "sandbox_profile": event.get("sandbox_profile", plan.sandbox_profile),
                     "worker_mode": event.get("worker_mode", plan.worker_mode),
                 }
-                if request.headers.get('Authorization'):
+                result = apply_manual_review_state(
+                    result,
+                    poc_filename=poc_filename,
+                    security_profile=result["security_profile"],
+                    plugin_results=event.get("plugin_results", {}),
+                )
+                if current_user_for_stream:
                     try:
-                        current_user = resolve_user_from_bearer(
-                            request.headers.get('Authorization'),
-                            app.config['SECRET_KEY'],
-                            User,
-                        )
-                        if current_user:
+                        with app.app_context():
                             _persist_execution_artifact(
-                                user_id=current_user.id,
+                                user_id=current_user_for_stream.id,
                                 session_id=session_id,
                                 artifact_type="poc_run",
                                 trace_id=trace_id,
@@ -1540,9 +1590,10 @@ def run_poc_stream():
                             )
                             db.session.commit()
                     except Exception as artifact_exc:
-                        db.session.rollback()
+                        with app.app_context():
+                            db.session.rollback()
                         logger.error(f"Failed to persist stream artifact: {artifact_exc}")
-                status_msg = "VULNERABLE" if result["vulnerable"] else "SECURE"
+                status_msg = "PENDING_MANUAL_REVIEW" if result.get("vulnerable") is None else ("VULNERABLE" if result["vulnerable"] else "SECURE")
                 if not result["success"]:
                     status_msg = "ERROR"
                 logger.info(f"PoC Stream [{poc_filename}]: {status_msg} (Elapsed: {result['elapsed_seconds']}s)")
@@ -1555,6 +1606,99 @@ def run_poc_stream():
         'X-Accel-Buffering': 'no',
         'Access-Control-Allow-Origin': '*',
     })
+
+
+@app.route('/api/poc_manual_verdict', methods=['POST', 'OPTIONS'])
+@cross_origin()
+def poc_manual_verdict():
+    """Record an operator verdict for PoCs whose physical impact cannot be auto-verified."""
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+
+    current_user = resolve_user_from_bearer(
+        request.headers.get('Authorization'),
+        app.config['SECRET_KEY'],
+        User,
+    )
+    data = request.json or {}
+    verdict = str(data.get("verdict") or "").strip()
+    valid_verdicts = {
+        "confirmed_vulnerable",
+        "confirmed_not_vulnerable",
+        "inconclusive",
+        "needs_retest",
+    }
+    if verdict not in valid_verdicts:
+        return jsonify({
+            "success": False,
+            "error": "Invalid manual verdict.",
+            "valid_verdicts": sorted(valid_verdicts),
+        }), 400
+
+    trace_id = str(data.get("trace_id") or uuid.uuid4().hex)
+    session_id = str(data.get("session_id") or "manual")
+    poc_filename = str(data.get("poc_id") or data.get("poc_filename") or "").strip()
+    operator_note = str(data.get("operator_note") or "").strip()
+    evidence_file = str(data.get("evidence_file") or "").strip()
+
+    vulnerable = None
+    verification_status = f"manual_{verdict}"
+    if verdict == "confirmed_vulnerable":
+        vulnerable = True
+        verification_status = "manual_confirmed_vulnerable"
+    elif verdict == "confirmed_not_vulnerable":
+        vulnerable = False
+        verification_status = "manual_confirmed_not_vulnerable"
+
+    response = {
+        "success": True,
+        "trace_id": trace_id,
+        "session_id": session_id,
+        "poc_id": poc_filename,
+        "vulnerable": vulnerable,
+        "requires_human_review": True,
+        "verification_status": verification_status,
+        "manual_review": {
+            "state": "completed",
+            "verdict": verdict,
+            "operator_note": operator_note,
+            "evidence_file": evidence_file,
+            "reviewed_at": _get_utc_now().strftime('%Y-%m-%dT%H:%M:%SZ'),
+        },
+    }
+
+    try:
+        audit = AuditLog(
+            user_id=current_user.id if current_user else None,
+            action='manual_poc_verdict',
+            target=str(data.get("target") or data.get("target_ip") or ""),
+            details_json=json.dumps(response, ensure_ascii=False),
+            ip_address=request.remote_addr
+        )
+        db.session.add(audit)
+        if current_user:
+            _persist_execution_artifact(
+                user_id=current_user.id,
+                session_id=session_id,
+                artifact_type="manual_verdict",
+                trace_id=trace_id,
+                poc_filename=poc_filename,
+                poc_name=str(data.get("poc_name") or poc_filename),
+                target_ip=data.get("target_ip"),
+                target_mac=data.get("target_mac") or data.get("bluetooth_mac"),
+                payload={
+                    "request_type": "poc_manual_verdict",
+                    "result": response,
+                    "operator_note": operator_note,
+                    "evidence_file": evidence_file,
+                },
+            )
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        logger.error(f"Failed to persist manual verdict: {exc}")
+
+    return jsonify(response)
 
 
 @app.route('/api/save_session', methods=['POST', 'OPTIONS'])
@@ -2192,6 +2336,17 @@ def agent_scan(current_user):
     can_interface  = data.get('can_interface', '')
     bluetooth_mac  = data.get('bluetooth_mac', '')
     wifi_interface = data.get('wifi_interface', '')
+    rf_frequency = data.get('frequency') or data.get('rf_frequency') or ''
+    expected_usb_serial = data.get('expected_usb_serial') or data.get('usb_device_serial') or ''
+    local_usb_adb_serials = _list_local_usb_adb_serials()
+    if not expected_usb_serial and len(local_usb_adb_serials) == 1:
+        expected_usb_serial = local_usb_adb_serials[0]
+        logger.info("Agent scan auto-selected single local USB ADB serial: %s", expected_usb_serial)
+    elif not expected_usb_serial and len(local_usb_adb_serials) > 1:
+        logger.info(
+            "Agent scan detected multiple local USB ADB devices; serial required to disambiguate: %s",
+            ", ".join(local_usb_adb_serials),
+        )
 
     if not target_ip:
         return jsonify({"error": "target_ip is required"}), 400
@@ -2215,6 +2370,8 @@ def agent_scan(current_user):
             can_interface=can_interface,
             bluetooth_mac=bluetooth_mac,
             wifi_interface=wifi_interface,
+            rf_frequency=rf_frequency,
+            expected_usb_serial=expected_usb_serial,
         )
 
         if resume_from:

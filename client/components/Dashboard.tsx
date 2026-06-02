@@ -1,28 +1,28 @@
 import React from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
-import { POC_DATABASE } from '../data/pocDatabase';
 import { Severity, Category } from '../types';
 import { Activity, Shield, AlertTriangle, Zap } from 'lucide-react';
+import { usePocCatalog } from '../hooks/usePocCatalog';
 
 const Dashboard: React.FC = () => {
-  const totalPocs = POC_DATABASE.length;
+  const { pocs } = usePocCatalog();
+  const totalPocs = pocs.length;
 
   const severityData = [
-    { name: 'Critical', value: POC_DATABASE.filter(p => p.severity === Severity.CRITICAL).length, color: '#ff3366' },
-    { name: 'High', value: POC_DATABASE.filter(p => p.severity === Severity.HIGH).length, color: '#fb923c' },
-    { name: 'Medium', value: POC_DATABASE.filter(p => p.severity === Severity.MEDIUM).length, color: '#facc15' },
-    { name: 'Low', value: POC_DATABASE.filter(p => p.severity === Severity.LOW).length, color: '#60a5fa' },
+    { name: 'Critical', value: pocs.filter(p => p.severity === Severity.CRITICAL).length, color: '#ff3366' },
+    { name: 'High', value: pocs.filter(p => p.severity === Severity.HIGH).length, color: '#fb923c' },
+    { name: 'Medium', value: pocs.filter(p => p.severity === Severity.MEDIUM).length, color: '#facc15' },
+    { name: 'Low', value: pocs.filter(p => p.severity === Severity.LOW).length, color: '#60a5fa' },
   ];
 
   const categoryData = Object.values(Category).map(cat => ({
     name: cat.split(' ')[0],
-    count: POC_DATABASE.filter(p => p.category === cat).length
+    count: pocs.filter(p => p.category === cat).length
   }));
 
   // Count PoCs with pocFile (integrated from Pocs/ directory)
-  const integratedPocs = POC_DATABASE.filter(p => p.pocFile).length;
+  const integratedPocs = pocs.filter(p => p.pocFile).length;
   const criticalCount = severityData[0].value;
-  const wirelessCount = POC_DATABASE.filter(p => p.category === Category.WIRELESS).length;
 
   return (
     <div className="p-6 space-y-6 overflow-y-auto h-full">
@@ -62,27 +62,27 @@ const Dashboard: React.FC = () => {
         <div className="flex flex-wrap gap-6 text-sm">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 bg-indigo-500 rounded-full"></span>
-            <span className="text-gray-400">Recon: <span className="text-white font-bold">{POC_DATABASE.filter(p => p.category === Category.RECON).length}</span></span>
+            <span className="text-gray-400">Recon: <span className="text-white font-bold">{pocs.filter(p => p.category === Category.RECON).length}</span></span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-            <span className="text-gray-400">Network: <span className="text-white font-bold">{POC_DATABASE.filter(p => p.category === Category.NETWORK).length}</span></span>
+            <span className="text-gray-400">Network: <span className="text-white font-bold">{pocs.filter(p => p.category === Category.NETWORK).length}</span></span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-            <span className="text-gray-400">CANBus: <span className="text-white font-bold">{POC_DATABASE.filter(p => p.category === Category.CANBUS).length}</span></span>
+            <span className="text-gray-400">CANBus: <span className="text-white font-bold">{pocs.filter(p => p.category === Category.CANBUS).length}</span></span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 bg-cyan-500 rounded-full"></span>
-            <span className="text-gray-400">Wireless: <span className="text-white font-bold">{POC_DATABASE.filter(p => p.category === Category.WIRELESS).length}</span></span>
+            <span className="text-gray-400">Wireless: <span className="text-white font-bold">{pocs.filter(p => p.category === Category.WIRELESS).length}</span></span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
-            <span className="text-gray-400">App: <span className="text-white font-bold">{POC_DATABASE.filter(p => p.category === Category.APPLICATION).length}</span></span>
+            <span className="text-gray-400">App: <span className="text-white font-bold">{pocs.filter(p => p.category === Category.APPLICATION).length}</span></span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 bg-red-500 rounded-full"></span>
-            <span className="text-gray-400">Advanced: <span className="text-white font-bold">{POC_DATABASE.filter(p => p.category === Category.ADVANCED).length}</span></span>
+            <span className="text-gray-400">Advanced: <span className="text-white font-bold">{pocs.filter(p => p.category === Category.ADVANCED).length}</span></span>
           </div>
           <div className="flex items-center gap-2 ml-auto">
             <span className="w-2 h-2 bg-cyber-accent rounded-full animate-pulse"></span>

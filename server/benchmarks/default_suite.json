@@ -21,7 +21,7 @@
       },
       "expected_findings": {
         "required": [
-          "network/14_Telnet_Weak_Creds.py"
+          "network/07_Telnet_Weak_Creds.py"
         ],
         "optional": [
           "未知漏洞"
@@ -30,21 +30,21 @@
       },
       "expected_attack_plan": {
         "required": [
-          "network/09_ADB_Debug_Port.py",
-          "wireless/32_QNX_Qnet_File_Read.py",
-          "network/14_Telnet_Weak_Creds.py",
-          "network/11_SSH_Weak_Creds.py",
-          "application/60_RTSP_CarPlay_DoS.py",
-          "application/52_CarPlay_Stack_Overflow.py",
-          "network/18_RTSP_Log_Leak.py",
-          "application/50_AirPlay_AirBorne_UAF.py"
+          "network/02_ADB_Debug_Port.py",
+          "wireless/01_QNX_Qnet_File_Read.py",
+          "network/07_Telnet_Weak_Creds.py",
+          "network/04_SSH_Weak_Creds.py",
+          "application/11_RTSP_CarPlay_DoS.py",
+          "application/03_CarPlay_Stack_Overflow.py",
+          "network/11_RTSP_Log_Leak.py",
+          "application/01_AirPlay_AirBorne_UAF.py"
         ],
         "optional": [],
         "forbidden": []
       },
       "expected_execution": {
         "required": [
-          "network/14_Telnet_Weak_Creds.py"
+          "network/07_Telnet_Weak_Creds.py"
         ],
         "optional": [],
         "forbidden": []
@@ -75,9 +75,9 @@
       },
       "expected_findings": {
         "required": [
-          "network/10_SSH_Service.py",
-          "network/13_Telnet_Service.py",
-          "network/14_Telnet_Weak_Creds.py"
+          "network/03_SSH_Service.py",
+          "network/06_Telnet_Service.py",
+          "network/07_Telnet_Weak_Creds.py"
         ],
         "optional": [
           "未知漏洞"
@@ -86,20 +86,20 @@
       },
       "expected_attack_plan": {
         "required": [
-          "network/10_SSH_Service.py",
-          "network/13_Telnet_Service.py",
-          "network/11_SSH_Weak_Creds.py",
-          "network/12_SSH_Hardcoded_Creds.py",
-          "network/14_Telnet_Weak_Creds.py"
+          "network/03_SSH_Service.py",
+          "network/06_Telnet_Service.py",
+          "network/04_SSH_Weak_Creds.py",
+          "network/05_SSH_Hardcoded_Creds.py",
+          "network/07_Telnet_Weak_Creds.py"
         ],
         "optional": [],
         "forbidden": []
       },
       "expected_execution": {
         "required": [
-          "network/10_SSH_Service.py",
-          "network/13_Telnet_Service.py",
-          "network/14_Telnet_Weak_Creds.py"
+          "network/03_SSH_Service.py",
+          "network/06_Telnet_Service.py",
+          "network/07_Telnet_Weak_Creds.py"
         ],
         "optional": [],
         "forbidden": []

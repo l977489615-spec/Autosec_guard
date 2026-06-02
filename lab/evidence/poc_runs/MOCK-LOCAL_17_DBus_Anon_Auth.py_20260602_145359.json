@@ -1,0 +1,59 @@
+{
+  "cve_id": "N/A",
+  "elapsed_seconds": 0.039,
+  "errors": [],
+  "evidence": "Port 6667 closed.",
+  "logs": [
+    "[*] Executing sandbox command: /Library/Frameworks/Python.framework/Versions/3.13/bin/python3 /Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/server/sandbox_runner.py /Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/server/pocs/network/17_DBus_Anon_Auth.py {\"target_ip\": \"127.0.0.1\", \"candidate_ports\": \"5555,1883,7000,19090,13400,30490\"}",
+    "[2026-06-02 14:53:59,716][INFO] 已初始化漏洞验证模块: JeepDBusPlugin，目标: 127.0.0.1",
+    "[2026-06-02 14:53:59,716][INFO] 正在执行前置条件检查...",
+    "[2026-06-02 14:53:59,716][INFO] 前置条件满足。开始执行漏洞验证...",
+    "[2026-06-02 14:53:59,716][INFO] Connecting to Uconnect D-Bus on 127.0.0.1:6667...",
+    "[2026-06-02 14:53:59,717][INFO] 漏洞验证流程结束。",
+    "",
+    "[*] 正在启动检测任务: JeepDBusPlugin",
+    "[*] 描述: ",
+    "",
+    "==================================================",
+    "检测结果报告: JeepDBusPlugin",
+    "--------------------------------------------------",
+    "[-] 状态: 【未检测到漏洞】 (NOT VULNERABLE)",
+    "[-] 信息: Port 6667 closed.",
+    "==================================================",
+    ""
+  ],
+  "manual_review": {
+    "state": "not_required"
+  },
+  "poc_id": "network/17_DBus_Anon_Auth.py",
+  "requires_human_review": false,
+  "sandbox_profile": {
+    "allowed_hosts": [
+      "127.0.0.1"
+    ],
+    "cpu_seconds": 60,
+    "memory_mb": 256,
+    "nofile": 256,
+    "output_mb": 8
+  },
+  "security_profile": {
+    "cve_id": "N/A",
+    "destructive_level": "Safe",
+    "is_disruptive": false,
+    "poc_name": "DBus Anon Auth",
+    "protocol": "tcp",
+    "required_params": [
+      "target_ip"
+    ],
+    "severity": "Medium",
+    "target_os": [
+      "all"
+    ]
+  },
+  "success": true,
+  "trace_id": "MOCK-LOCAL_17_DBus_Anon_Auth.py_20260602_145359",
+  "verification_status": "auto_confirmed_not_vulnerable",
+  "vulnerable": false,
+  "worker_mode": "local_sandbox",
+  "http_status": 200
+}

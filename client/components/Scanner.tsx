@@ -1,16 +1,50 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { flushSync, createPortal } from 'react-dom';
 import { ScanSession, ScanLog, ScanResult, Severity, POC, Category, ConnectionParams } from '../types';
-import { POC_DATABASE } from '../data/pocDatabase';
 import ScanLogs from './ScanLogs';
 import { generateSecurityReport } from '../services/LLMService';
 import PocDetailModal from './PocDetailModal';
 import ManualTestModal from './ManualTestModal';
-import { checkBackendHealth, executePocScript, setBackendUrl, getBackendUrl, listPocs, fingerprintOS, runPocPlugin, saveScanSession } from '../services/api';
-import { Play, RotateCw, FileText, AlertTriangle, ShieldCheck, Wifi, Cable, Bluetooth, Power, Crosshair, List, Server, ArrowRight, Settings, Save, WifiOff, Link, CheckCircle, Radio, Activity, Download, ChevronRight, Bot } from 'lucide-react';
+import { checkBackendHealth, executePocScript, setBackendUrl, getBackendUrl, fingerprintOS, runPocPlugin, saveScanSession, submitPocManualVerdict } from '../services/api';
+import { Play, RotateCw, FileText, AlertTriangle, ShieldCheck, Wifi, Cable, Bluetooth, Power, Crosshair, List, Server, ArrowRight, Settings, Save, WifiOff, Link, CheckCircle, Radio, Activity, Download, ChevronRight, Bot, Usb } from 'lucide-react';
 import AgentScan from './AgentScan';
+import { AgentScanErrorBoundary } from './AgentScanErrorBoundary';
+import { findPocInCatalog } from '../services/pocCatalog';
+import { usePocCatalog } from '../hooks/usePocCatalog';
 
 type ScannerMode = 'SELECTION' | 'GLOBAL' | 'MANUAL' | 'AGENT';
+
+const EMPTY_CONNECTION: ConnectionParams = {
+  ip: '',
+  port: '',
+  bluetoothMac: '',
+  canInterface: 'PCAN_USBBUS1',
+  url: '',
+  frequency: '',
+  interface: '',
+  usbAdbSerial: '',
+  usbMountPoint: '',
+};
+
+const buildExecutionParams = (
+  connection: ConnectionParams,
+  extras: Record<string, unknown> = {},
+): Record<string, unknown> => {
+  const params: Record<string, unknown> = { ...connection, ...extras };
+  if (connection.bluetoothMac) params.bluetooth_mac = connection.bluetoothMac;
+  if (connection.canInterface) params.can_interface = connection.canInterface;
+  if (connection.interface) {
+    params.interface = connection.interface;
+    params.wifi_interface = connection.interface;
+  }
+  if (connection.frequency) params.frequency = connection.frequency;
+  if (connection.usbAdbSerial) {
+    params.expected_usb_serial = connection.usbAdbSerial;
+    params.usb_device_serial = connection.usbAdbSerial;
+  }
+  if (connection.usbMountPoint) params.usb_mount_point = connection.usbMountPoint;
+  return params;
+};
 
 interface ScannerProps {
   onAddToHistory: (session: ScanSession) => void;
@@ -34,25 +68,15 @@ type DisruptiveApprovalState = {
 
 type DisruptiveApprovalDecision = 'approved' | 'approved_all' | 'skipped' | 'timeout';
 
-const normalizePocPath = (value?: string | null): string => {
-  return String(value || '')
-    .replace(/\\/g, '/')
-    .replace(/^\.?\//, '')
-    .toLowerCase();
-};
+type ManualVerdict = 'confirmed_vulnerable' | 'confirmed_not_vulnerable' | 'inconclusive' | 'needs_retest';
 
-const getBasename = (value?: string | null): string => {
-  const normalized = normalizePocPath(value);
-  if (!normalized) return '';
-  const parts = normalized.split('/');
-  return parts[parts.length - 1] || '';
-};
-
-const extractPocNumber = (value?: string | null): string => {
-  const filename = getBasename(value);
-  const match = filename.match(/^(\d+)_/);
-  return match ? match[1].padStart(3, '0') : '';
-};
+type ManualVerdictState = {
+  poc: POC;
+  progress: string;
+  result: any;
+  note: string;
+  evidenceFile: string;
+} | null;
 
 // Helper to render markdown-ish text to HTML
 const MarkdownRenderer: React.FC<{ content: string }> = ({ content }) => {
@@ -100,6 +124,7 @@ const Scanner: React.FC<ScannerProps> = ({
 }) => {
   const [isAnalysing, setIsAnalysing] = useState(false);
   const [selectedResultPoc, setSelectedResultPoc] = useState<POC | null>(null);
+  const { pocs: pocCatalog, refresh: refreshPocCatalog } = usePocCatalog();
 
   // Contents of PoC scripts fetched from backend
   const [pocContents, setPocContents] = useState<Record<string, string>>({});
@@ -107,6 +132,7 @@ const Scanner: React.FC<ScannerProps> = ({
 
   // State for Manual Mode
   const [manualTestPoc, setManualTestPoc] = useState<POC | null>(null);
+  const [manualVerdictState, setManualVerdictState] = useState<ManualVerdictState>(null);
   // Manual View Detail Modal State
   const [manualDetailPoc, setManualDetailPoc] = useState<POC | null>(null);
 
@@ -116,8 +142,10 @@ const Scanner: React.FC<ScannerProps> = ({
   const autoApproveDisruptiveForRunRef = React.useRef(false);
   const pocRuntimeMetadataRef = React.useRef<Record<string, Partial<POC>>>({});
   const approvalResolverRef = React.useRef<((decision: DisruptiveApprovalDecision) => void) | null>(null);
+  const manualVerdictResolverRef = React.useRef<((result: any) => void) | null>(null);
   const approvalTimeoutRef = React.useRef<number | null>(null);
   const approvalIntervalRef = React.useRef<number | null>(null);
+  const pocCatalogRef = React.useRef<POC[]>([]);
 
   // Effect to update API service when user types new URL
   useEffect(() => {
@@ -145,67 +173,42 @@ const Scanner: React.FC<ScannerProps> = ({
     pocRuntimeMetadataRef.current = pocRuntimeMetadata;
   }, [pocRuntimeMetadata]);
 
-  const buildRuntimeMetadataFromBackend = (backendPocs: any[]): {
+  useEffect(() => {
+    pocCatalogRef.current = pocCatalog;
+    applyPocCatalog(pocCatalog);
+  }, [pocCatalog]);
+
+  const buildRuntimeMetadataFromCatalog = (catalog: POC[]): {
     contentsMap: Record<string, string>;
     metadataMap: Record<string, Partial<POC>>;
   } => {
     const contentsMap: Record<string, string> = {};
     const metadataMap: Record<string, Partial<POC>> = {};
-    const byFullPath = new Map<string, POC>();
-    const byBasename = new Map<string, POC>();
-    const byNumber = new Map<string, POC>();
-
-    POC_DATABASE.forEach((dbPoc) => {
-      const normalized = normalizePocPath(dbPoc.pocFile);
-      const basename = getBasename(dbPoc.pocFile);
-      const number = extractPocNumber(dbPoc.pocFile);
-      if (normalized) byFullPath.set(normalized, dbPoc);
-      if (basename) byBasename.set(basename, dbPoc);
-      if (number) byNumber.set(number, dbPoc);
-    });
-
-    backendPocs.forEach((p: any) => {
-      const normalizedFilename = normalizePocPath(p.filename);
-      const filenameOnly = getBasename(p.filename);
-      const pocNumber = extractPocNumber(p.filename);
-      const matchingDbPoc =
-        byFullPath.get(normalizedFilename) ||
-        byBasename.get(filenameOnly) ||
-        byNumber.get(pocNumber);
-      if (!matchingDbPoc) return;
-
-      if (p.content) {
-        contentsMap[matchingDbPoc.id] = p.content;
-      }
-
-      const destructiveLevel = String(p.meta_destructive_level || p.destructive_level || '').toLowerCase();
-      metadataMap[matchingDbPoc.id] = {
-        supportedExecutionPlanes: p.supported_execution_planes || ['cloud', 'edge'],
-        recommendedExecutionPlane: p.recommended_execution_plane || 'cloud',
-        executionRequirements: p.execution_requirements,
-        manualConfirmationRequired: Boolean(
-          p.manual_confirmation_required ||
-          p.is_disruptive ||
-          p.execution_requirements?.requires_explicit_approval ||
-          p.execution_requirements?.approval_required ||
-          ['restart', 'dataloss', 'brick'].includes(destructiveLevel)
-        ),
+    catalog.forEach((poc) => {
+      contentsMap[poc.id] = poc.codeSnippet;
+      metadataMap[poc.id] = {
+        supportedExecutionPlanes: poc.supportedExecutionPlanes,
+        recommendedExecutionPlane: poc.recommendedExecutionPlane,
+        executionRequirements: poc.executionRequirements,
+        manualConfirmationRequired: poc.manualConfirmationRequired,
       };
     });
 
     return { contentsMap, metadataMap };
   };
 
-  const fetchPocs = async (): Promise<Record<string, Partial<POC>>> => {
-    const data = await listPocs();
-    if (data && data.pocs) {
-      const { contentsMap, metadataMap } = buildRuntimeMetadataFromBackend(data.pocs);
-      setPocContents(contentsMap);
-      setPocRuntimeMetadata(metadataMap);
-      pocRuntimeMetadataRef.current = metadataMap;
-      return metadataMap;
-    }
-    return pocRuntimeMetadataRef.current;
+  const applyPocCatalog = (catalog: POC[]) => {
+    const { contentsMap, metadataMap } = buildRuntimeMetadataFromCatalog(catalog);
+    setPocContents(contentsMap);
+    setPocRuntimeMetadata(metadataMap);
+    pocRuntimeMetadataRef.current = metadataMap;
+  };
+
+  const fetchPocs = async (): Promise<POC[]> => {
+    const catalog = await refreshPocCatalog();
+    pocCatalogRef.current = catalog;
+    applyPocCatalog(catalog);
+    return catalog;
   };
 
   const checkEngine = async () => {
@@ -267,6 +270,35 @@ const Scanner: React.FC<ScannerProps> = ({
     });
   };
 
+  const requestManualVerdict = (poc: POC, progress: string, result: any): Promise<any> => {
+    return new Promise((resolve) => {
+      manualVerdictResolverRef.current = resolve;
+      setManualVerdictState({ poc, progress, result, note: '', evidenceFile: '' });
+    });
+  };
+
+  const resolveManualVerdict = async (verdict: ManualVerdict) => {
+    if (!manualVerdictState) return;
+    const current = manualVerdictState;
+    const submitted = await submitPocManualVerdict({
+      trace_id: current.result?.trace_id,
+      session_id: session.id,
+      poc_id: current.result?.poc_id || current.poc.pocFile || current.poc.id,
+      poc_name: current.poc.name,
+      target_ip: session.connection.ip,
+      bluetooth_mac: session.connection.bluetoothMac,
+      verdict,
+      operator_note: current.note,
+      evidence_file: current.evidenceFile,
+    }, token, engineUrl);
+    const resolver = manualVerdictResolverRef.current;
+    manualVerdictResolverRef.current = null;
+    setManualVerdictState(null);
+    if (resolver) {
+      resolver({ ...current.result, ...submitted });
+    }
+  };
+
   const handleGlobalConnect = async () => {
     setSession(prev => ({ ...prev, status: 'connecting' }));
 
@@ -285,9 +317,9 @@ const Scanner: React.FC<ScannerProps> = ({
     addLog(`Execution Engine Online & Ready.`, 'success');
 
     // Relaxed validation for global mode: At least one parameter
-    const { ip, bluetoothMac, canInterface, interface: wifiIf, frequency } = session.connection;
-    if (!session.targetName || (!ip && !bluetoothMac && !canInterface && !wifiIf && !frequency)) {
-      addLog("Error: Target Name and at least one parameter (IP, BT MAC, CAN, WiFi, or RF) are required for Global Scan.", 'error');
+    const { ip, bluetoothMac, canInterface, interface: wifiIf, frequency, usbAdbSerial, usbMountPoint } = session.connection;
+    if (!session.targetName || (!ip && !bluetoothMac && !canInterface && !wifiIf && !frequency && !usbAdbSerial && !usbMountPoint)) {
+      addLog("Error: Target Name and at least one parameter (IP, BT MAC, CAN, WiFi, RF, or USB) are required for Global Scan.", 'error');
       setSession(prev => ({ ...prev, status: 'idle' }));
       return;
     }
@@ -316,9 +348,17 @@ const Scanner: React.FC<ScannerProps> = ({
       aiReport: null
     }));
     autoApproveDisruptiveForRunRef.current = false;
-    const runtimeMetadata = await fetchPocs();
+    const refreshedCatalog = await fetchPocs();
+    const activePocs = refreshedCatalog.length ? refreshedCatalog : pocCatalogRef.current;
+    const runtimeMetadata = pocRuntimeMetadataRef.current;
 
-    addLog(`Starting batch execution of ${POC_DATABASE.length} modules...`, 'info');
+    if (!activePocs.length) {
+      addLog(`Error: PoC catalog is empty. Check backend /api/list_pocs.`, 'error');
+      setSession(prev => ({ ...prev, status: 'idle' }));
+      return;
+    }
+
+    addLog(`Starting batch execution of ${activePocs.length} modules...`, 'info');
     addLog(`Engine: ${engineUrl} | Target: ${session.targetName}`, 'info');
 
     let detectedOS = 'unknown';
@@ -335,18 +375,20 @@ const Scanner: React.FC<ScannerProps> = ({
     let secureCount = 0;
     let errorCount = 0;
 
-    for (let i = 0; i < POC_DATABASE.length; i++) {
-      const poc = POC_DATABASE[i];
-      const progress = `[${i + 1}/${POC_DATABASE.length}]`;
+    for (let i = 0; i < activePocs.length; i++) {
+      const poc = activePocs[i];
+      const progress = `[${i + 1}/${activePocs.length}]`;
 
       // Check if required params are met for this PoC
-      const { ip, bluetoothMac, canInterface, interface: wifiIf, frequency } = session.connection;
+      const { ip, bluetoothMac, canInterface, interface: wifiIf, frequency, usbAdbSerial, usbMountPoint } = session.connection;
       const missingParams = poc.requiredParams.filter(p => {
         if (p === 'ip' && !ip) return true;
         if (p === 'bluetooth_mac' && !bluetoothMac) return true;
         if (p === 'can_interface' && !canInterface) return true;
         if (p === 'interface' && !wifiIf) return true;
         if (p === 'frequency' && !frequency) return true;
+        if (p === 'usb_adb_serial' && !usbAdbSerial) return true;
+        if (p === 'usb_mount_point' && !usbMountPoint) return true;
         return false;
       });
 
@@ -368,13 +410,10 @@ const Scanner: React.FC<ScannerProps> = ({
       const runtimeMeta = runtimeMetadata[poc.id] || pocRuntimeMetadataRef.current[poc.id] || {};
       const requiresManualConfirmation = Boolean(runtimeMeta.manualConfirmationRequired);
       const shouldAllowDisruptive = requiresManualConfirmation || autoApproveDisruptiveForRunRef.current;
-      const executionParams = { ...session.connection } as any;
-      if (executionParams.bluetoothMac) {
-        executionParams.bluetooth_mac = executionParams.bluetoothMac;
-      }
-      if (shouldAllowDisruptive) {
-        executionParams.allow_disruptive = true;
-      }
+      const executionParams = buildExecutionParams(
+        session.connection,
+        shouldAllowDisruptive ? { allow_disruptive: true } : {},
+      );
 
       if (requiresManualConfirmation && autoApproveDisruptiveForRunRef.current) {
         addLog(`${progress} ⇢ ${poc.name} → Auto-approved by current scan policy.`, 'warning');
@@ -489,37 +528,62 @@ const Scanner: React.FC<ScannerProps> = ({
         }
       }
 
-      if (result.success) {
-        if (result.vulnerable) {
+      let resolvedResult = result;
+      if (result.success && (result.requires_human_review || result.verification_status === 'pending_manual_review')) {
+        addLog(`${progress} ? ${poc.name} → Waiting for operator verdict (${elapsed}s)`, 'warning');
+        resolvedResult = await requestManualVerdict(poc, progress, result);
+      }
+
+      if (resolvedResult.success) {
+        if (resolvedResult.vulnerable === true) {
           addLog(`${progress} ✗ ${poc.name} → VULNERABLE (${elapsed}s)`, 'error');
           vulnCount++;
           results.push({
             pocId: poc.id,
             vulnerable: true,
-            details: `Exploit confirmed. ${result.evidence || 'Verified'}`,
+            details: `Exploit confirmed. ${resolvedResult.evidence || resolvedResult.manual_review?.operator_note || 'Verified'}`,
             detectedAt: new Date().toISOString(),
-            elapsedSeconds: parseFloat(elapsed)
+            elapsedSeconds: parseFloat(elapsed),
+            requiresHumanReview: Boolean(resolvedResult.requires_human_review),
+            verificationStatus: resolvedResult.verification_status,
+            manualReview: resolvedResult.manual_review,
           });
           const score = poc.severity === Severity.CRITICAL ? 10 : poc.severity === Severity.HIGH ? 7 : 3;
           riskAccumulator += score;
-        } else {
+        } else if (resolvedResult.vulnerable === false) {
           addLog(`${progress} ✓ ${poc.name} → Secure (${elapsed}s)`, 'success');
           secureCount++;
           results.push({
             pocId: poc.id,
             vulnerable: false,
-            details: 'Target secure.',
+            details: resolvedResult.requires_human_review ? 'Operator confirmed no observable exploit effect.' : 'Target secure.',
             detectedAt: new Date().toISOString(),
-            elapsedSeconds: parseFloat(elapsed)
+            elapsedSeconds: parseFloat(elapsed),
+            requiresHumanReview: Boolean(resolvedResult.requires_human_review),
+            verificationStatus: resolvedResult.verification_status,
+            manualReview: resolvedResult.manual_review,
+          });
+        } else {
+          addLog(`${progress} ? ${poc.name} → Inconclusive (${elapsed}s)`, 'warning');
+          errorCount++;
+          results.push({
+            pocId: poc.id,
+            vulnerable: null,
+            details: resolvedResult.manual_review?.operator_note || resolvedResult.verification_status || 'Manual review inconclusive.',
+            detectedAt: new Date().toISOString(),
+            elapsedSeconds: parseFloat(elapsed),
+            requiresHumanReview: Boolean(resolvedResult.requires_human_review),
+            verificationStatus: resolvedResult.verification_status,
+            manualReview: resolvedResult.manual_review,
           });
         }
       } else {
-        addLog(`${progress} ! ${poc.name} → Error (${elapsed}s): ${result.errors?.[0] || 'Unknown'}`, 'warning');
+        addLog(`${progress} ! ${poc.name} → Error (${elapsed}s): ${resolvedResult.errors?.[0] || 'Unknown'}`, 'warning');
         errorCount++;
         results.push({
           pocId: poc.id,
           vulnerable: false,
-          details: `Test Error: ${result.errors?.[0] || 'Check Engine Connection'}`,
+          details: `Test Error: ${resolvedResult.errors?.[0] || 'Check Engine Connection'}`,
           detectedAt: new Date().toISOString(),
           elapsedSeconds: parseFloat(elapsed)
         });
@@ -634,7 +698,7 @@ const Scanner: React.FC<ScannerProps> = ({
     setManualTestPoc(poc);
   };
 
-  const filteredManualPocs = POC_DATABASE.filter(p => {
+  const filteredManualPocs = pocCatalog.filter(p => {
     const matchesCat = filterCategory === 'All' || p.category === filterCategory;
     const matchesSearch = p.name.toLowerCase().includes(manualSearch.toLowerCase()) || p.id.toLowerCase().includes(manualSearch.toLowerCase());
     return matchesCat && matchesSearch;
@@ -768,6 +832,59 @@ const Scanner: React.FC<ScannerProps> = ({
     )
     : null;
 
+  const manualVerdictModal = manualVerdictState && typeof document !== 'undefined'
+    ? createPortal(
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div className="w-full max-w-xl rounded-xl border border-amber-500/50 bg-cyber-900 shadow-[0_0_40px_rgba(245,158,11,0.2)]">
+          <div className="border-b border-cyber-700 px-6 py-4">
+            <div className="flex items-center gap-3 text-amber-300">
+              <AlertTriangle size={20} />
+              <h3 className="text-lg font-semibold">Manual PoC Verdict Required</h3>
+            </div>
+          </div>
+          <div className="space-y-4 px-6 py-5 text-sm text-gray-300">
+            <p>{manualVerdictState.progress} {manualVerdictState.poc.name}</p>
+            <p>{manualVerdictState.result?.manual_review?.prompt || '该 PoC 已完成执行，但目标侧效果无法由程序自动判断。请根据现场观察给出结论。'}</p>
+            {manualVerdictState.result?.manual_review?.required_observations?.length ? (
+              <ul className="list-disc pl-5 space-y-1 text-xs text-gray-400">
+                {manualVerdictState.result.manual_review.required_observations.map((item: string, idx: number) => (
+                  <li key={idx}>{item}</li>
+                ))}
+              </ul>
+            ) : null}
+            <textarea
+              value={manualVerdictState.note}
+              onChange={(e) => setManualVerdictState((prev) => prev ? { ...prev, note: e.target.value } : prev)}
+              placeholder="观察说明，例如：车门解锁、双闪闪烁、无明显响应、ECU 返回异常帧..."
+              className="w-full min-h-20 rounded border border-cyber-700 bg-black p-3 text-gray-100 outline-none focus:border-amber-400"
+            />
+            <input
+              value={manualVerdictState.evidenceFile}
+              onChange={(e) => setManualVerdictState((prev) => prev ? { ...prev, evidenceFile: e.target.value } : prev)}
+              placeholder="证据文件路径，可选"
+              className="w-full rounded border border-cyber-700 bg-black p-3 text-gray-100 outline-none focus:border-amber-400"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3 border-t border-cyber-700 px-6 py-4">
+            <button onClick={() => resolveManualVerdict('confirmed_vulnerable')} className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500">
+              确认成功
+            </button>
+            <button onClick={() => resolveManualVerdict('confirmed_not_vulnerable')} className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500">
+              确认失败
+            </button>
+            <button onClick={() => resolveManualVerdict('inconclusive')} className="rounded-md border border-cyber-700 px-4 py-2 text-sm text-gray-300 hover:border-cyber-500 hover:text-white">
+              无法确认
+            </button>
+            <button onClick={() => resolveManualVerdict('needs_retest')} className="rounded-md border border-cyber-500 px-4 py-2 text-sm text-cyber-accent hover:bg-cyber-800">
+              标记复测
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )
+    : null;
+
   return (
     <div className="h-full relative overflow-hidden">
       {/* Detail Modal for Result Inspection */}
@@ -791,11 +908,12 @@ const Scanner: React.FC<ScannerProps> = ({
         isOpen={!!manualTestPoc}
         onClose={() => setManualTestPoc(null)}
         // In Manual Mode, we pass empty connection params so user MUST input them
-        globalConnection={useMemo(() => (mode === 'GLOBAL' ? session.connection : { ip: '', port: '', bluetoothMac: '', canInterface: 'PCAN_USBBUS1', url: '', frequency: '', interface: '' }), [mode, session.connection])}
+        globalConnection={useMemo(() => (mode === 'GLOBAL' ? session.connection : EMPTY_CONNECTION), [mode, session.connection])}
         token={token}
       />
 
       {disruptiveApprovalModal}
+      {manualVerdictModal}
 
       {/* Top Bar for Modes */}
       {mode !== 'SELECTION' && (
@@ -823,9 +941,17 @@ const Scanner: React.FC<ScannerProps> = ({
 
         {mode === 'SELECTION' && renderSelectionScreen()}
 
+        {mode === 'AGENT' && !token && (
+          <div className="flex h-full items-center justify-center p-8 text-center text-gray-400">
+            <p>请先登录后再使用 Agent Scan。</p>
+          </div>
+        )}
+
         {mode === 'AGENT' && token && (
-          <div className="h-full flex flex-col">
-            <AgentScan token={token} currentUser={currentUser} onSessionComplete={onAddToHistory} engineUrl={engineUrl} />
+          <div className="h-full flex flex-col min-h-0">
+            <AgentScanErrorBoundary>
+              <AgentScan token={token} currentUser={currentUser} onSessionComplete={onAddToHistory} engineUrl={engineUrl} />
+            </AgentScanErrorBoundary>
           </div>
         )}
 
@@ -944,6 +1070,28 @@ const Scanner: React.FC<ScannerProps> = ({
                           disabled={session.isConnected}
                         />
                       </div>
+                      <div>
+                        <label className="text-xs text-gray-500 uppercase font-bold flex items-center gap-1"><Usb size={10} /> USB ADB Serial (Optional)</label>
+                        <input
+                          type="text"
+                          value={session.connection.usbAdbSerial}
+                          onChange={(e) => setSession(p => ({ ...p, connection: { ...p.connection, usbAdbSerial: e.target.value.trim() } }))}
+                          placeholder="adb devices 中的 serial"
+                          className="w-full mt-1 bg-cyber-900 border border-cyber-600 text-white p-1.5 text-sm rounded font-mono focus:border-cyber-accent outline-none"
+                          disabled={session.isConnected}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500 uppercase font-bold flex items-center gap-1"><Usb size={10} /> USB Mount Point (Optional)</label>
+                        <input
+                          type="text"
+                          value={session.connection.usbMountPoint}
+                          onChange={(e) => setSession(p => ({ ...p, connection: { ...p.connection, usbMountPoint: e.target.value.trim() } }))}
+                          placeholder="/media/usb0 或 IVI U 盘挂载路径"
+                          className="w-full mt-1 bg-cyber-900 border border-cyber-600 text-white p-1.5 text-sm rounded font-mono focus:border-cyber-accent outline-none"
+                          disabled={session.isConnected}
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -1037,7 +1185,7 @@ const Scanner: React.FC<ScannerProps> = ({
                       </h3>
                       <div className="space-y-2">
                         {session.results.filter(r => r.vulnerable).map((res) => {
-                          const poc = POC_DATABASE.find(p => p.id === res.pocId);
+                          const poc = findPocInCatalog(pocCatalogRef.current, res);
                           return (
                             <div key={res.pocId} onClick={() => poc && setSelectedResultPoc(poc)} className="bg-cyber-900/80 border-l-2 border-cyber-danger p-2 rounded cursor-pointer hover:bg-cyber-700 transition-colors group">
                               <div className="flex justify-between items-center">

@@ -1,0 +1,8 @@
+{
+  "poc_total": 72,
+  "scan_execution_count": 18,
+  "agent_task_count": 0,
+  "edge_target_count": 1,
+  "comparison_count": 1,
+  "output_dir": "lab/evidence"
+}

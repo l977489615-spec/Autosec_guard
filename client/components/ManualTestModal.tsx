@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { POC, ConnectionParams, ParamType } from '../types';
 import { X, Play, Terminal, AlertTriangle, ShieldCheck, ServerCrash, RotateCw, WifiOff, Cpu } from 'lucide-react';
-import { checkBackendHealth, getBackendUrl, runPocPlugin } from '../services/api';
+import { checkBackendHealth, getBackendUrl, runPocPlugin, submitPocManualVerdict, ExecutionResult } from '../services/api';
 
 interface ManualTestModalProps {
   poc: POC | null;
@@ -17,8 +17,12 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
   const prevPocId = useRef<string | null>(null);
 
   const [isRunning, setIsRunning] = useState(false);
+  const [isSubmittingVerdict, setIsSubmittingVerdict] = useState(false);
   const [consoleOutput, setConsoleOutput] = useState<string[]>([]);
-  const [testResult, setTestResult] = useState<'idle' | 'success' | 'fail' | 'error'>('idle');
+  const [testResult, setTestResult] = useState<'idle' | 'success' | 'fail' | 'error' | 'manual'>('idle');
+  const [pendingManualResult, setPendingManualResult] = useState<ExecutionResult | null>(null);
+  const [operatorNote, setOperatorNote] = useState('');
+  const [evidenceFile, setEvidenceFile] = useState('');
   const [backendOnline, setBackendOnline] = useState<boolean>(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -33,11 +37,18 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
         if (p === 'can_interface') initial.canInterface = globalConnection.canInterface;
         if (p === 'url') initial.url = globalConnection.url;
         if (p === 'frequency') initial.frequency = globalConnection.frequency;
+        if (p === 'interface') initial.interface = globalConnection.interface;
+        if (p === 'usb_adb_serial') initial.usbAdbSerial = globalConnection.usbAdbSerial;
+        if (p === 'usb_mount_point') initial.usbMountPoint = globalConnection.usbMountPoint;
       });
       setLocalParams(initial);
       setConsoleOutput([]);
       setTestResult('idle');
       setIsRunning(false);
+      setIsSubmittingVerdict(false);
+      setPendingManualResult(null);
+      setOperatorNote('');
+      setEvidenceFile('');
 
       // Check if backend is alive
       const currentUrl = getBackendUrl();
@@ -72,11 +83,7 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
     }
 
     // Check missing params
-    const missing = poc.requiredParams.filter(p => {
-      const key = p === 'bluetooth_mac' ? 'bluetoothMac' : p === 'can_interface' ? 'canInterface' : p;
-      // @ts-ignore
-      return !localParams[key];
-    });
+    const missing = poc.requiredParams.filter(p => !localParams[paramFieldKey(p) as keyof ConnectionParams]);
 
     if (missing.length > 0) {
       setConsoleOutput(prev => [...prev, `[-] Error: Missing required arguments: ${missing.join(', ')}`]);
@@ -85,6 +92,7 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
 
     setIsRunning(true);
     setTestResult('idle');
+    setPendingManualResult(null);
     setConsoleOutput(p => [...p, `[*] Initiating local vehicle runtime execution for ${poc.name}...`]);
 
     try {
@@ -93,7 +101,15 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
       // Process Result
       if (result.success) {
         result.logs.forEach(l => setConsoleOutput(p => [...p, l]));
-        if (result.vulnerable) {
+        if (result.requires_human_review || result.verification_status === 'pending_manual_review') {
+          setTestResult('manual');
+          setPendingManualResult(result);
+          setConsoleOutput(p => [
+            ...p,
+            `[?] STATUS: Waiting for operator verdict.`,
+            `[?] ${result.manual_review?.prompt || 'Observe the target and record the physical/business effect.'}`
+          ]);
+        } else if (result.vulnerable) {
           setTestResult('fail');
           setConsoleOutput(p => [...p, `[!] STATUS: Vulnerability Confirmed.`]);
         } else {
@@ -113,10 +129,58 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
     setIsRunning(false);
   };
 
+  const handleManualVerdict = async (
+    verdict: 'confirmed_vulnerable' | 'confirmed_not_vulnerable' | 'inconclusive' | 'needs_retest'
+  ) => {
+    if (!pendingManualResult) return;
+    setIsSubmittingVerdict(true);
+    const review = await submitPocManualVerdict({
+      trace_id: pendingManualResult.trace_id,
+      session_id: 'manual',
+      poc_id: pendingManualResult.poc_id || poc.pocFile || poc.id,
+      poc_name: poc.name,
+      target_ip: (localParams as any).ip || (localParams as any).target_ip,
+      target_mac: (localParams as any).targetMac,
+      bluetooth_mac: (localParams as any).bluetoothMac,
+      verdict,
+      operator_note: operatorNote,
+      evidence_file: evidenceFile,
+    }, token);
+
+    if (!review.success) {
+      review.errors.forEach(e => setConsoleOutput(p => [...p, `[E] ${e}`]));
+      setIsSubmittingVerdict(false);
+      return;
+    }
+
+    setPendingManualResult(null);
+    if (review.vulnerable === true) {
+      setTestResult('fail');
+      setConsoleOutput(p => [...p, `[!] MANUAL VERDICT: Vulnerability confirmed by operator.`]);
+    } else if (review.vulnerable === false) {
+      setTestResult('success');
+      setConsoleOutput(p => [...p, `[*] MANUAL VERDICT: No observable exploit effect.`]);
+    } else {
+      setTestResult('error');
+      setConsoleOutput(p => [...p, `[?] MANUAL VERDICT: ${review.verification_status || verdict}.`]);
+    }
+    setIsSubmittingVerdict(false);
+  };
+
+  const paramFieldKey = (param: ParamType): keyof ConnectionParams | ParamType => {
+    if (param === 'bluetooth_mac') return 'bluetoothMac';
+    if (param === 'can_interface') return 'canInterface';
+    if (param === 'usb_adb_serial') return 'usbAdbSerial';
+    if (param === 'usb_mount_point') return 'usbMountPoint';
+    return param;
+  };
+
   const getLabel = (p: ParamType) => {
     switch (p) {
       case 'bluetooth_mac': return 'Bluetooth MAC';
       case 'can_interface': return 'CAN Interface';
+      case 'usb_adb_serial': return 'USB ADB Serial';
+      case 'usb_mount_point': return 'USB Mount Point';
       default: return p.toUpperCase();
     }
   };
@@ -162,9 +226,9 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
                   type="text"
                   className="w-full bg-cyber-900 border border-cyber-700 text-white p-2 text-xs rounded focus:border-cyber-accent outline-none"
                   // @ts-ignore
-                  value={localParams[param === 'bluetooth_mac' ? 'bluetoothMac' : param === 'can_interface' ? 'canInterface' : param] || ''}
+                  value={String(localParams[paramFieldKey(param) as keyof ConnectionParams] ?? '')}
                   onChange={(e) => {
-                    const key = param === 'bluetooth_mac' ? 'bluetoothMac' : param === 'can_interface' ? 'canInterface' : param;
+                    const key = paramFieldKey(param);
                     setLocalParams(p => ({ ...p, [key]: e.target.value }));
                   }}
                 />
@@ -197,9 +261,48 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
               {isRunning && <div className="animate-pulse text-cyber-accent">_ Executing local payload...</div>}
             </div>
             {testResult !== 'idle' && (
-              <div className={`mt-2 p-2 border rounded flex items-center gap-2 ${testResult === 'fail' ? 'border-red-500 bg-red-900/20 text-red-500' : testResult === 'success' ? 'border-green-500 bg-green-900/20 text-green-500' : 'border-gray-500 text-gray-500'}`}>
-                {testResult === 'fail' ? <AlertTriangle size={16} /> : testResult === 'success' ? <ShieldCheck size={16} /> : <ServerCrash size={16} />}
-                <span className="font-bold uppercase">{testResult === 'fail' ? 'Vulnerability Confirmed' : testResult === 'success' ? 'Target Secure' : 'Execution Error'}</span>
+              <div className={`mt-2 p-2 border rounded flex items-center gap-2 ${testResult === 'fail' ? 'border-red-500 bg-red-900/20 text-red-500' : testResult === 'success' ? 'border-green-500 bg-green-900/20 text-green-500' : testResult === 'manual' ? 'border-amber-500 bg-amber-900/20 text-amber-300' : 'border-gray-500 text-gray-500'}`}>
+                {testResult === 'fail' ? <AlertTriangle size={16} /> : testResult === 'success' ? <ShieldCheck size={16} /> : testResult === 'manual' ? <AlertTriangle size={16} /> : <ServerCrash size={16} />}
+                <span className="font-bold uppercase">{testResult === 'fail' ? 'Vulnerability Confirmed' : testResult === 'success' ? 'Target Secure' : testResult === 'manual' ? 'Manual Verdict Required' : 'Execution Error'}</span>
+              </div>
+            )}
+            {pendingManualResult && (
+              <div className="mt-3 rounded border border-amber-500/50 bg-cyber-900 p-3 text-xs text-gray-200 space-y-3">
+                <div className="font-bold text-amber-300">人工判定型 PoC</div>
+                <div>{pendingManualResult.manual_review?.prompt || '该 PoC 已完成执行，但需要人工确认目标侧效果。'}</div>
+                {pendingManualResult.manual_review?.required_observations?.length ? (
+                  <ul className="list-disc pl-5 space-y-1 text-gray-300">
+                    {pendingManualResult.manual_review.required_observations.map((item, idx) => (
+                      <li key={idx}>{item}</li>
+                    ))}
+                  </ul>
+                ) : null}
+                <textarea
+                  value={operatorNote}
+                  onChange={(e) => setOperatorNote(e.target.value)}
+                  placeholder="观察说明，例如：车门解锁、双闪闪烁、无可见响应、台架 ECU 返回异常帧..."
+                  className="w-full min-h-16 rounded border border-cyber-700 bg-black p-2 text-gray-100 outline-none focus:border-amber-400"
+                />
+                <input
+                  value={evidenceFile}
+                  onChange={(e) => setEvidenceFile(e.target.value)}
+                  placeholder="证据文件路径，可选，例如 lab/evidence/case_001_video.mp4"
+                  className="w-full rounded border border-cyber-700 bg-black p-2 text-gray-100 outline-none focus:border-amber-400"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <button disabled={isSubmittingVerdict} onClick={() => handleManualVerdict('confirmed_vulnerable')} className="rounded bg-red-600 px-3 py-2 font-bold text-white disabled:opacity-50">
+                    确认成功
+                  </button>
+                  <button disabled={isSubmittingVerdict} onClick={() => handleManualVerdict('confirmed_not_vulnerable')} className="rounded bg-emerald-600 px-3 py-2 font-bold text-white disabled:opacity-50">
+                    确认失败
+                  </button>
+                  <button disabled={isSubmittingVerdict} onClick={() => handleManualVerdict('inconclusive')} className="rounded border border-gray-600 px-3 py-2 font-bold text-gray-200 disabled:opacity-50">
+                    无法确认
+                  </button>
+                  <button disabled={isSubmittingVerdict} onClick={() => handleManualVerdict('needs_retest')} className="rounded border border-cyber-500 px-3 py-2 font-bold text-cyber-accent disabled:opacity-50">
+                    需复测
+                  </button>
+                </div>
               </div>
             )}
           </div>

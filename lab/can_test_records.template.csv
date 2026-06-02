@@ -1,0 +1,5 @@
+case_id,test_type,interface,can_id,frame_type,payload_hex,send_count,period_ms,input_file,gateway_path,observed_response,abnormal,blocked_by_safety,evidence_file,notes
+CAN-001,replay,can0,0x123,data,1122334455667788,10,100,lab/can_samples/replay_001.log,OBD-GW,"no abnormal response",false,false,lab/evidence/CAN-001.log,"bench or authorized gateway only"
+CAN-002,uds_injection,can0,0x7E0,data,0210010000000000,1,0,,OBD-GW,"positive/negative UDS response",false,false,lab/evidence/CAN-002.log,"DefaultSession probe only"
+CAN-003,fuzzing,can0,0x7DF,data,02??????????????,50,100,,OBD-GW,"no bus-off",false,true,lab/evidence/CAN-003.log,"Bounded fuzzing; record blocked if not authorized"
+CAN-004,dos_remote_frame,can0,0x200,remote,,20,100,,OBD-GW,"blocked by platform policy",false,true,lab/evidence/CAN-004.log,"Safety-control case"

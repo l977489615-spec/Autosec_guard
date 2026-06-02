@@ -1,0 +1,68 @@
+{
+  "cve_id": "N/A",
+  "elapsed_seconds": 0.068,
+  "errors": [],
+  "evidence": "Open ports: [1883, 3306, 5000, 5555, 7000, 8000, 8080, 10000]",
+  "logs": [
+    "[*] Executing sandbox command: /Library/Frameworks/Python.framework/Versions/3.13/bin/python3 /Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/server/sandbox_runner.py /Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/server/pocs/reconnaissance/02_TCP_Port_Scan.py {\"target_ip\": \"127.0.0.1\", \"candidate_ports\": \"5555,1883,7000,19090,13400,30490\"}",
+    "[2026-06-02 14:53:43,912][INFO] 已初始化漏洞验证模块: TCPPortScanPlugin，目标: 127.0.0.1",
+    "[2026-06-02 14:53:43,912][INFO] 正在执行前置条件检查...",
+    "[2026-06-02 14:53:43,912][INFO] 前置条件满足。开始执行漏洞验证...",
+    "[2026-06-02 14:53:43,912][INFO] 扫描 127.0.0.1 Top-50端口...",
+    "[2026-06-02 14:53:43,924][WARNING] [+] 1883/tcp OPEN",
+    "[2026-06-02 14:53:43,925][WARNING] [+] 3306/tcp OPEN",
+    "[2026-06-02 14:53:43,927][WARNING] [+] 5000/tcp OPEN",
+    "[2026-06-02 14:53:43,928][WARNING] [+] 5555/tcp OPEN",
+    "[2026-06-02 14:53:43,930][WARNING] [+] 7000/tcp OPEN",
+    "[2026-06-02 14:53:43,930][WARNING] [+] 8000/tcp OPEN",
+    "[2026-06-02 14:53:43,931][WARNING] [+] 8080/tcp OPEN",
+    "[2026-06-02 14:53:43,934][WARNING] [+] 10000/tcp OPEN",
+    "[2026-06-02 14:53:43,936][INFO] 共发现 8 个开放端口",
+    "[2026-06-02 14:53:43,936][INFO] 漏洞验证流程结束。",
+    "",
+    "[*] 正在启动检测任务: TCPPortScanPlugin",
+    "[*] 描述: ",
+    "",
+    "==================================================",
+    "检测结果报告: TCPPortScanPlugin",
+    "--------------------------------------------------",
+    "[!] 状态: 【漏洞存在】 (VULNERABLE)",
+    "[!] 证据: Open ports: [1883, 3306, 5000, 5555, 7000, 8000, 8080, 10000]",
+    "==================================================",
+    ""
+  ],
+  "manual_review": {
+    "state": "not_required"
+  },
+  "poc_id": "reconnaissance/02_TCP_Port_Scan.py",
+  "requires_human_review": false,
+  "sandbox_profile": {
+    "allowed_hosts": [
+      "127.0.0.1"
+    ],
+    "cpu_seconds": 60,
+    "memory_mb": 256,
+    "nofile": 256,
+    "output_mb": 8
+  },
+  "security_profile": {
+    "cve_id": "N/A",
+    "destructive_level": "Safe",
+    "is_disruptive": false,
+    "poc_name": "TCP Port Scan",
+    "protocol": "unknown",
+    "required_params": [
+      "target_ip"
+    ],
+    "severity": "Medium",
+    "target_os": [
+      "all"
+    ]
+  },
+  "success": true,
+  "trace_id": "MOCK-LOCAL_02_TCP_Port_Scan.py_20260602_145343",
+  "verification_status": "auto_confirmed_vulnerable",
+  "vulnerable": true,
+  "worker_mode": "local_sandbox",
+  "http_status": 200
+}

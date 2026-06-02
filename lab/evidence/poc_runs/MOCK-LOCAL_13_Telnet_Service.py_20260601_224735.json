@@ -1,0 +1,59 @@
+{
+  "cve_id": "N/A",
+  "elapsed_seconds": 0.036,
+  "errors": [],
+  "evidence": "",
+  "logs": [
+    "[*] Executing sandbox command: /Library/Frameworks/Python.framework/Versions/3.13/bin/python3 /Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/server/sandbox_runner.py /Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/server/pocs/network/13_Telnet_Service.py {\"target_ip\": \"127.0.0.1\", \"candidate_ports\": \"5555,1883,7000,19090,13400,30490\"}",
+    "[2026-06-01 22:47:35,533][INFO] 已初始化漏洞验证模块: TelnetServicePlugin，目标: 127.0.0.1",
+    "[2026-06-01 22:47:35,533][INFO] 正在执行前置条件检查...",
+    "[2026-06-01 22:47:35,533][INFO] 前置条件满足。开始执行漏洞验证...",
+    "[2026-06-01 22:47:35,533][INFO] 检测Telnet服务 127.0.0.1:23...",
+    "[2026-06-01 22:47:35,534][INFO] Telnet端口23关闭",
+    "[2026-06-01 22:47:35,534][INFO] 漏洞验证流程结束。",
+    "",
+    "[*] 正在启动检测任务: TelnetServicePlugin",
+    "[*] 描述: ",
+    "",
+    "==================================================",
+    "检测结果报告: TelnetServicePlugin",
+    "--------------------------------------------------",
+    "[-] 状态: 【未检测到漏洞】 (NOT VULNERABLE)",
+    "==================================================",
+    ""
+  ],
+  "manual_review": {
+    "state": "not_required"
+  },
+  "poc_id": "network/13_Telnet_Service.py",
+  "requires_human_review": false,
+  "sandbox_profile": {
+    "allowed_hosts": [
+      "127.0.0.1"
+    ],
+    "cpu_seconds": 60,
+    "memory_mb": 256,
+    "nofile": 256,
+    "output_mb": 8
+  },
+  "security_profile": {
+    "cve_id": "N/A",
+    "destructive_level": "Safe",
+    "is_disruptive": false,
+    "poc_name": "Telnet Service",
+    "protocol": "tcp",
+    "required_params": [
+      "target_ip"
+    ],
+    "severity": "Medium",
+    "target_os": [
+      "all"
+    ]
+  },
+  "success": true,
+  "trace_id": "MOCK-LOCAL_13_Telnet_Service.py_20260601_224735",
+  "verification_status": "auto_confirmed_not_vulnerable",
+  "vulnerable": false,
+  "worker_mode": "local_sandbox",
+  "http_status": 200
+}

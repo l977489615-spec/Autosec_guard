@@ -25,6 +25,7 @@ def extract_poc_security_profile(poc_path: str, source_text: str | None = None) 
         return profile
 
     metadata_keys = {
+        "meta_display_id",
         "meta_poc_name",
         "meta_cve_id",
         "meta_severity",

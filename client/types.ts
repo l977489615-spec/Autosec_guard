@@ -15,7 +15,7 @@ export enum Category {
   ADVANCED = 'Advanced/OTA'
 }
 
-export type ParamType = 'ip' | 'port' | 'can_interface' | 'bluetooth_mac' | 'url' | 'frequency' | 'baud_rate' | 'target_mac' | 'interface' | 'usb_mount_point' | 'attacker_ip';
+export type ParamType = 'ip' | 'port' | 'can_interface' | 'bluetooth_mac' | 'url' | 'frequency' | 'baud_rate' | 'target_mac' | 'interface' | 'usb_mount_point' | 'usb_adb_serial' | 'attacker_ip';
 
 export interface POC {
   id: string;
@@ -51,13 +51,24 @@ export interface ScanLog {
 
 export interface ScanResult {
   pocId: string;
-  vulnerable: boolean;
+  vulnerable: boolean | null;
   details: string;
   detectedAt: string;
   elapsedSeconds?: number;
   name?: string;
   severity?: string;
   description?: string;
+  requiresHumanReview?: boolean;
+  verificationStatus?: string;
+  manualReview?: {
+    state: string;
+    verdict?: string;
+    operator_note?: string;
+    evidence_file?: string;
+    reviewed_at?: string;
+    prompt?: string;
+    required_observations?: string[];
+  };
 }
 
 export interface AttackGraphNode {
@@ -215,6 +226,10 @@ export interface ConnectionParams {
   url: string;
   frequency: string;
   interface: string;
+  /** USB ADB device serial from `adb devices` (maps to expected_usb_serial on backend). */
+  usbAdbSerial: string;
+  /** Local USB mass-storage mount path for IVI update / plugin PoCs. */
+  usbMountPoint: string;
 }
 
 export interface ScanSession {

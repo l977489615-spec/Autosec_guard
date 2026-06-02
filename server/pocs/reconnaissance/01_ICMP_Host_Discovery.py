@@ -15,9 +15,10 @@ import platform
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class ICMPHostDiscoveryPlugin(IVIVulnerabilityPlugin):
+    meta_display_id = "POC-RECON-001"
     meta_poc_name = "ICMP Host Discovery"
     meta_cve_id = "N/A"
-    meta_severity = "Medium"
+    meta_severity = "Low"
     meta_protocol = "unknown"
     meta_target_os = ["all"]
     meta_required_params = ["target_ip"]

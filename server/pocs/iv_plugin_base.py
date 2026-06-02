@@ -29,6 +29,10 @@ class IVIVulnerabilityPlugin(metaclass=abc.ABCMeta):
     meta_protocol: str = "Unknown"  # e.g., "tcp", "udp", "can", "someip"
     meta_target_os: list = []       # e.g., ["qnx", "android", "linux", "all"]
     meta_required_params: list = [] # e.g., ["target_ip", "port", "can_interface"]
+    # 实验自动编排 profile。为空时 lab/run_experiment.py 会按目录和参数自动推断。
+    # 常用值: recon, network, unknown_service, can_gateway, can_extended,
+    # bluetooth_recon, bluetooth, wifi, rf, usb_adb, application, advanced_network。
+    meta_profiles: list = []
     
     # 破坏性标志：若为 True，则 Agent 不会自动执行该 PoC，除非人工审核或在虚拟沙箱中
     is_disruptive: bool = False

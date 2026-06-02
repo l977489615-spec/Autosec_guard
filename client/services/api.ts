@@ -102,7 +102,23 @@ export interface ExecutionResult {
   success: boolean;
   logs: string[];
   errors: string[];
-  vulnerable: boolean;
+  vulnerable: boolean | null;
+  evidence?: string;
+  cve_id?: string;
+  poc_id?: string;
+  trace_id?: string;
+  requires_human_review?: boolean;
+  verification_status?: string;
+  manual_review?: {
+    state: string;
+    verdict?: string;
+    prompt?: string;
+    required_observations?: string[];
+    verdict_options?: string[];
+    operator_note?: string;
+    evidence_file?: string;
+    reviewed_at?: string;
+  };
   return_code?: number;
   elapsed_seconds?: number;
 }
@@ -232,6 +248,60 @@ export const runPocPlugin = async (
       logs: [],
       errors: [isNetworkError ? `Network Error: Could not connect to execution engine at ${requestBackendUrl}` : message],
       vulnerable: false
+    };
+  }
+};
+
+export const submitPocManualVerdict = async (
+  payload: {
+    trace_id?: string;
+    session_id?: string;
+    poc_id?: string;
+    poc_name?: string;
+    target_ip?: string;
+    target_mac?: string;
+    bluetooth_mac?: string;
+    verdict: 'confirmed_vulnerable' | 'confirmed_not_vulnerable' | 'inconclusive' | 'needs_retest';
+    operator_note?: string;
+    evidence_file?: string;
+  },
+  token?: string | null,
+  backendOverride?: string | null
+): Promise<ExecutionResult> => {
+  const requestBackendUrl = getRequestBackendUrl(backendOverride);
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${requestBackendUrl}/api/poc_manual_verdict`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      mode: 'cors'
+    });
+
+    if (!res.ok) {
+      let message = `Server returned ${res.status}`;
+      try {
+        const data = await res.json();
+        message = data.message || data.error || message;
+      } catch {
+        // Keep HTTP status message.
+      }
+      throw new Error(message);
+    }
+
+    return await res.json();
+  } catch (error: any) {
+    return {
+      success: false,
+      logs: [],
+      errors: [error?.message || 'Failed to submit manual verdict.'],
+      vulnerable: null
     };
   }
 };

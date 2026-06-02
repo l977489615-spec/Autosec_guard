@@ -15,6 +15,7 @@ import time
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class TCPPortScanPlugin(IVIVulnerabilityPlugin):
+    meta_display_id = "POC-RECON-002"
     meta_poc_name = "TCP Port Scan"
     meta_cve_id = "N/A"
     meta_severity = "Medium"

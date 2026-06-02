@@ -1,0 +1,191 @@
+{
+  "api_base": "http://127.0.0.1:5002",
+  "output_note": "Condition-driven experiment config. Fill target conditions only; run_experiment.py will auto-expand corresponding PoCs by metadata profiles into lab/evidence/resolved_scan_targets.json.",
+  "ai_config": {
+    "api_key": "sk-6789efc62f93430780e12fbb07e36229",
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "fast_model": "qwen-plus",
+    "strong_model": "qwen-max",
+    "report_model": "qwen-plus"
+  },
+  "edge_capability_targets": [
+    {
+      "target_id": "LAB-WORKSTATION",
+      "target_ip": "127.0.0.1",
+      "can_interface": "REPLACE_CAN_INTERFACE",
+      "bluetooth_mac": "",
+      "wifi_interface": "",
+      "usb": "manual_check",
+      "sdr": "manual_check"
+    }
+  ],
+  "scan_targets": [
+    {
+      "target_id": "MOCK-LOCAL",
+      "target_name": "Local mock service cluster",
+      "target_ip": "127.0.0.1",
+      "expected_usb_serial": "",
+      "candidate_ports": "5555,1883,7000,19090,13400,30490",
+      "auto_select": true,
+      "selector": {
+        "include_unknown_probe": true
+      }
+    },
+    {
+      "target_id": "VM-01",
+      "target_name": "Virtual machine positive-sample host",
+      "target_ip": "REPLACE_VM_IP",
+      "expected_usb_serial": "",
+      "candidate_ports": "5555,1883,7000,19090,13400,30490",
+      "auto_select": true,
+      "selector": {
+        "include_unknown_probe": true
+      }
+    },
+    {
+      "target_id": "IVI-01",
+      "target_name": "IVI workstation 01",
+      "target_ip": "REPLACE_IVI_01_IP",
+      "expected_usb_serial": "",
+      "candidate_ports": "5555,8080,1883,7000,13400,30490",
+      "auto_select": true,
+      "selector": {
+        "include_unknown_probe": true
+      }
+    },
+    {
+      "target_id": "IVI-02",
+      "target_name": "IVI workstation 02",
+      "target_ip": "REPLACE_IVI_02_IP",
+      "expected_usb_serial": "",
+      "candidate_ports": "5555,8080,1883,7000,13400,30490",
+      "auto_select": true,
+      "selector": {
+        "include_unknown_probe": true
+      }
+    },
+    {
+      "target_id": "IVI-03",
+      "target_name": "IVI workstation 03",
+      "target_ip": "REPLACE_IVI_03_IP",
+      "expected_usb_serial": "",
+      "candidate_ports": "5555,8080,1883,7000,13400,30490,8000",
+      "auto_select": true,
+      "selector": {
+        "include_unknown_probe": true
+      }
+    },
+    {
+      "target_id": "REAL-CAR-01",
+      "target_name": "Real vehicle IVI + CAN gateway",
+      "target_ip": "REPLACE_REAL_CAR_IVI_IP",
+      "can_interface": "REPLACE_CAN_INTERFACE",
+      "expected_usb_serial": "",
+      "candidate_ports": "5555,8080,1883,7000,13400,30490,8000",
+      "auto_select": true,
+      "selector": {
+        "include_unknown_probe": true
+      }
+    }
+  ],
+  "agent_tasks": [
+    {
+      "task_id": "AGENT-MOCK-LOCAL",
+      "target_name": "Local mock service cluster",
+      "target_ip": "127.0.0.1",
+      "method": "ours_full",
+      "can_interface": "",
+      "bluetooth_mac": "",
+      "wifi_interface": ""
+    },
+    {
+      "task_id": "AGENT-VM-01",
+      "target_name": "Virtual machine positive-sample host",
+      "target_ip": "REPLACE_VM_IP",
+      "method": "ours_full",
+      "can_interface": "",
+      "bluetooth_mac": "",
+      "wifi_interface": ""
+    },
+    {
+      "task_id": "AGENT-IVI-01",
+      "target_name": "IVI workstation 01",
+      "target_ip": "REPLACE_IVI_01_IP",
+      "method": "ours_full",
+      "can_interface": "",
+      "bluetooth_mac": "",
+      "wifi_interface": ""
+    },
+    {
+      "task_id": "AGENT-REAL-CAR-01",
+      "target_name": "Real vehicle IVI + CAN gateway",
+      "target_ip": "REPLACE_REAL_CAR_IVI_IP",
+      "method": "ours_full",
+      "can_interface": "REPLACE_CAN_INTERFACE",
+      "bluetooth_mac": "",
+      "wifi_interface": ""
+    }
+  ],
+  "manual_comparison": [
+    {
+      "case_id": "CMP-001",
+      "target_id": "MOCK-LOCAL",
+      "task": "Mock positive-sample validation",
+      "manual_elapsed_seconds": 180,
+      "platform_elapsed_seconds": "",
+      "manual_steps": 6,
+      "platform_poc_count": "",
+      "same_conclusion": ""
+    },
+    {
+      "case_id": "CMP-002",
+      "target_id": "VM-01",
+      "task": "VM positive-sample validation",
+      "manual_elapsed_seconds": 240,
+      "platform_elapsed_seconds": "",
+      "manual_steps": 8,
+      "platform_poc_count": "",
+      "same_conclusion": ""
+    },
+    {
+      "case_id": "CMP-003",
+      "target_id": "REAL-CAR-01",
+      "task": "Real vehicle conservative validation + CAN gateway verification",
+      "manual_elapsed_seconds": 900,
+      "platform_elapsed_seconds": "",
+      "manual_steps": 12,
+      "platform_poc_count": "",
+      "same_conclusion": ""
+    }
+  ],
+  "typical_cases": [
+    {
+      "case_id": "CASE-001",
+      "case_name": "mock 正样本网络暴露验证",
+      "target_id": "MOCK-LOCAL",
+      "attack_surface": "网络服务",
+      "expected_evidence": "ADB/RTSP/MQTT/mock unknown service 响应证据"
+    },
+    {
+      "case_id": "CASE-002",
+      "case_name": "虚拟机正样本网络暴露验证",
+      "target_id": "VM-01",
+      "attack_surface": "网络服务",
+      "expected_evidence": "服务响应与成功探测证据"
+    },
+    {
+      "case_id": "CASE-003",
+      "case_name": "真实车机低暴露与误报控制验证",
+      "target_id": "IVI-02",
+      "attack_surface": "网络服务/未知端口",
+      "expected_evidence": "无高置信误报、攻击面 Gate 或动态探测证据"
+    },
+    {
+      "case_id": "CASE-004",
+      "case_name": "实车 CAN 网关接入验证",
+      "target_id": "REAL-CAR-01",
+      "attack_surface": "CAN 总线",
+      "expected_evidence": "CAN ID、帧类型、发送次数、UDS/网关响应"
+    }
+  ]
+}

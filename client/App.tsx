@@ -83,7 +83,9 @@ const App: React.FC = () => {
       canInterface: 'PCAN_USBBUS1',
       url: 'https://',
       frequency: '',
-      interface: ''
+      interface: '',
+      usbAdbSerial: '',
+      usbMountPoint: '',
     },
     isConnected: false,
     startTime: '',

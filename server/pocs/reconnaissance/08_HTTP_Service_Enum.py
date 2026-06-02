@@ -14,6 +14,7 @@ import sys
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class HTTPServiceEnumPlugin(IVIVulnerabilityPlugin):
+    meta_display_id = "POC-RECON-008"
     meta_poc_name = "HTTP Service Enum"
     meta_cve_id = "N/A"
     meta_severity = "Medium"

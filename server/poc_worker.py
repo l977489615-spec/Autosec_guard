@@ -28,6 +28,37 @@ POC_WORDLISTS_DIR = POCS_DIR / "wordlists"
 SANDBOX_RUNNER = SERVER_DIR / "sandbox_runner.py"
 
 
+MANUAL_REVIEW_FILENAME_KEYWORDS = {
+    "replay",
+    "injection",
+    "inject",
+    "spoof",
+    "control",
+    "ctrl",
+    "deauth",
+    "dos",
+    "flood",
+    "reset",
+    "overflow",
+    "keyfob",
+    "evil_twin",
+}
+
+MANUAL_REVIEW_PROTOCOLS = {"can", "uds", "obd", "rf", "sdr", "v2x", "tpms"}
+
+MANUAL_REVIEW_EVIDENCE_KEYWORDS = {
+    "requires manual",
+    "manual confirmation",
+    "operator confirmation",
+    "operator confirmed",
+    "no operator confirmation",
+    "vehicle unlock",
+    "physical",
+    "replay transmitted",
+    "sent malicious",
+}
+
+
 def _is_packaged_runtime() -> bool:
     return bool(
         getattr(sys, "frozen", False)
@@ -79,6 +110,7 @@ def _extract_security_profile_from_source(source_text: str, poc_name: str) -> di
         "protocol": "",
         "target_os": [],
         "required_params": [],
+        "profiles": [],
         "destructive_level": "Safe",
         "is_disruptive": False,
     }
@@ -86,12 +118,14 @@ def _extract_security_profile_from_source(source_text: str, poc_name: str) -> di
     try:
         tree = ast.parse(source_text, filename=poc_name)
         metadata_keys = {
+            "meta_display_id",
             "meta_poc_name",
             "meta_cve_id",
             "meta_severity",
             "meta_protocol",
             "meta_target_os",
             "meta_required_params",
+            "meta_profiles",
             "meta_destructive_level",
             "is_disruptive",
         }
@@ -116,6 +150,7 @@ def _extract_security_profile_from_source(source_text: str, poc_name: str) -> di
                 profile["protocol"] = class_meta.get("meta_protocol") or profile["protocol"]
                 profile["target_os"] = class_meta.get("meta_target_os") or profile["target_os"]
                 profile["required_params"] = class_meta.get("meta_required_params") or profile["required_params"]
+                profile["profiles"] = class_meta.get("meta_profiles") or profile["profiles"]
                 profile["destructive_level"] = class_meta.get("meta_destructive_level") or profile["destructive_level"]
                 profile["is_disruptive"] = bool(class_meta.get("is_disruptive", profile["is_disruptive"]))
                 break
@@ -135,6 +170,124 @@ def _requires_disruptive_approval(profile: dict, params: dict) -> bool:
     return should_require_disruptive_approval(profile, params)
 
 
+def poc_requires_human_review(poc_filename: str, profile: dict, plugin_results: Optional[dict] = None) -> bool:
+    plugin_results = plugin_results or {}
+    explicit = plugin_results.get("requires_human_review")
+    if explicit is None:
+        explicit = plugin_results.get("requires_manual_review")
+    if explicit is None:
+        explicit = plugin_results.get("manual_confirmation_required")
+    if explicit in {True, "true", "True", "1", 1}:
+        return True
+    if explicit in {False, "false", "False", "0", 0}:
+        return False
+
+    protocol = str(profile.get("protocol") or "").strip().lower()
+    if protocol in MANUAL_REVIEW_PROTOCOLS:
+        return True
+
+    name_text = " ".join([
+        str(poc_filename or ""),
+        str(profile.get("poc_name") or ""),
+        str(profile.get("cve_id") or ""),
+    ]).lower().replace("-", "_")
+    if any(keyword in name_text for keyword in MANUAL_REVIEW_FILENAME_KEYWORDS):
+        return True
+
+    evidence_text = " ".join([
+        str(plugin_results.get("evidence") or ""),
+        str(plugin_results.get("details") or ""),
+        str(plugin_results.get("description") or ""),
+    ]).lower()
+    return any(keyword in evidence_text for keyword in MANUAL_REVIEW_EVIDENCE_KEYWORDS)
+
+
+def build_manual_review_prompt(poc_filename: str, profile: dict) -> dict:
+    protocol = str(profile.get("protocol") or "").strip().lower()
+    observations = [
+        "观察目标是否出现业务状态变化、异常提示、重启、断连或可见物理动作。",
+        "记录观察时间、现场条件、目标标识和证据文件路径。",
+    ]
+    if protocol in {"can", "uds", "obd"} or "can" in str(poc_filename).lower():
+        observations = [
+            "记录 CAN ID、帧类型、发送次数、网关/ECU 响应和车辆/台架可见变化。",
+            "确认是否出现门锁、灯光、仪表、诊断会话或 ECU 状态变化。",
+        ]
+    elif protocol in {"rf", "sdr", "tpms"} or "keyfob" in str(poc_filename).lower():
+        observations = [
+            "确认是否出现车门解锁/闭锁、双闪、蜂鸣器、胎压状态或其他 RF 相关物理响应。",
+            "记录频率、采样率、重放次数、车辆距离和现场安全状态。",
+        ]
+    elif protocol in {"bluetooth", "ble"} or "bt_" in str(poc_filename).lower():
+        observations = [
+            "确认蓝牙连接、配对状态、媒体/电话/HID 行为或目标服务是否发生变化。",
+            "记录目标 MAC、通道/PSM、连接状态和用户可见现象。",
+        ]
+
+    return {
+        "prompt": "该 PoC 的执行完成不等于漏洞利用成功，需要人工观察目标侧效果后给出最终判定。",
+        "required_observations": observations,
+        "verdict_options": [
+            "confirmed_vulnerable",
+            "confirmed_not_vulnerable",
+            "inconclusive",
+            "needs_retest",
+        ],
+    }
+
+
+def apply_manual_review_state(
+    result: dict,
+    *,
+    poc_filename: str,
+    security_profile: dict,
+    plugin_results: Optional[dict] = None,
+) -> dict:
+    plugin_results = plugin_results or {}
+    requires_review = poc_requires_human_review(poc_filename, security_profile, plugin_results)
+    if not requires_review:
+        result["requires_human_review"] = False
+        result["manual_review"] = {"state": "not_required"}
+        if result.get("success"):
+            result["verification_status"] = (
+                "auto_confirmed_vulnerable" if bool(result.get("vulnerable")) else "auto_confirmed_not_vulnerable"
+            )
+        else:
+            result["verification_status"] = "execution_error"
+        return result
+
+    existing_verdict = (
+        plugin_results.get("manual_verdict")
+        or plugin_results.get("operator_verdict")
+        or result.get("manual_verdict")
+    )
+    result["requires_human_review"] = True
+    result["manual_review"] = {
+        "state": "pending",
+        "verdict": existing_verdict or "",
+        **build_manual_review_prompt(poc_filename, security_profile),
+    }
+
+    if existing_verdict == "confirmed_vulnerable":
+        result["vulnerable"] = True
+        result["verification_status"] = "manual_confirmed_vulnerable"
+        result["manual_review"]["state"] = "completed"
+    elif existing_verdict == "confirmed_not_vulnerable":
+        result["vulnerable"] = False
+        result["verification_status"] = "manual_confirmed_not_vulnerable"
+        result["manual_review"]["state"] = "completed"
+    elif existing_verdict in {"inconclusive", "needs_retest"}:
+        result["vulnerable"] = None
+        result["verification_status"] = f"manual_{existing_verdict}"
+        result["manual_review"]["state"] = "completed"
+    else:
+        result["vulnerable"] = None
+        result["verification_status"] = "pending_manual_review"
+        evidence = str(result.get("evidence") or plugin_results.get("evidence") or "").strip()
+        result["evidence"] = evidence or "PoC executed; waiting for operator observation and verdict."
+    return result
+
+
 def _build_sandbox_env(params: dict, allowed_hosts: Optional[List[str]] = None) -> dict:
     env = os.environ.copy()
     env["SANDBOX_CPU_SECONDS"] = str(params.get("sandbox_cpu_seconds", _parse_int_env("SANDBOX_CPU_SECONDS", 60)))
@@ -146,14 +299,42 @@ def _build_sandbox_env(params: dict, allowed_hosts: Optional[List[str]] = None) 
     return env
 
 
+def _loads_last_json_object(raw_text: str) -> dict:
+    text = (raw_text or "").strip()
+    if not text:
+        return {}
+
+    decoder = json.JSONDecoder()
+    idx = 0
+    last_obj = None
+    while idx < len(text):
+        while idx < len(text) and text[idx].isspace():
+            idx += 1
+        if idx >= len(text):
+            break
+        try:
+            obj, end = decoder.raw_decode(text, idx)
+            if isinstance(obj, dict):
+                last_obj = obj
+            idx = end
+        except json.JSONDecodeError:
+            next_start = text.find("{", idx + 1)
+            if next_start < 0:
+                break
+            idx = next_start
+    if last_obj is None:
+        raise ValueError("No JSON object found after result token")
+    return last_obj
+
+
 def _parse_plugin_result(stdout_text: str) -> tuple[list[str], dict]:
-    parts = stdout_text.split("===RESULT_TOKEN===")
+    parts = stdout_text.rsplit("===RESULT_TOKEN===", 1)
     logs_text = parts[0]
     result_json = parts[1].strip() if len(parts) > 1 else "{}"
     try:
-        plugin_results = json.loads(result_json)
-    except Exception:
-        plugin_results = {"vulnerable": False, "error": "Failed to parse result", "raw": result_json}
+        plugin_results = _loads_last_json_object(result_json)
+    except Exception as exc:
+        plugin_results = {"vulnerable": False, "error": f"Failed to parse result: {exc}", "raw": result_json}
     return logs_text.splitlines(), plugin_results
 
 
@@ -342,7 +523,7 @@ class LocalSandboxPocWorker:
             start_new_session=True,
         )
 
-        result_json = "{}"
+        result_chunks: list[str] = []
         collecting_result = False
         start_time = time.time()
 
@@ -350,18 +531,25 @@ class LocalSandboxPocWorker:
             assert proc.stdout is not None
             for line in proc.stdout:
                 if "===RESULT_TOKEN===" in line:
+                    before, after = line.split("===RESULT_TOKEN===", 1)
+                    if before.strip():
+                        yield {"type": "log", "message": before.strip()}
                     collecting_result = True
+                    if after.strip():
+                        result_chunks.append(after)
                     continue
 
                 if collecting_result:
-                    result_json += line
+                    result_chunks.append(line)
                 else:
                     yield {"type": "log", "message": line.strip()}
 
             proc.wait(timeout=plan.timeout_seconds)
             try:
-                plugin_results = json.loads(result_json) if result_json.strip() != "{}" else {}
+                result_json = "".join(result_chunks)
+                plugin_results = _loads_last_json_object(result_json) if result_json.strip() else {}
             except Exception as exc:
+                result_json = "".join(result_chunks)
                 plugin_results = {"error": f"Failed to parse result: {exc}", "raw": result_json}
 
             elapsed = round(time.time() - start_time, 2)

@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { ScanSession, POC, PhaseRecord, PlannerStep, SupervisorAdjustment, SupervisorEvent, SupervisorMetrics, ExecutionArtifactRecord } from '../types';
 import { Clock, AlertTriangle, CheckCircle, FileText, ChevronRight, X, List, Shield, Download, Trash2, Square, CheckSquare } from 'lucide-react';
 import ScanLogs from './ScanLogs';
-import { POC_DATABASE } from '../data/pocDatabase';
 import PocDetailModal from './PocDetailModal';
 import { getBackendUrl } from '../services/api';
 import AttackGraph from './AttackGraph';
+import { findPocInCatalog } from '../services/pocCatalog';
+import { usePocCatalog } from '../hooks/usePocCatalog';
 
 interface ScanHistoryProps {
     localHistory?: ScanSession[];
@@ -19,6 +20,7 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
 
     const [selectedSession, setSelectedSession] = useState<ScanSession | null>(null);
     const [selectedResultPoc, setSelectedResultPoc] = useState<POC | null>(null);
+    const { pocs: pocCatalog } = usePocCatalog();
     const [dbHistory, setDbHistory] = useState<ScanSession[]>([]);
     const [supervisorSnapshots, setSupervisorSnapshots] = useState<any[]>([]);
     const [sessionArtifacts, setSessionArtifacts] = useState<ExecutionArtifactRecord[]>([]);
@@ -464,15 +466,7 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                             </h3>
                             <div className="space-y-2">
                                 {selectedSession.results.filter(r => r.vulnerable).map((res) => {
-                                    const normalizeFile = (f: string) => f?.split('/').pop()?.replace(/^\d+_/, '').toLowerCase();
-                                    const resName = res.pocId || res.name || "";
-                                    const cleanResName = normalizeFile(resName);
-
-                                    const poc = POC_DATABASE.find(p =>
-                                        p.id === res.pocId ||
-                                        p.pocFile === resName ||
-                                        normalizeFile(p.pocFile) === cleanResName
-                                    );
+                                    const poc = findPocInCatalog(pocCatalog, res);
                                     return (
                                         <div key={res.pocId} onClick={() => poc && setSelectedResultPoc(poc)} className="bg-cyber-900 border-l-2 border-cyber-danger p-2 rounded cursor-pointer hover:bg-black/40">
                                             <div className="flex justify-between"><span className="text-white text-sm font-bold">{poc?.name}</span><span className="text-red-500 text-[10px]">{poc?.severity}</span></div>

@@ -1,34 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { POC_DATABASE } from '../data/pocDatabase';
 import { Category, Severity, POC } from '../types';
 import { Search, ShieldAlert, Cpu, Radio, Activity, Globe, Terminal, Zap, Eye } from 'lucide-react';
 import PocDetailModal from './PocDetailModal';
-import { listPocs } from '../services/api';
+import { usePocCatalog } from '../hooks/usePocCatalog';
 
 const PocDatabase: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCat, setFilterCat] = useState<string>('All');
   const [selectedPoc, setSelectedPoc] = useState<POC | null>(null);
   const [pocContents, setPocContents] = useState<Record<string, string>>({});
+  const { pocs, loading, error } = usePocCatalog();
 
   useEffect(() => {
-    const fetchPocs = async () => {
-      const data = await listPocs();
-      if (data && data.pocs) {
-        const contentsMap: Record<string, string> = {};
-        data.pocs.forEach((p: any) => {
-          const matchingDbPoc = POC_DATABASE.find(db => db.pocFile === p.filename);
-          if (matchingDbPoc && p.content) {
-            contentsMap[matchingDbPoc.id] = p.content;
-          }
-        });
-        setPocContents(contentsMap);
+    const contentsMap: Record<string, string> = {};
+    pocs.forEach((poc) => {
+      if (poc.codeSnippet) {
+        contentsMap[poc.id] = poc.codeSnippet;
       }
-    };
-    fetchPocs();
-  }, []);
+    });
+    setPocContents(contentsMap);
+  }, [pocs]);
 
-  const filtered = POC_DATABASE.filter(poc => {
+  const filtered = pocs.filter(poc => {
     const matchesSearch = poc.name.toLowerCase().includes(searchTerm.toLowerCase()) || poc.id.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCat = filterCat === 'All' || poc.category === filterCat;
     return matchesSearch && matchesCat;
@@ -56,7 +49,7 @@ const PocDatabase: React.FC = () => {
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
         <h2 className="text-2xl font-bold text-white flex items-center gap-2">
           <ShieldAlert className="text-cyber-accent" />
-          POC Plugin Database ({POC_DATABASE.length})
+          POC Plugin Database ({pocs.length})
         </h2>
 
         <div className="flex gap-4 w-full md:w-auto">
@@ -81,6 +74,11 @@ const PocDatabase: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {loading && (
+          <div className="col-span-full text-center py-20 text-gray-500">
+            Loading PoC plugins from backend...
+          </div>
+        )}
         {filtered.map(poc => (
           <div
             key={poc.id}
@@ -112,7 +110,7 @@ const PocDatabase: React.FC = () => {
       </div>
       {filtered.length === 0 && (
         <div className="text-center py-20 text-gray-500">
-          No POC plugins found matching your criteria.
+          {error ? `Backend PoC catalog unavailable: ${error}` : 'No POC plugins found matching your criteria.'}
         </div>
       )}
     </div>

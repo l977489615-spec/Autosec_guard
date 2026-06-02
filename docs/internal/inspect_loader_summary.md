@@ -4,7 +4,7 @@
 - `server/poc_worker.py`
 - `server/sandbox_runner.py`
 - `server/pocs/iv_plugin_base.py`
-- `server/pocs/99_Dynamic_Unknown_Service_Probe.py`
+- `server/pocs/network/15_Dynamic_Unknown_Service_Probe.py`
 
 ## Edge execution path
 1. `server/poc_worker.py` builds a `PocWorkerPlan`.
@@ -73,7 +73,7 @@ The earlier dynamic probe file was a standalone script rather than a plugin modu
 - it defined no concrete subclass of `IVIVulnerabilityPlugin`
 - therefore it exposed no class with `run_verify`
 
-The current `99_Dynamic_Unknown_Service_Probe.py` follows the standard plugin contract by defining `DynamicUnknownServiceProbePlugin(IVIVulnerabilityPlugin)`.
+The current `network/15_Dynamic_Unknown_Service_Probe.py` follows the standard plugin contract by defining `DynamicUnknownServiceProbePlugin(IVIVulnerabilityPlugin)`.
 
 ## Important note on naming vs inheritance
 There is no strict class-name convention in the loader besides excluding the literal base class name `IVIVulnerabilityPlugin`.

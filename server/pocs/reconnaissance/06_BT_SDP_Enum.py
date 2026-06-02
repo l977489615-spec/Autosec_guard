@@ -13,9 +13,10 @@ import sys
 import subprocess
 from iv_plugin_base import IVIVulnerabilityPlugin
 class BTSDPEnumPlugin(IVIVulnerabilityPlugin):
+    meta_display_id = "POC-RECON-006"
     meta_poc_name = "BT SDP Enum"
     meta_cve_id = "N/A"
-    meta_severity = "Medium"
+    meta_severity = "Low"
     meta_protocol = "unknown"
     meta_target_os = ["all"]
     meta_required_params = ["bd_addr"]

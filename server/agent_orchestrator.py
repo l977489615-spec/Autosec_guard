@@ -71,7 +71,7 @@ logging.basicConfig(level=logging.INFO, format='[%(asctime)s][%(levelname)s] %(m
 CONFIG = get_config()
 DYNAMIC_PROBE_TOKEN = "dynamic_unknown_service_probe"
 DYNAMIC_PROBE_LEGACY_TOKENS = {"dynamic_0day"}
-DYNAMIC_PROBE_FILENAME = "99_Dynamic_Unknown_Service_Probe.py"
+DYNAMIC_PROBE_FILENAME = "network/15_Dynamic_Unknown_Service_Probe.py"
 
 
 def _is_dynamic_probe_name(poc_name: Any) -> bool:
@@ -130,11 +130,14 @@ class ExecutionResultItem:
     step: int
     poc_name: str
     status: str
-    vulnerable: bool
+    vulnerable: Optional[bool]
     evidence: str = ""
     error: str = ""
     strategy: str = "default"
     branch: str = "primary"
+    requires_human_review: bool = False
+    verification_status: str = ""
+    manual_review: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -501,16 +504,26 @@ def _direct_tool_call(
                         for log_entry in data["logs"]:
                             on_log(log_entry)
                         if on_log:
-                            status = "发现漏洞!" if data.get("vulnerable") else "未发现漏洞"
+                            if data.get("requires_human_review") or data.get("verification_status") == "pending_manual_review":
+                                status = "等待人工确认"
+                            else:
+                                status = "发现漏洞!" if data.get("vulnerable") else "未发现漏洞"
                             on_log({
-                                "type": "success" if data.get("vulnerable") else "info",
+                                "type": "warning" if data.get("requires_human_review") else ("success" if data.get("vulnerable") else "info"),
                                 "message": f"[Executor] PoC 执行完毕: {status} (文件名: {poc_name})"
                             })
                     return {
                         "blocked": False,
-                        "vulnerable": data.get("vulnerable") or data.get("status") == "vulnerable",
+                        "success": bool(data.get("success", True)),
+                        "vulnerable": data.get("vulnerable") if data.get("vulnerable") is not None else None,
                         "evidence": data.get("evidence") or data.get("output", ""),
                         "logs": data.get("logs", []),
+                        "trace_id": data.get("trace_id"),
+                        "poc_id": data.get("poc_id") or poc_name,
+                        "requires_human_review": bool(data.get("requires_human_review")),
+                        "verification_status": data.get("verification_status", ""),
+                        "manual_review": data.get("manual_review", {}),
+                        "security_profile": data.get("security_profile", {}),
                     }
                 return {"blocked": False, "error": f"API {resp.status_code}: {resp.text[:200]}"}
             except Exception as e:
@@ -881,6 +894,7 @@ DECISION_AGENT_PROMPT = """
    • 如果【可用资源】中没有 bluetooth_mac，则跳过所有荷包名包含 "bluetooth"/"BT"/"ble" 的 PoC
    • 如果【可用资源】中没有 can_interface，则跳过所有包含 "canbus"/"CAN"/"isotp" 的 PoC
    • 如果【可用资源】中没有 wifi_interface，则跳过所有包含 "wireless"/"wifi"/"wpa" 的 PoC
+   • 如果【可用资源】中没有 expected_usb_serial，则跳过本机 USB ADB 枚举类 PoC；如果已提供，则优先将 `network/01_USB_ADB_Debug.py` 纳入候选，用于验证 USB 直连 ADB 攻击面
    • 跳过侦察结果中未发现对应服务相关的 PoC
 4. 对剩余 PoC 调用 check_safety 获取推荐策略。如果你发现目标开启了某个完全未知的协议或者未涵盖在现有 PoC 中的异常服务，请在攻击计划中添加此项：`poc_name` 填 `"dynamic_unknown_service_probe"`，`strategy` 填 `"weaponize"`，并在 `parameters` 详细描述此服务的端口、banner、服务指纹和安全边界。系统将触发 Weaponize Agent 动态生成协议感知型未知服务探测代码。
 5. 输出有序的攻击计划 JSON，每个项包含： poc_name、parameters（含必要字段）、strategy、reason
@@ -978,7 +992,7 @@ REFLECTOR_AGENT_PROMPT = """
   "next_phase": "recon | planner | decision | weaponize | execute | assess | none",
   "rerun_mode": "targeted | from_phase",
   "focus_steps": [1, 2],
-  "focus_pocs": ["network/10_SSH_Service.py"],
+  "focus_pocs": ["network/03_SSH_Service.py"],
   "reentry_required": false,
   "reason": "触发该下一步动作的直接原因"
 }
@@ -1108,7 +1122,9 @@ class AgentOrchestrator:
                  auth_token: Optional[str] = None,
                  can_interface: str = "",
                  bluetooth_mac: str = "",
-                 wifi_interface: str = ""):
+                 wifi_interface: str = "",
+                 rf_frequency: str = "",
+                 expected_usb_serial: str = ""):
         self.trace_id = str(uuid.uuid4())
         self.target_ip = target_ip
         self.target_name = target_name
@@ -1122,6 +1138,11 @@ class AgentOrchestrator:
             self.available_params["bluetooth_mac"] = bluetooth_mac
         if wifi_interface:
             self.available_params["wifi_interface"] = wifi_interface
+        if rf_frequency:
+            self.available_params["frequency"] = rf_frequency
+        if expected_usb_serial:
+            self.available_params["expected_usb_serial"] = expected_usb_serial
+            self.available_params["usb_device_serial"] = expected_usb_serial
 
         llm_config = llm_config or {}
         self.llm_api_key = str(llm_config.get("api_key") or "").strip()
@@ -1300,6 +1321,95 @@ class AgentOrchestrator:
                     result["open_ports"] = nodes[0].get("open_ports") or []
         return result
 
+    def _has_user_supplied_attack_surface(self) -> bool:
+        return any(
+            str(self.available_params.get(key) or "").strip()
+            for key in ("can_interface", "bluetooth_mac", "wifi_interface", "frequency", "expected_usb_serial")
+        )
+
+    def _recon_has_network_attack_surface(self, recon: Dict[str, Any]) -> bool:
+        if not isinstance(recon, dict):
+            return False
+        if recon.get("open_ports") or recon.get("services"):
+            return True
+        topology = recon.get("topology") or {}
+        if isinstance(topology, dict):
+            for node in topology.get("nodes") or []:
+                if not isinstance(node, dict):
+                    continue
+                if node.get("open_ports") or node.get("services"):
+                    return True
+        adaptive = recon.get("adaptive_context") or {}
+        if isinstance(adaptive, dict):
+            if adaptive.get("detected_services") or adaptive.get("auth_contexts"):
+                return True
+        return False
+
+    def _build_no_attack_surface_gate(self, recon: Dict[str, Any]) -> Dict[str, Any]:
+        missing_inputs = [
+            "open_ports",
+            "services",
+            "can_interface",
+            "bluetooth_mac",
+            "wifi_interface",
+            "frequency",
+            "expected_usb_serial",
+            "usb_or_adb_device",
+            "usb_or_adb_device",
+            "target_service",
+        ]
+        return {
+            "blocked": True,
+            "blocked_reason": "insufficient_attack_surface",
+            "next_action": "skip_to_assess",
+            "next_phase": "assess",
+            "reason": (
+                "基础/细粒度侦察未发现开放端口或服务，且未提供 CAN、蓝牙、Wi-Fi、RF 等额外验证参数。"
+                "继续规划和执行 PoC 不具备可验证攻击面。"
+            ),
+            "missing_inputs": missing_inputs,
+            "observed": {
+                "open_ports": recon.get("open_ports") or [],
+                "services": recon.get("services") or [],
+                "available_params": sorted(k for k in self.available_params.keys() if k != "target_ip"),
+            },
+        }
+
+    def _apply_attack_surface_gate(self, recon: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if self._recon_has_network_attack_surface(recon) or self._has_user_supplied_attack_surface():
+            return None
+        gate = self._build_no_attack_surface_gate(recon)
+        recon["attack_surface_gate"] = gate
+        self.structured_results["attack_surface_gate"] = gate
+        self._record_supervisor_event(
+            "attack_surface_gate",
+            gate["reason"],
+            severity="warning",
+            phase="recon",
+        )
+        return gate
+
+    def _build_minimal_no_surface_report(self, gate: Dict[str, Any]) -> str:
+        missing = "、".join(gate.get("missing_inputs") or [])
+        return (
+            f"# 智能网联汽车安全评估报告\n\n"
+            f"## 执行摘要\n"
+            f"本次针对目标 `{self.target_name}` (`{self.target_ip}`) 执行自动化侦察后，"
+            f"未发现开放端口、可识别服务或可直接验证的网络攻击面；同时用户未提供 CAN、蓝牙、Wi-Fi、RF、USB/ADB 等额外验证参数。"
+            f"因此平台未继续执行 PoC 利用验证，以避免无证据、无目标的无效扫描。\n\n"
+            f"## 总体风险评级\n"
+            f"- **UNKNOWN / LOW EVIDENCE**：当前证据不足以证明存在漏洞，也不足以证明目标安全。\n\n"
+            f"## 实际测试范围\n"
+            f"- 已执行：基础侦察与攻击面充分性判断。\n"
+            f"- 未执行：PoC 利用验证、多 Agent 攻击路径执行、物理接口验证。\n\n"
+            f"## 阻断原因\n"
+            f"{gate.get('reason')}\n\n"
+            f"## 建议补充输入\n"
+            f"{missing}\n\n"
+            f"## 结论\n"
+            f"本次扫描形成的是“无可验证攻击面”的最简评估报告。若需要继续验证，请补充明确攻击面参数，或确认目标处于同网段、可达、已完成协议唤醒。"
+        )
+
     def _normalize_attack_plan(self, raw_text: str) -> Dict[str, Any]:
         payload, parse_error = _extract_json_payload(raw_text)
         items = _normalize_plan_items(payload)
@@ -1314,6 +1424,35 @@ class AgentOrchestrator:
             "parse_error": parse_error,
             "item_count": len(items),
         }
+
+    def _ensure_usb_adb_plan_item(self, plan: Dict[str, Any]) -> Dict[str, Any]:
+        if not self.available_params.get("expected_usb_serial"):
+            return plan
+        items = list(plan.get("items") or [])
+        if any(str(item.get("poc_name") or "") == "network/01_USB_ADB_Debug.py" for item in items):
+            return plan
+        next_step = max([int(item.get("step") or 0) for item in items] or [0]) + 1
+        items.insert(0, asdict(AttackPlanItem(
+            step=next_step,
+            poc_name="network/01_USB_ADB_Debug.py",
+            parameters={
+                "target_ip": self.target_ip,
+                "expected_usb_serial": self.available_params["expected_usb_serial"],
+            },
+            strategy="local_usb_adb_recon",
+            reason="用户提供了 USB ADB serial，目标通过本机 USB 直连，应优先验证有线 ADB 调试接口攻击面。",
+            status="pending",
+        )))
+        for index, item in enumerate(items, start=1):
+            item["step"] = index
+        plan["items"] = items
+        plan["item_count"] = len(items)
+        self._record_supervisor_event(
+            "usb_adb_plan_injected",
+            "检测到 expected_usb_serial，已自动将 network/01_USB_ADB_Debug.py 加入 Agent 攻击计划。",
+            phase="decision",
+        )
+        return plan
 
     def _heuristic_extract_plan_items(self, text: str) -> List[Dict[str, Any]]:
         """从非结构化文本中启发式提取 PoC 路径和参数"""
@@ -1493,6 +1632,12 @@ class AgentOrchestrator:
         if result["next_phase"] == "execute" and (result["focus_steps"] or result["focus_pocs"]):
             result["rerun_mode"] = "targeted"
 
+        # Only execute supports targeted reruns. Earlier phases must restart from phase.
+        if result["next_phase"] in {"recon", "planner", "decision", "weaponize"}:
+            result["rerun_mode"] = "from_phase"
+            if result["next_action"] == "continue" and result["reentry_required"]:
+                result["next_action"] = "retry"
+
         if (
             not result["reentry_required"]
             and result["next_action"] in {"retry", "branch"}
@@ -1506,6 +1651,31 @@ class AgentOrchestrator:
             and result["next_phase"] in {"recon", "planner", "decision", "weaponize", "execute"}
         ):
             result["reentry_required"] = True
+
+        if not result["reentry_required"] and (
+            not result["execution_effective"]
+            or not result["evidence_sufficient"]
+            or result["outcome_status"] in {"execution_failed", "failed", "invalid", "no_evidence"}
+        ):
+            audit_text = " ".join([
+                result.get("summary") or "",
+                result.get("reason") or "",
+                _safe_json_dumps(result.get("issues") or []),
+            ]).lower()
+            result["next_action"] = "retry"
+            if any(token in audit_text for token in [
+                "侦察", "连通性", "前置", "协议唤醒", "recon", "connectivity", "precondition", "discovery"
+            ]):
+                result["next_phase"] = "recon"
+                result["rerun_mode"] = "from_phase"
+            elif any(token in audit_text for token in ["计划", "编排", "planner", "decision", "attack plan"]):
+                result["next_phase"] = "decision"
+                result["rerun_mode"] = "from_phase"
+            else:
+                result["next_phase"] = "execute"
+                result["rerun_mode"] = "targeted" if (result["focus_steps"] or result["focus_pocs"]) else "from_phase"
+            result["reentry_required"] = True
+            result["reason"] = result["reason"] or "Reflector 判定执行无效或证据不足，系统自动触发保守回跳。"
 
         return result
 
@@ -1722,14 +1892,21 @@ class AgentOrchestrator:
                     "message": f"[Executor-Step] 分支 {active_branch} 执行中: {poc_name}",
                 })
                 result = self._run_execution_branch(item, branch, safety)
+                requires_human_review = bool(result.get("requires_human_review")) or result.get("verification_status") == "pending_manual_review"
+                result_vulnerable = result.get("vulnerable")
                 branch_result = {
                     "branch": active_branch,
                     "success": bool(result.get("success", not result.get("error"))),
                     "blocked": bool(result.get("blocked")),
-                    "vulnerable": bool(result.get("vulnerable")),
+                    "vulnerable": result_vulnerable if result_vulnerable is not None else None,
                     "error": result.get("error", ""),
                     "evidence": result.get("evidence", ""),
                     "strategy_branch": result.get("strategy_branch") or branch.get("name"),
+                    "requires_human_review": requires_human_review,
+                    "verification_status": result.get("verification_status", ""),
+                    "manual_review": result.get("manual_review", {}),
+                    "trace_id": result.get("trace_id"),
+                    "poc_id": result.get("poc_id") or poc_name,
                 }
                 branch_results.append(branch_result)
 
@@ -1739,6 +1916,10 @@ class AgentOrchestrator:
 
                 if branch_result["blocked"]:
                     status = "blocked"
+                    break
+                if requires_human_review:
+                    status = "pending_manual_review"
+                    consecutive_errors = 0
                     break
                 if vulnerable:
                     status = "vulnerable"
@@ -1772,6 +1953,9 @@ class AgentOrchestrator:
                 error=error,
                 strategy=safety.get("strategy") or item.get("strategy") or "default",
                 branch=active_branch,
+                requires_human_review=status == "pending_manual_review",
+                verification_status=next((br.get("verification_status") for br in branch_results if br.get("requires_human_review")), ""),
+                manual_review=next((br.get("manual_review") for br in branch_results if br.get("requires_human_review")), {}),
             )))
             execution_items[-1]["branch_results"] = branch_results
             item["status"] = status
@@ -2065,6 +2249,10 @@ class AgentOrchestrator:
             parts.append(f"wifi_interface={self.available_params['wifi_interface']}")
         else:
             parts.append("wifi_interface=未提供（跳过所有无线嗅探相关 PoC）")
+        if "expected_usb_serial" in self.available_params:
+            parts.append(f"expected_usb_serial={self.available_params['expected_usb_serial']}（允许执行 network/01_USB_ADB_Debug.py）")
+        else:
+            parts.append("expected_usb_serial=未提供（跳过本机 USB ADB 枚举 PoC，除非用户明确选择单设备保守匹配）")
         return "【可用资源】\n" + "\n".join(f"  - {p}" for p in parts)
 
     def _build_reflector_focus_context(self) -> str:
@@ -2192,6 +2380,11 @@ class AgentOrchestrator:
         self.structured_results["reflector"] = structured.get("reflector", self.structured_results["reflector"])
         self.structured_results["assessment"] = structured.get("assess", structured.get("assessment", self.structured_results["assessment"]))
         self.structured_results["supervisor"] = structured.get("supervisor", self.structured_results["supervisor"])
+        gate = structured.get("attack_surface_gate")
+        if not gate and isinstance(self.structured_results.get("recon"), dict):
+            gate = self.structured_results["recon"].get("attack_surface_gate")
+        if gate:
+            self.structured_results["attack_surface_gate"] = gate
         recon_record = self._get_phase_record("recon")
         planner_record = self._get_phase_record("planner")
         decision_record = self._get_phase_record("decision")
@@ -2571,6 +2764,12 @@ class AgentOrchestrator:
             _params_desc_parts.append(f"wifi_interface={self.available_params['wifi_interface']}")
         else:
             _params_desc_parts.append("wifi_interface=未提供（跳过所有无线嗅探相关 PoC）")
+        if "expected_usb_serial" in self.available_params:
+            _params_desc_parts.append(
+                f"expected_usb_serial={self.available_params['expected_usb_serial']}（允许执行 network/01_USB_ADB_Debug.py）"
+            )
+        else:
+            _params_desc_parts.append("expected_usb_serial=未提供（跳过本机 USB ADB 枚举 PoC）")
         _available_params_ctx = "【可用资源】\n" + "\n".join(f"  - {p}" for p in _params_desc_parts)
         reflector_focus_ctx = self._build_reflector_focus_context()
 
@@ -2614,6 +2813,68 @@ class AgentOrchestrator:
         self._merge_agent_supervisor_events(self.recon_agent, "recon")
         logger.info(f"[Orchestrator] Phase 1 完成:\n{self.recon_result[:300]}...")
 
+        gate = self._apply_attack_surface_gate(recon_structured)
+        if gate:
+            minimal_report = self._build_minimal_no_surface_report(gate)
+            self.structured_results["planner"] = {
+                "strategy_summary": "无可验证攻击面，跳过规划阶段。",
+                "steps": [],
+                "guardrails": ["insufficient_attack_surface"],
+                "attack_surface_gate": gate,
+            }
+            self.structured_results["attack_plan"] = {
+                "items": [],
+                "summary": "无可验证攻击面，未生成 PoC 执行计划。",
+                "parse_error": None,
+                "item_count": 0,
+                "attack_surface_gate": gate,
+            }
+            self.structured_results["execution"] = {
+                "items": [],
+                "summary": "攻击面不足，未执行 PoC。",
+                "parse_error": None,
+                "item_count": 0,
+                "attack_surface_gate": gate,
+            }
+            self.structured_results["reflector"] = {
+                "summary": "攻击面 Gate 已阻断无目标执行。",
+                "execution_effective": False,
+                "evidence_sufficient": False,
+                "outcome_status": "insufficient_attack_surface",
+                "next_action": "stop",
+                "next_phase": "assess",
+                "reentry_required": False,
+                "reason": gate["reason"],
+            }
+            self.final_report = minimal_report
+            self.structured_results["assessment"] = {
+                "report_markdown": minimal_report,
+                "finding_count": 0,
+                "attack_surface_gate": gate,
+            }
+            for skipped_phase in ("planner", "decision", "weaponize", "execute", "reflector"):
+                self._record_phase(skipped_phase, "skipped", gate["reason"], {"attack_surface_gate": gate})
+            self._record_phase("assess", "done", minimal_report, self.structured_results["assessment"])
+            self._refresh_supervisor_metrics()
+            duration = round(time.time() - self.start_time, 1)
+            return {
+                "target_ip": self.target_ip,
+                "target_name": self.target_name,
+                "duration_seconds": duration,
+                "logs": self.current_logs,
+                "phase_records": self.phase_records,
+                "findings": self.findings,
+                "reflector_reentry_count": self.reflector_reentry_count,
+                "reflector_reentry_history": self.reflector_reentry_history,
+                "structured": self.structured_results,
+                "phases": {
+                    "recon": self.recon_result,
+                    "attack_plan": self.attack_plan,
+                    "execution": self.execution_results,
+                    "assessment_report": self.final_report,
+                },
+            }
+
         # ── Phase 2/7: 规划 Agent ──
         logger.info("[Orchestrator] Phase 2/7: 规划 Agent 开始生成任务编排...")
         self._add_log({"type": "info", "message": "[Orchestrator] Phase 2: 规划 Agent 正在基于攻击面生成任务编排..."})
@@ -2638,7 +2899,7 @@ class AgentOrchestrator:
         decision_user_message = (
             f"基于侦察结果和以下可用资源，从【可用 PoC 脚本库】中挑选合适的脚本执行。"
             f"针对 {self.target_ip} 的开放端口 {open_ports} 规划渗透路径。"
-            f"输出 JSON 攻击计划，每项包含精确的 poc_name (如 'network/10_SSH_Service.py')。"
+            f"输出 JSON 攻击计划，每项包含精确的 poc_name (如 'network/03_SSH_Service.py')。"
         )
         if decision_reentry.get("mode") == "targeted":
             decision_user_message = (
@@ -2685,6 +2946,8 @@ class AgentOrchestrator:
             decision_structured["summary"] = self.attack_plan
             self.attack_plan = _safe_json_dumps(decision_structured)
             self.structured_results.pop("decision_reentry", None)
+        decision_structured = self._ensure_usb_adb_plan_item(decision_structured)
+        self.attack_plan = _safe_json_dumps(decision_structured)
         self.structured_results["attack_plan"] = decision_structured
         self._require_phase_success("decision")
         
@@ -2708,6 +2971,8 @@ class AgentOrchestrator:
                 normalizer=self._normalize_attack_plan,
                 validator=self._validate_attack_plan,
             )
+            self.structured_results["attack_plan"] = self._ensure_usb_adb_plan_item(self.structured_results["attack_plan"])
+            self.attack_plan = _safe_json_dumps(self.structured_results["attack_plan"])
 
         self._merge_agent_supervisor_events(self.decision_agent, "decision")
         self._supervise_attack_plan()
@@ -2730,7 +2995,7 @@ class AgentOrchestrator:
                 sandbox_dir = "/tmp/autosec_sandbox"
                 os.makedirs(sandbox_dir, exist_ok=True)
                 timestamp = int(time.time())
-                sandbox_file = os.path.join(sandbox_dir, f"99_Dynamic_Unknown_Service_Probe_{timestamp}.py")
+                sandbox_file = os.path.join(sandbox_dir, f"15_Dynamic_Unknown_Service_Probe_{timestamp}.py")
                 with open(sandbox_file, "w") as f:
                     f.write(_wrap_code_as_plugin(code_match.group(1)))
                 for item in self.structured_results["attack_plan"].get("items", []):
@@ -2850,7 +3115,8 @@ class AgentOrchestrator:
              decision_user_message = (
                  f"基于侦察结果和以下可用资源，规划针对 {self.target_ip} 的渗透测试计划。"
                  f"严格按照【可用资源】中的参数过滤 PoC：缺少 bluetooth_mac 则不选择蓝牙 PoC，"
-                 f"缺少 can_interface 则不选择 CAN 总线 PoC，缺少 wifi_interface 则不选择无线嗅探 PoC。"
+                 f"缺少 can_interface 则不选择 CAN 总线 PoC，缺少 wifi_interface 则不选择无线嗅探 PoC，"
+                 f"缺少 expected_usb_serial 则不选择本机 USB ADB 枚举 PoC。"
                  f"输出有序的 JSON 攻击计划，每项包含 poc_name 和 parameters 字段（parameters 中包含实际参数值）。"
              )
              if decision_reentry.get("mode") == "targeted":
@@ -2889,6 +3155,8 @@ class AgentOrchestrator:
                  decision_structured["summary"] = self.attack_plan
                  self.attack_plan = _safe_json_dumps(decision_structured)
                  self.structured_results.pop("decision_reentry", None)
+             decision_structured = self._ensure_usb_adb_plan_item(decision_structured)
+             self.attack_plan = _safe_json_dumps(decision_structured)
              self.structured_results["attack_plan"] = decision_structured
              self._require_phase_success("decision")
              self._merge_agent_supervisor_events(self.decision_agent, "decision")
@@ -3015,6 +3283,7 @@ class AgentOrchestrator:
             self._merge_agent_supervisor_events(self.recon_agent, "recon")
             self.structured_results["recon"] = structured
             self.recon_result = result
+            self._apply_attack_surface_gate(structured)
         elif phase == "planner":
             self._upsert_phase_record(phase="planner", status="running", attempt=1)
             planner_result, structured = self._run_planner()
@@ -3039,9 +3308,10 @@ class AgentOrchestrator:
             )
             self._require_phase_success("decision")
             self._merge_agent_supervisor_events(self.decision_agent, "decision")
+            structured = self._ensure_usb_adb_plan_item(structured)
             self.structured_results["attack_plan"] = structured
             self._supervise_attack_plan()
-            self.attack_plan = result
+            self.attack_plan = _safe_json_dumps(structured)
         elif phase == "weaponize":
             self._upsert_phase_record(phase="weaponize", status="running", attempt=1)
             result = self.weaponize_agent.call(
@@ -3078,14 +3348,30 @@ class AgentOrchestrator:
             self._upsert_phase_record(phase="reflector", status="running", attempt=1)
             result, structured = self._run_reflector()
             self._upsert_phase_record(phase="reflector", status="done", attempt=1, raw_output=result, structured_output=structured)
+            if structured.get("reentry_required"):
+                self._record_supervisor_event(
+                    "reflector_reentry_requested",
+                    (
+                        f"Reflector 请求回跳到 {structured.get('next_phase')}，"
+                        f"next_action={structured.get('next_action')}，rerun_mode={structured.get('rerun_mode')}。"
+                    ),
+                    severity="warning",
+                    phase="reflector",
+                )
         elif phase == "assess":
             self._upsert_phase_record(phase="assess", status="running", attempt=1)
-            assessment_input = self._build_assessment_call(context=context)
-            result = self.assessment_agent.call(
-                assessment_input["prompt"],
-                context=assessment_input["context"],
-            )
+            gate = self.structured_results.get("attack_surface_gate")
+            if gate and gate.get("blocked"):
+                result = self._build_minimal_no_surface_report(gate)
+            else:
+                assessment_input = self._build_assessment_call(context=context)
+                result = self.assessment_agent.call(
+                    assessment_input["prompt"],
+                    context=assessment_input["context"],
+                )
             structured = {"report_markdown": result, "finding_count": len(self.findings)}
+            if gate and gate.get("blocked"):
+                structured["attack_surface_gate"] = gate
             self.structured_results["assessment"] = structured
             self.final_report = result
         else:
@@ -3095,13 +3381,33 @@ class AgentOrchestrator:
         self._refresh_supervisor_metrics()
         if phase in {"weaponize", "assess"}:
             self._record_phase(phase, "done", result, structured)
-        return {
+        response = {
             "result": result,
             "structured_result": structured,
+            "structured": self.structured_results,
             "logs": self.current_logs,
             "findings": self.findings,
             "phase_records": self.phase_records,
         }
+        if phase == "reflector" and structured.get("reentry_required"):
+            response["reroute"] = {
+                "next_action": structured.get("next_action"),
+                "next_phase": structured.get("next_phase"),
+                "rerun_mode": structured.get("rerun_mode") or "from_phase",
+                "focus_steps": structured.get("focus_steps") or [],
+                "focus_pocs": structured.get("focus_pocs") or [],
+                "reason": structured.get("reason") or structured.get("summary") or "",
+            }
+        if phase == "recon":
+            gate = structured.get("attack_surface_gate") or self.structured_results.get("attack_surface_gate")
+            if gate and gate.get("blocked"):
+                response["skip_to_assess"] = True
+                response["reroute"] = {
+                    "next_action": "skip_to_assess",
+                    "next_phase": "assess",
+                    "reason": gate.get("reason") or "",
+                }
+        return response
 
 
 # ──────────────────────────────────────────────

@@ -125,7 +125,13 @@ const LocalRuntime: React.FC<LocalRuntimeProps> = ({ token, currentUser, onUnaut
     try {
       const data = await runPocPlugin(selectedFilename, buildParams(), token);
       setRunResult(data);
-      setMessage(data?.vulnerable ? '本机验证完成：发现可验证风险。' : '本机验证完成。');
+      setMessage(
+        data?.requires_human_review || data?.verification_status === 'pending_manual_review'
+          ? '本机验证完成：该 PoC 需要人工观察后判定。'
+          : data?.vulnerable
+            ? '本机验证完成：发现可验证风险。'
+            : '本机验证完成。'
+      );
     } catch (err: any) {
       if (String(err?.message || '').includes('401')) {
         onUnauthorized?.();

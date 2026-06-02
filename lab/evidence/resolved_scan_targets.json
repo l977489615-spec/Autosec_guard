@@ -1,0 +1,178 @@
+[
+  {
+    "target_id": "MOCK-LOCAL",
+    "target_name": "Local mock service cluster",
+    "target_ip": "127.0.0.1",
+    "expected_usb_serial": "",
+    "candidate_ports": "5555,1883,7000,19090,13400,30490",
+    "auto_select": true,
+    "selector": {
+      "include_unknown_probe": true
+    },
+    "pocs": [
+      {
+        "filename": "reconnaissance/01_ICMP_Host_Discovery.py",
+        "params": {
+          "target_ip": "127.0.0.1",
+          "candidate_ports": "5555,1883,7000,19090,13400,30490"
+        },
+        "expected": "evidence_or_no_confirmed_risk",
+        "auto_group": "recon"
+      },
+      {
+        "filename": "reconnaissance/02_TCP_Port_Scan.py",
+        "params": {
+          "target_ip": "127.0.0.1",
+          "candidate_ports": "5555,1883,7000,19090,13400,30490"
+        },
+        "expected": "evidence_or_no_confirmed_risk",
+        "auto_group": "recon"
+      },
+      {
+        "filename": "reconnaissance/03_mDNS_Service_Discovery.py",
+        "params": {
+          "target_ip": "127.0.0.1",
+          "candidate_ports": "5555,1883,7000,19090,13400,30490"
+        },
+        "expected": "evidence_or_no_confirmed_risk",
+        "auto_group": "recon"
+      },
+      {
+        "filename": "reconnaissance/04_UPnP_SSDP_Discovery.py",
+        "params": {
+          "target_ip": "127.0.0.1",
+          "candidate_ports": "5555,1883,7000,19090,13400,30490"
+        },
+        "expected": "evidence_or_no_confirmed_risk",
+        "auto_group": "recon"
+      },
+      {
+        "filename": "reconnaissance/05_SNMP_Info_Leak.py",
+        "params": {
+          "target_ip": "127.0.0.1",
+          "candidate_ports": "5555,1883,7000,19090,13400,30490"
+        },
+        "expected": "evidence_or_no_confirmed_risk",
+        "auto_group": "recon"
+      },
+      {
+        "filename": "reconnaissance/07_TBox_Port_Scan.py",
+        "params": {
+          "target_ip": "127.0.0.1",
+          "candidate_ports": "5555,1883,7000,19090,13400,30490"
+        },
+        "expected": "evidence_or_no_confirmed_risk",
+        "auto_group": "recon"
+      },
+      {
+        "filename": "reconnaissance/08_HTTP_Service_Enum.py",
+        "params": {
+          "target_ip": "127.0.0.1",
+          "candidate_ports": "5555,1883,7000,19090,13400,30490"
+        },
+        "expected": "evidence_or_no_confirmed_risk",
+        "auto_group": "recon"
+      },
+      {
+        "filename": "network/09B_ADB_Debug_Port.py",
+        "params": {
+          "target_ip": "127.0.0.1",
+          "candidate_ports": "5555,1883,7000,19090,13400,30490"
+        },
+        "expected": "evidence_or_no_confirmed_risk",
+        "auto_group": "network"
+      },
+      {
+        "filename": "network/10_SSH_Service.py",
+        "params": {
+          "target_ip": "127.0.0.1",
+          "candidate_ports": "5555,1883,7000,19090,13400,30490"
+        },
+        "expected": "evidence_or_no_confirmed_risk",
+        "auto_group": "network"
+      },
+      {
+        "filename": "network/13_Telnet_Service.py",
+        "params": {
+          "target_ip": "127.0.0.1",
+          "candidate_ports": "5555,1883,7000,19090,13400,30490"
+        },
+        "expected": "evidence_or_no_confirmed_risk",
+        "auto_group": "network"
+      },
+      {
+        "filename": "network/15_FTP_Anonymous.py",
+        "params": {
+          "target_ip": "127.0.0.1",
+          "candidate_ports": "5555,1883,7000,19090,13400,30490"
+        },
+        "expected": "evidence_or_no_confirmed_risk",
+        "auto_group": "network"
+      },
+      {
+        "filename": "network/16_MQTT_Unauth.py",
+        "params": {
+          "target_ip": "127.0.0.1",
+          "candidate_ports": "5555,1883,7000,19090,13400,30490"
+        },
+        "expected": "evidence_or_no_confirmed_risk",
+        "auto_group": "network"
+      },
+      {
+        "filename": "network/17_DBus_Anon_Auth.py",
+        "params": {
+          "target_ip": "127.0.0.1",
+          "candidate_ports": "5555,1883,7000,19090,13400,30490"
+        },
+        "expected": "evidence_or_no_confirmed_risk",
+        "auto_group": "network"
+      },
+      {
+        "filename": "network/18_RTSP_Log_Leak.py",
+        "params": {
+          "target_ip": "127.0.0.1",
+          "candidate_ports": "5555,1883,7000,19090,13400,30490"
+        },
+        "expected": "evidence_or_no_confirmed_risk",
+        "auto_group": "network"
+      },
+      {
+        "filename": "network/19_DLNA_AVTransport_Unauth.py",
+        "params": {
+          "target_ip": "127.0.0.1",
+          "candidate_ports": "5555,1883,7000,19090,13400,30490"
+        },
+        "expected": "evidence_or_no_confirmed_risk",
+        "auto_group": "network"
+      },
+      {
+        "filename": "network/20_HTTPS_No_Cert_Pin.py",
+        "params": {
+          "target_ip": "127.0.0.1",
+          "candidate_ports": "5555,1883,7000,19090,13400,30490"
+        },
+        "expected": "evidence_or_no_confirmed_risk",
+        "auto_group": "network"
+      },
+      {
+        "filename": "network/21_SOMEIP_Service_Discovery.py",
+        "params": {
+          "target_ip": "127.0.0.1",
+          "candidate_ports": "5555,1883,7000,19090,13400,30490"
+        },
+        "expected": "evidence_or_no_confirmed_risk",
+        "auto_group": "network"
+      },
+      {
+        "filename": "99_Dynamic_Unknown_Service_Probe.py",
+        "params": {
+          "target_ip": "127.0.0.1",
+          "candidate_ports": "5555,1883,7000,19090,13400,30490"
+        },
+        "expected": "evidence_or_no_confirmed_risk",
+        "auto_group": "unknown_service"
+      }
+    ],
+    "resolved_mode": "auto"
+  }
+]

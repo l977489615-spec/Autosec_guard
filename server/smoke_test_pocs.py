@@ -13,27 +13,27 @@ CASES = [
     },
     {
         "name": "ssh-service",
-        "path": "pocs/network/10_SSH_Service.py",
+        "path": "pocs/network/03_SSH_Service.py",
         "params": {"target_ip": "127.0.0.1"},
     },
     {
         "name": "carplay-overflow",
-        "path": "pocs/application/52_CarPlay_Stack_Overflow.py",
+        "path": "pocs/application/03_CarPlay_Stack_Overflow.py",
         "params": {"target_ip": "127.0.0.1"},
     },
     {
         "name": "can-injection",
-        "path": "pocs/canbus/23_CAN_Message_Injection.py",
+        "path": "pocs/canbus/02_CAN_Message_Injection.py",
         "params": {"can_interface": "vcan0"},
     },
     {
         "name": "bt-hfp-overflow",
-        "path": "pocs/wireless/40_BT_HFP_AT_Overflow.py",
+        "path": "pocs/wireless/09_BT_HFP_AT_Overflow.py",
         "params": {"target_mac": "00:11:22:33:44:55"},
     },
     {
         "name": "gps-spoofing",
-        "path": "pocs/advanced/65_GPS_Spoofing.py",
+        "path": "pocs/advanced/03_GPS_Spoofing.py",
         "params": {"frequency": "1575420000"},
     },
 ]
