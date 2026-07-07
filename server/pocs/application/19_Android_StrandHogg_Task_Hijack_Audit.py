@@ -178,6 +178,8 @@ from poc_runtime_adapter import execute_check_callable
 class Poc14StrandhoggPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = '检测设备app是否存在StrandHogg/Task Hijacking风险（CWE-1021）...'
     meta_cve_id = 'CWE-1021'
+    meta_source_url = 'https://cwe.mitre.org/data/definitions/1021.html'
+    meta_references = ['https://cwe.mitre.org/data/definitions/1021.html']
     meta_severity = 'High'
     meta_protocol = 'android'
     meta_target_os = ['android']

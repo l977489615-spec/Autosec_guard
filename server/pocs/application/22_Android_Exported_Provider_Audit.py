@@ -187,6 +187,8 @@ from poc_runtime_adapter import execute_check_callable
 class Poc17ProviderExportPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = '检测设备app是否存在不安全的ContentProvider导出（存在暴露风险）...'
     meta_cve_id = 'CWE-926'
+    meta_source_url = 'https://cwe.mitre.org/data/definitions/926.html'
+    meta_references = ['https://cwe.mitre.org/data/definitions/926.html']
     meta_severity = 'High'
     meta_protocol = 'android'
     meta_target_os = ['android']

@@ -23,6 +23,8 @@ class HondaReplayPlugin(IVIVulnerabilityPlugin):
     """
     meta_poc_name = "RF Keyfob Replay"
     meta_cve_id = "CVE-2022-27254"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2022-27254"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2022-27254']
     meta_severity = "High"
     meta_protocol = "rf"
     meta_target_os = ["all"]

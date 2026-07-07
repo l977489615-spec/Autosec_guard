@@ -308,6 +308,8 @@ from poc_runtime_adapter import execute_check_callable
 class Poc35BydlogPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = '检测设备是否存在系统日志泄露漏洞（CVE-2024-54728）...'
     meta_cve_id = 'CVE-2024-54728'
+    meta_source_url = 'https://nvd.nist.gov/vuln/detail/CVE-2024-54728'
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2024-54728']
     meta_severity = 'Low'
     meta_protocol = 'local'
     meta_target_os = ['android', 'linux']

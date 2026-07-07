@@ -317,6 +317,8 @@ from poc_runtime_adapter import execute_check_callable
 class Poc45LibjepgExportedPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = '检测系统或app是否使用了不安全的libjpeg-turbo.so库（CVE-2018-1152）...'
     meta_cve_id = 'CVE-2018-1152'
+    meta_source_url = 'https://nvd.nist.gov/vuln/detail/CVE-2018-1152'
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2018-1152']
     meta_severity = 'High'
     meta_protocol = 'native'
     meta_target_os = ['android', 'linux']

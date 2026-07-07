@@ -209,6 +209,8 @@ from poc_runtime_adapter import execute_check_callable
 class Poc13InstallaskPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = '检测设备是否允许未经警告的第三方app安装...'
     meta_cve_id = 'CWE-284'
+    meta_source_url = 'https://cwe.mitre.org/data/definitions/284.html'
+    meta_references = ['https://cwe.mitre.org/data/definitions/284.html']
     meta_severity = 'Medium'
     meta_protocol = 'android'
     meta_target_os = ['android']

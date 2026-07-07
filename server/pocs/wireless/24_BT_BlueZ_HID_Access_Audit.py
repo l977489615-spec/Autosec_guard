@@ -33,6 +33,8 @@ class BTBlueZHIDAccessAuditPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-024"
     meta_poc_name = "BT BlueZ HID Access Audit"
     meta_cve_id = "CVE-2023-45866,CVE-2024-8805"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2023-45866"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2023-45866', 'https://nvd.nist.gov/vuln/detail/CVE-2024-8805']
     meta_severity = "High"
     meta_protocol = "bluetooth"
     meta_target_os = ["linux"]

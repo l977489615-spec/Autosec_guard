@@ -18,6 +18,8 @@ class CertPinningPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-NET-013"
     meta_poc_name = "HTTPS No Cert Pin"
     meta_cve_id = "CWE-295"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/295.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/295.html']
     meta_severity = "Medium"
     meta_protocol = "tcp"
     meta_target_os = ["all"]

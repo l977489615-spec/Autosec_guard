@@ -308,6 +308,8 @@ from poc_runtime_adapter import execute_check_callable
 class Poc20LibupnpExportPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = '检测系统或app是否使用了不安全的libupnp.so库（CVE-2016-8863）...'
     meta_cve_id = 'CVE-2016-8863'
+    meta_source_url = 'https://nvd.nist.gov/vuln/detail/CVE-2016-8863'
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2016-8863']
     meta_severity = 'High'
     meta_protocol = 'upnp'
     meta_target_os = ['android']

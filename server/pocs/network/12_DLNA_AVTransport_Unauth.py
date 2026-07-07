@@ -28,6 +28,8 @@ class DLNAAVTransportPlugin(IVIVulnerabilityPlugin):
     """
     meta_poc_name = "DLNA AVTransport Unauth"
     meta_cve_id = "CWE-306"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/306.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/306.html']
     meta_severity = "Medium"
     meta_protocol = "tcp"
     meta_target_os = ["all"]

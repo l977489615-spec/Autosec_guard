@@ -17,6 +17,8 @@ class IVIDevModePlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-APP-009"
     meta_poc_name = "IVI DevMode Bypass"
     meta_cve_id = "CVE-2025-32063"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2025-32063"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2025-32063']
     meta_severity = "Critical"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

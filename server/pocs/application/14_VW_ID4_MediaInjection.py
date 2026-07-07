@@ -24,6 +24,8 @@ class VWId4MediaInjectionPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-APP-014"
     meta_poc_name = "VW ID.4 Media Injection"
     meta_cve_id = "CWE-306"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/306.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/306.html']
     meta_severity = "High"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

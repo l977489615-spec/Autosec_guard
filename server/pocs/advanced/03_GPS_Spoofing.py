@@ -20,6 +20,8 @@ class GPSSpoofingPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-ADV-003"
     meta_poc_name = "GPS Spoofing"
     meta_cve_id = "CWE-345"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/345.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/345.html']
     meta_severity = "High"
     meta_protocol = "rf"
     meta_target_os = ["all"]

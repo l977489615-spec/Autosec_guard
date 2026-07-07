@@ -18,6 +18,8 @@ class BleedingToothPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-016"
     meta_poc_name = "BleedingTooth L2CAP"
     meta_cve_id = "CVE-2020-12351"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2020-12351"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2020-12351']
     meta_severity = "Critical"
     meta_protocol = "bluetooth"
     meta_profiles = ["bluetooth"]

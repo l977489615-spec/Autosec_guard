@@ -16,6 +16,8 @@ class UDSRoutineControlPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-CAN-008"
     meta_poc_name = "UDS RoutineControl"
     meta_cve_id = "CWE-306"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/306.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/306.html']
     meta_severity = "Critical"
     meta_protocol = "can"
     meta_target_os = ["all"]

@@ -229,6 +229,8 @@ from poc_runtime_adapter import execute_check_callable
 class Poc5FileaclPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = '检测已连接的 Android 设备上若干敏感文件或接口的权限问题...'
     meta_cve_id = 'CWE-732'
+    meta_source_url = 'https://cwe.mitre.org/data/definitions/732.html'
+    meta_references = ['https://cwe.mitre.org/data/definitions/732.html']
     meta_severity = 'Medium'
     meta_protocol = 'local'
     meta_target_os = ['android', 'linux']

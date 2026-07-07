@@ -17,6 +17,8 @@ class TelnetServicePlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-NET-006"
     meta_poc_name = "Telnet Service"
     meta_cve_id = "CWE-319"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/319.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/319.html']
     meta_severity = "High"
     meta_protocol = "tcp"
     meta_target_os = ["all"]

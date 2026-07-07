@@ -17,6 +17,8 @@ class FTPAnonymousPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-NET-008"
     meta_poc_name = "FTP Anonymous"
     meta_cve_id = "CWE-306"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/306.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/306.html']
     meta_severity = "High"
     meta_protocol = "tcp"
     meta_target_os = ["all"]

@@ -18,6 +18,8 @@ class BlueBorneBNEPPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-015"
     meta_poc_name = "BlueBorne BNEP Overflow"
     meta_cve_id = "CVE-2017-0781"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2017-0781"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2017-0781']
     meta_severity = "Critical"
     meta_protocol = "bluetooth"
     meta_profiles = ["bluetooth"]

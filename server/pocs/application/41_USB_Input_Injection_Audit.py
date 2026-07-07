@@ -171,6 +171,8 @@ from poc_runtime_adapter import execute_check_callable
 class Poc37UsbInjectPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = '检测设备是否存在USB伪装命令注入漏洞...'
     meta_cve_id = 'CWE-20'
+    meta_source_url = 'https://cwe.mitre.org/data/definitions/20.html'
+    meta_references = ['https://cwe.mitre.org/data/definitions/20.html']
     meta_severity = 'High'
     meta_protocol = 'usb'
     meta_target_os = ['android']

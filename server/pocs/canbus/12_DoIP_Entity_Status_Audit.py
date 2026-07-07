@@ -28,6 +28,8 @@ from poc_runtime_adapter import execute_check_callable
 class Poc134DoipEntityStatusProbePlugin(IVIVulnerabilityPlugin):
     meta_poc_name = 'DoIP Entity Status 安全探测'
     meta_cve_id = 'CWE-200'
+    meta_source_url = 'https://cwe.mitre.org/data/definitions/200.html'
+    meta_references = ['https://cwe.mitre.org/data/definitions/200.html']
     meta_severity = 'Medium'
     meta_protocol = 'doip'
     meta_target_os = ['all']

@@ -26,6 +26,8 @@ from poc_runtime_adapter import execute_check_callable
 class Poc132WeakCryptoEcbPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = '弱加密 ECB/静态 IV 使用检测'
     meta_cve_id = 'CWE-327'
+    meta_source_url = 'https://cwe.mitre.org/data/definitions/327.html'
+    meta_references = ['https://cwe.mitre.org/data/definitions/327.html']
     meta_severity = 'Medium'
     meta_protocol = 'crypto'
     meta_target_os = ['android']

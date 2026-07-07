@@ -17,6 +17,8 @@ class ConnManDHCPOKPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-006"
     meta_poc_name = "ConnMan DHCP Overflow"
     meta_cve_id = "CVE-2021-26675"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2021-26675"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2021-26675']
     meta_severity = "Critical"
     meta_protocol = "wifi"
     meta_profiles = ["wifi"]

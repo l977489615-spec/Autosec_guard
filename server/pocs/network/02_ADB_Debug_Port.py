@@ -47,6 +47,8 @@ class ADBDebugPortPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-NET-002"
     meta_poc_name = "Network ADB Debug Port Detection"
     meta_cve_id = "CVE-2018-6242"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2018-6242"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2018-6242']
     meta_severity = "Critical"
     meta_protocol = "tcp"
     meta_target_os = ["android", "harmonyos"]

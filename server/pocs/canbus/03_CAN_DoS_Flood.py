@@ -18,6 +18,8 @@ class CANDoSFloodPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-CAN-003"
     meta_poc_name = "CAN DoS Flood"
     meta_cve_id = "CWE-400"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/400.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/400.html']
     meta_severity = "High"
     meta_protocol = "can"
     meta_target_os = ["all"]

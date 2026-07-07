@@ -36,6 +36,8 @@ class WiFiSSIDCloneAutoConnectPlugin(IVIVulnerabilityPlugin):
     """
     meta_poc_name = "WiFi SSID Clone AutoConnect"
     meta_cve_id = "CWE-345"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/345.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/345.html']
     meta_severity = "Medium"
     meta_protocol = "wifi"
     meta_profiles = ["wifi"]

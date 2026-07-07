@@ -29,6 +29,8 @@ from poc_runtime_adapter import execute_check_callable
 class Poc125SensitiveFileStoragePlugin(IVIVulnerabilityPlugin):
     meta_poc_name = '应用本地敏感文件存储检测'
     meta_cve_id = 'CWE-922'
+    meta_source_url = 'https://cwe.mitre.org/data/definitions/922.html'
+    meta_references = ['https://cwe.mitre.org/data/definitions/922.html']
     meta_severity = 'High'
     meta_protocol = 'android'
     meta_target_os = ['android']

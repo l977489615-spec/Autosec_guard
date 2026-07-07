@@ -218,6 +218,8 @@ from poc_runtime_adapter import execute_check_callable
 class Poc42SystdirDisabledPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = '检测设备dm_verity系统分区完整性验证是否开启...'
     meta_cve_id = 'CWE-353'
+    meta_source_url = 'https://cwe.mitre.org/data/definitions/353.html'
+    meta_references = ['https://cwe.mitre.org/data/definitions/353.html']
     meta_severity = 'Medium'
     meta_protocol = 'local'
     meta_target_os = ['android', 'linux']

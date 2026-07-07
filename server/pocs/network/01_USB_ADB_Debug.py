@@ -33,6 +33,8 @@ class USBADBDebugPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-NET-001"
     meta_poc_name = "USB ADB Debug Interface Detection"
     meta_cve_id = "CWE-489"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/489.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/489.html']
     meta_severity = "High"
     meta_protocol = "usb"
     meta_target_os = ["android", "harmonyos"]

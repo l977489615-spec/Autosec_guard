@@ -17,6 +17,8 @@ class QNXUnsignedFwPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-ADV-007"
     meta_poc_name = "QNX Unsigned Firmware"
     meta_cve_id = "CWE-347"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/347.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/347.html']
     meta_severity = "High"
     meta_protocol = "rf"
     meta_target_os = ["all"]

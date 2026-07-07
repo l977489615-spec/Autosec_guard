@@ -32,6 +32,8 @@ class WiFiPEAPAuthBypassAuditPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-019"
     meta_poc_name = "WiFi PEAP Auth Bypass Audit"
     meta_cve_id = "CVE-2023-52160"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2023-52160"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2023-52160']
     meta_severity = "High"
     meta_protocol = "wifi"
     meta_target_os = ["android", "linux", "chromeos"]

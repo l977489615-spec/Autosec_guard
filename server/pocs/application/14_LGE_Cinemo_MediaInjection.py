@@ -19,6 +19,8 @@ class LGECinemoMediaInjectionPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-APP-014-LGE"
     meta_poc_name = "LGE Cinemo Media Injection"
     meta_cve_id = "CWE-306"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/306.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/306.html']
     meta_severity = "High"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

@@ -19,6 +19,8 @@ class USBUnsignedUpdatePlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-ADV-008"
     meta_poc_name = "USB Unsigned Update"
     meta_cve_id = "CWE-347"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/347.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/347.html']
     meta_severity = "Critical"
     meta_protocol = "rf"
     meta_target_os = ["all"]

@@ -17,6 +17,8 @@ class BroadcomWMEPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-007"
     meta_poc_name = "Broadcom WME Overflow"
     meta_cve_id = "CVE-2017-9417"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2017-9417"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2017-9417']
     meta_severity = "Critical"
     meta_protocol = "wifi"
     meta_profiles = ["wifi"]

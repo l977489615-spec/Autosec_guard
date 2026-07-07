@@ -26,6 +26,8 @@ from poc_runtime_adapter import execute_check_callable
 class Poc122WebviewMixedContentPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = 'WebView MixedContent 兼容模式检测'
     meta_cve_id = 'CWE-319'
+    meta_source_url = 'https://cwe.mitre.org/data/definitions/319.html'
+    meta_references = ['https://cwe.mitre.org/data/definitions/319.html']
     meta_severity = 'Medium'
     meta_protocol = 'android'
     meta_target_os = ['android']

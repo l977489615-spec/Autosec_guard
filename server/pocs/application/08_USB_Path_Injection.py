@@ -18,6 +18,8 @@ class UsbPathTraversalPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-APP-008"
     meta_poc_name = "USB Path Injection"
     meta_cve_id = "CWE-22"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/22.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/22.html']
     meta_severity = "Critical"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

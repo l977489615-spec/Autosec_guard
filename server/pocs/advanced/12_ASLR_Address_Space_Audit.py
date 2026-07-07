@@ -101,6 +101,8 @@ from poc_runtime_adapter import execute_check_callable
 class Poc8VaspacePlugin(IVIVulnerabilityPlugin):
     meta_poc_name = '检测设备是否启用了地址空间布局随机化（ASLR）...'
     meta_cve_id = 'CWE-693'
+    meta_source_url = 'https://cwe.mitre.org/data/definitions/693.html'
+    meta_references = ['https://cwe.mitre.org/data/definitions/693.html']
     meta_severity = 'Medium'
     meta_protocol = 'local'
     meta_target_os = ['android', 'linux']

@@ -17,6 +17,8 @@ class EvilTwinPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-003"
     meta_poc_name = "WiFi Evil Twin"
     meta_cve_id = "CWE-300"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/300.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/300.html']
     meta_severity = "High"
     meta_protocol = "wifi"
     meta_profiles = ["wifi"]

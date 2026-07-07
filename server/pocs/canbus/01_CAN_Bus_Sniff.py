@@ -18,6 +18,8 @@ class CANBusSniffPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-CAN-001"
     meta_poc_name = "CAN Bus Sniff"
     meta_cve_id = "CWE-200"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/200.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/200.html']
     meta_severity = "Medium"
     meta_protocol = "can"
     meta_target_os = ["all"]

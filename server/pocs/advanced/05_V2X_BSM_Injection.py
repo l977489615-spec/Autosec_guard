@@ -20,6 +20,8 @@ class V2XBSMInjectionPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-ADV-005"
     meta_poc_name = "V2X BSM Injection"
     meta_cve_id = "CWE-345"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/345.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/345.html']
     meta_severity = "High"
     meta_protocol = "rf"
     meta_target_os = ["all"]

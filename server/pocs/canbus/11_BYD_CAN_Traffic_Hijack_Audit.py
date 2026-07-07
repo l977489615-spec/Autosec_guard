@@ -363,6 +363,8 @@ from poc_runtime_adapter import execute_check_callable
 class Poc36BydtrafficHijackPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = '检测设备是否存在CAN流量劫持漏洞（CVE-2025-28169）...'
     meta_cve_id = 'CVE-2025-28169'
+    meta_source_url = 'https://nvd.nist.gov/vuln/detail/CVE-2025-28169'
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2025-28169']
     meta_severity = 'High'
     meta_protocol = 'can'
     meta_target_os = ['android']

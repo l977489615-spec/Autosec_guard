@@ -470,6 +470,8 @@ from poc_runtime_adapter import execute_check_callable
 class Poc29OpenfileAnyrwPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = '检测设备app是否使用了不安全的文件全局可读写访问接口...'
     meta_cve_id = 'CWE-732'
+    meta_source_url = 'https://cwe.mitre.org/data/definitions/732.html'
+    meta_references = ['https://cwe.mitre.org/data/definitions/732.html']
     meta_severity = 'High'
     meta_protocol = 'android'
     meta_target_os = ['android', 'linux']

@@ -22,6 +22,8 @@ class MercedesHiQnetPlugin(IVIVulnerabilityPlugin):
     """
     meta_poc_name = "HiQnet Stack Overflow TCP"
     meta_cve_id = "CVE-2021-23906"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2021-23906"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2021-23906']
     meta_severity = "Critical"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

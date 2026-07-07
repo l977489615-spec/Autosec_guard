@@ -54,6 +54,8 @@ class UDSECUResetPlugin(IVIVulnerabilityPlugin):
     """
     meta_poc_name = "UDS ECU Reset Unauthenticated"
     meta_cve_id = "CWE-306"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/306.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/306.html']
     meta_severity = "High"
     meta_protocol = "can"
     meta_target_os = ["all"]

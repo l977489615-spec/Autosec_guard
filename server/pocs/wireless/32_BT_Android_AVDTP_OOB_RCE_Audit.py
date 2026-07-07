@@ -17,6 +17,8 @@ class BTAndroidAVDTPOOBRCEAuditPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-032"
     meta_poc_name = "BT Android AVDTP OOB RCE Audit"
     meta_cve_id = "CVE-2022-20411"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2022-20411"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2022-20411']
     meta_severity = "Critical"
     meta_protocol = "bluetooth"
     meta_target_os = ["android"]

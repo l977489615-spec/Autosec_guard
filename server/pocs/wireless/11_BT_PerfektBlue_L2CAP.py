@@ -17,6 +17,8 @@ class PerfektBlueL2CAPPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-011"
     meta_poc_name = "BT PerfektBlue L2CAP"
     meta_cve_id = "CVE-2024-45431"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2024-45431"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2024-45431']
     meta_severity = "Critical"
     meta_protocol = "bluetooth"
     meta_profiles = ["bluetooth"]

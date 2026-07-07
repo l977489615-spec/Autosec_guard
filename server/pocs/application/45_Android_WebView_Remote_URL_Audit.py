@@ -33,6 +33,8 @@ from poc_runtime_adapter import execute_check_callable
 class Poc120WebviewRemoteUrlPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = 'WebView 远程 URL 加载受控检测'
     meta_cve_id = 'CWE-829'
+    meta_source_url = 'https://cwe.mitre.org/data/definitions/829.html'
+    meta_references = ['https://cwe.mitre.org/data/definitions/829.html']
     meta_severity = 'Medium'
     meta_protocol = 'android'
     meta_target_os = ['android']

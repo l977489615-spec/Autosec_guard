@@ -18,6 +18,8 @@ class WiFiKRACKPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-004"
     meta_poc_name = "WiFi KRACK"
     meta_cve_id = "CVE-2017-13077"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2017-13077"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2017-13077']
     meta_severity = "High"
     meta_protocol = "wifi"
     meta_profiles = ["wifi"]

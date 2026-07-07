@@ -198,6 +198,8 @@ from poc_runtime_adapter import execute_check_callable
 class Poc41SelinuxPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = '检测SELinux宽容设备是否存在敏感数据泄露风险...'
     meta_cve_id = 'CWE-284'
+    meta_source_url = 'https://cwe.mitre.org/data/definitions/284.html'
+    meta_references = ['https://cwe.mitre.org/data/definitions/284.html']
     meta_severity = 'Medium'
     meta_protocol = 'local'
     meta_target_os = ['android', 'linux']

@@ -21,6 +21,8 @@ class AlpineCarPlayPlugin(IVIVulnerabilityPlugin):
     """
     meta_poc_name = "CarPlay Stack Overflow"
     meta_cve_id = "CVE-2024-23923,CVE-2025-8474"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2024-23923"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2024-23923', 'https://nvd.nist.gov/vuln/detail/CVE-2025-8474']
     meta_severity = "High"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

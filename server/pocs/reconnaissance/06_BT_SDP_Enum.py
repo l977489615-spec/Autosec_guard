@@ -16,6 +16,8 @@ class BTSDPEnumPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-RECON-006"
     meta_poc_name = "BT SDP Enum"
     meta_cve_id = "CWE-200"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/200.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/200.html']
     meta_severity = "Low"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

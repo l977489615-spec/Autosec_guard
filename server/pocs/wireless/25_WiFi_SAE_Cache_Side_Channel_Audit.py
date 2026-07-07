@@ -18,6 +18,8 @@ class WiFiSAECacheSideChannelAuditPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-025"
     meta_poc_name = "WiFi SAE Cache Side Channel Audit"
     meta_cve_id = "CVE-2022-23303"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2022-23303"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2022-23303']
     meta_severity = "Critical"
     meta_protocol = "wifi"
     meta_target_os = ["android", "linux"]

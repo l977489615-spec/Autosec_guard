@@ -22,6 +22,8 @@ class RTSPLogLeakPlugin(IVIVulnerabilityPlugin):
     """
     meta_poc_name = "RTSP Log Leak"
     meta_cve_id = "CWE-200"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/200.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/200.html']
     meta_severity = "High"
     meta_protocol = "rtsp"
     meta_target_os = ["all"]

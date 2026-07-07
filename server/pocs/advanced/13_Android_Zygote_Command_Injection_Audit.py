@@ -133,6 +133,8 @@ from poc_runtime_adapter import execute_check_callable
 class Poc40ZygotePlugin(IVIVulnerabilityPlugin):
     meta_poc_name = '检测设备是否存在Zygote进程命令注入漏洞（CVE-2024-31317）...'
     meta_cve_id = 'CVE-2024-31317'
+    meta_source_url = 'https://nvd.nist.gov/vuln/detail/CVE-2024-31317'
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2024-31317']
     meta_severity = 'Critical'
     meta_protocol = 'local'
     meta_target_os = ['android', 'linux']

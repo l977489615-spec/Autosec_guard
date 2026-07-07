@@ -19,6 +19,8 @@ class TCPPortScanPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-RECON-002"
     meta_poc_name = "TCP Port Scan"
     meta_cve_id = "CWE-200"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/200.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/200.html']
     meta_severity = "Medium"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

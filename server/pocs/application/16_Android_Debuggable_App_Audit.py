@@ -35,6 +35,8 @@ from poc_runtime_adapter import execute_check_callable
 class Poc11DebuggablePlugin(IVIVulnerabilityPlugin):
     meta_poc_name = '检测设备app是否允许不安全的动态调试...'
     meta_cve_id = 'CWE-489'
+    meta_source_url = 'https://cwe.mitre.org/data/definitions/489.html'
+    meta_references = ['https://cwe.mitre.org/data/definitions/489.html']
     meta_severity = 'High'
     meta_protocol = 'android'
     meta_target_os = ['android']

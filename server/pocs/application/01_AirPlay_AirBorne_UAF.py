@@ -17,6 +17,8 @@ class AirBorneUAFPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-APP-001"
     meta_poc_name = "AirPlay AirBorne UAF"
     meta_cve_id = "CVE-2025-24252"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2025-24252"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2025-24252']
     meta_severity = "Critical"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

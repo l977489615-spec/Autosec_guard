@@ -16,6 +16,8 @@ class CarlinKitBypassPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-APP-010"
     meta_poc_name = "Wireless Dongle Auth Bypass"
     meta_cve_id = "CVE-2025-2765"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2025-2765"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2025-2765']
     meta_severity = "Critical"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

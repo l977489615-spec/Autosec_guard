@@ -17,6 +17,8 @@ class BTAndroidL2CAPUAFRCEAuditPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-030"
     meta_poc_name = "BT Android L2CAP UAF RCE Audit"
     meta_cve_id = "CVE-2021-0475"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2021-0475"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2021-0475']
     meta_severity = "Critical"
     meta_protocol = "bluetooth"
     meta_target_os = ["android"]

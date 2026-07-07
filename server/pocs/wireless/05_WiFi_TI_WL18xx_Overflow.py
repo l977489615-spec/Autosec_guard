@@ -17,6 +17,8 @@ class TIWL18xxOverflowPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-005"
     meta_poc_name = "WiFi TI WL18xx Overflow"
     meta_cve_id = "CVE-2023-29468"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2023-29468"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2023-29468']
     meta_severity = "Critical"
     meta_protocol = "wifi"
     meta_profiles = ["wifi"]

@@ -17,6 +17,8 @@ class WiFiDeauthPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-002"
     meta_poc_name = "WiFi Deauth"
     meta_cve_id = "CWE-345"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/345.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/345.html']
     meta_severity = "Medium"
     meta_protocol = "wifi"
     meta_profiles = ["wifi"]

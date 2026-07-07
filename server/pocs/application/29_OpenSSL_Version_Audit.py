@@ -378,6 +378,8 @@ from poc_runtime_adapter import execute_check_callable
 class Poc24OpensslExportPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = '检测系统或app是否使用了不安全的openssl（CVE-2016_6309）...'
     meta_cve_id = 'CVE-2016-6309'
+    meta_source_url = 'https://nvd.nist.gov/vuln/detail/CVE-2016-6309'
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2016-6309']
     meta_severity = 'High'
     meta_protocol = 'tls'
     meta_target_os = ['android', 'linux']

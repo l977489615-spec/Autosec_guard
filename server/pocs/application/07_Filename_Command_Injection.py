@@ -17,6 +17,8 @@ class FilenameCmdInjectPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-APP-007"
     meta_poc_name = "Filename Command Injection"
     meta_cve_id = "CWE-78"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/78.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/78.html']
     meta_severity = "High"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

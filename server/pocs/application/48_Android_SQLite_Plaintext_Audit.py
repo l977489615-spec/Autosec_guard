@@ -35,6 +35,8 @@ from poc_runtime_adapter import execute_check_callable
 class Poc123SqlitePlaintextPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = 'SQLite 明文敏感数据存储检测'
     meta_cve_id = 'CWE-312'
+    meta_source_url = 'https://cwe.mitre.org/data/definitions/312.html'
+    meta_references = ['https://cwe.mitre.org/data/definitions/312.html']
     meta_severity = 'High'
     meta_protocol = 'android'
     meta_target_os = ['android']

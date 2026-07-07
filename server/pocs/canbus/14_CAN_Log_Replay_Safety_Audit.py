@@ -29,6 +29,8 @@ from poc_runtime_adapter import execute_check_callable
 class Poc136CanLogReplaySafetyLintPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = 'CAN 重放日志安全 Lint'
     meta_cve_id = 'CWE-294'
+    meta_source_url = 'https://cwe.mitre.org/data/definitions/294.html'
+    meta_references = ['https://cwe.mitre.org/data/definitions/294.html']
     meta_severity = 'Medium'
     meta_protocol = 'can'
     meta_target_os = ['all']

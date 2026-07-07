@@ -42,6 +42,8 @@ class UPnPAVTransportMediaInjectPlugin(IVIVulnerabilityPlugin):
     """
     meta_poc_name = "UPnP AVTransport Media Inject"
     meta_cve_id = "CWE-306"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/306.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/306.html']
     meta_severity = "High"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

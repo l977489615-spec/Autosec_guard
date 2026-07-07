@@ -244,6 +244,8 @@ from poc_runtime_adapter import execute_check_callable
 class Poc7StackchkPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = '检测已连接设备是否启用栈保护机制...'
     meta_cve_id = 'CWE-693'
+    meta_source_url = 'https://cwe.mitre.org/data/definitions/693.html'
+    meta_references = ['https://cwe.mitre.org/data/definitions/693.html']
     meta_severity = 'Medium'
     meta_protocol = 'local'
     meta_target_os = ['android', 'linux']
