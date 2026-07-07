@@ -45,3 +45,16 @@ server/backups/
 nuitka-crash-report.xml
 *.crash
 *.stackdump
+
+# Claude / local env
+claude_code_env.sh
+
+# archives
+*.zip
+
+# temp outputs
+tmp/
+output/
+
+# lab generated outputs
+lab/
