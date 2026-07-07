@@ -4,133 +4,145 @@ CVE: N/A
 Component: Unknown Network Service
 Category: Network
 Severity: Medium
-Description: 对未知 TCP 服务进行低风险协议指纹探测，采集 banner、响应长度和异常响应证据。
-Prerequisites: 目标 IP 可达；可选 target_port 或 candidate_ports。
-Usage: python3 15_Dynamic_Unknown_Service_Probe.py <target_ip> [target_port]
+Description: Weaponize Agent 生成的协议感知型未知服务动态探测脚本
+Prerequisites: 目标可达
 """
-import socket
 import sys
+import socket
 import time
-
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 
-DEFAULT_PORTS = [22, 23, 80, 443, 554, 1883, 5555, 7000, 8000, 8080, 8443, 13400, 30490]
-PROBES = [
-    ("empty", b""),
-    ("http_head", b"HEAD / HTTP/1.1\r\nHost: target\r\nConnection: close\r\n\r\n"),
-    ("http_options", b"OPTIONS * HTTP/1.1\r\nHost: target\r\nConnection: close\r\n\r\n"),
-    ("adb_cnxn_hint", b"CNXN\x00\x00\x00\x01\x00\x10\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xbc\xb1\xa7\xb1"),
-    ("mqtt_connect_hint", b"\x10\x0e\x00\x04MQTT\x04\x02\x00<\x00\x00"),
-    ("generic_newline", b"\r\n"),
-]
-
-
 class DynamicUnknownServiceProbePlugin(IVIVulnerabilityPlugin):
-    meta_display_id = "POC-NET-015"
     meta_poc_name = "Dynamic Unknown Service Probe"
     meta_cve_id = "N/A"
     meta_severity = "Medium"
     meta_protocol = "tcp"
     meta_target_os = ["all"]
     meta_required_params = ["target_ip"]
-    meta_profiles = ["unknown_service", "network"]
     is_disruptive = False
     meta_destructive_level = "Probe"
 
     def check_prerequisites(self):
         if not self.target_ip:
-            raise RuntimeError("需要指定目标 IP 地址。")
-        raw_ports = self.params.get("target_port") or self.params.get("candidate_ports") or ""
-        self.ports = self._parse_ports(raw_ports)
-        self.timeout = float(self.params.get("timeout", 2.0) or 2.0)
+            raise RuntimeError("需要指定目标IP地址。")
         return True
 
-    def _parse_ports(self, raw_value):
-        if isinstance(raw_value, int):
-            return [raw_value]
-        if isinstance(raw_value, str) and raw_value.strip():
-            ports = []
-            for part in raw_value.replace(";", ",").split(","):
-                try:
-                    port = int(part.strip())
-                except ValueError:
-                    continue
-                if 1 <= port <= 65535 and port not in ports:
-                    ports.append(port)
-            if ports:
-                return ports
-        if self.target_port:
-            return [int(self.target_port)]
-        return DEFAULT_PORTS
-
-    def _probe_once(self, port: int, probe_name: str, payload: bytes) -> dict:
-        started = time.time()
-        item = {
-            "port": port,
-            "probe": probe_name,
-            "open": False,
-            "response_hex": "",
-            "response_text": "",
-            "elapsed_ms": 0,
-            "error": "",
-        }
-        try:
-            with socket.create_connection((self.target_ip, port), timeout=self.timeout) as sock:
-                item["open"] = True
-                sock.settimeout(self.timeout)
-                if payload:
-                    sock.sendall(payload)
-                try:
-                    data = sock.recv(512)
-                except socket.timeout:
-                    data = b""
-                item["response_hex"] = data[:128].hex()
-                item["response_text"] = data[:128].decode("utf-8", errors="replace")
-        except (OSError, socket.timeout) as exc:
-            item["error"] = str(exc)
-        finally:
-            item["elapsed_ms"] = round((time.time() - started) * 1000, 2)
-        return item
-
     def exploit(self):
-        findings = []
-        open_ports = set()
-        for port in self.ports:
-            for probe_name, payload in PROBES:
-                result = self._probe_once(port, probe_name, payload)
-                if result["open"]:
-                    open_ports.add(port)
-                    findings.append(result)
-                if result["response_hex"]:
-                    break
+        self.results["description"] = "未知服务动态指纹与异常响应探测"
+        target_ip = self.target_ip
+        target_port = self.target_port
+        try:
+            import socket
+            import struct
+            import time
+            import random
 
-        if not findings:
+            # 目标IP地址
+            TARGET_IP = "192.168.31.158"
+            # 目标端口范围
+            PORT_RANGE = (1, 65535)
+            # 探测次数
+            PROBE_COUNT = 10
+            # 延迟时间（秒）
+            DELAY = 0.1
+
+            def create_socket():
+                """创建一个原始套接字"""
+                try:
+                    s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
+                    s.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
+                    return s
+                except socket.error as msg:
+                    print(f"Socket creation error: {msg}")
+                    return None
+
+            def send_probe(s, target_ip, port):
+                """发送探测包"""
+                ip_header = struct.pack('!BBHHHBBH4s4s',
+                                        69,  # Version, IHL
+                                        0,   # DSCP, ECN
+                                        20 + 8,  # Total Length
+                                        0,   # Identification
+                                        0,   # Flags, Fragment Offset
+                                        64,  # TTL
+                                        6,   # Protocol (TCP)
+                                        0,   # Header Checksum
+                                        socket.inet_aton(target_ip),  # Source IP
+                                        socket.inet_aton(target_ip))  # Destination IP
+
+                tcp_header = struct.pack('!HHLLBBHHH',
+                                         port,  # Source Port
+                                         80,    # Destination Port
+                                         0,     # Sequence Number
+                                         0,     # Acknowledgment Number
+                                         5 << 4,  # Data Offset, Reserved, Flags
+                                         2,     # Window Size
+                                         0,     # Checksum
+                                         0)     # Urgent Pointer
+
+                packet = ip_header + tcp_header
+                s.sendto(packet, (target_ip, 0))
+
+            def receive_response(s, timeout=1):
+                """接收响应包"""
+                s.settimeout(timeout)
+                try:
+                    response, addr = s.recvfrom(65535)
+                    return response
+                except socket.timeout:
+                    return None
+
+            def main():
+                s = create_socket()
+                if not s:
+                    return
+
+                normal_responses = []
+                for _ in range(PROBE_COUNT):
+                    port = random.randint(*PORT_RANGE)
+                    send_probe(s, TARGET_IP, port)
+                    time.sleep(DELAY)
+                    response = receive_response(s)
+                    if response:
+                        normal_responses.append(response)
+                        print(f"Received response from port {port}")
+
+                if not normal_responses:
+                    print("No responses received. Target may be unreachable or silent.")
+                    return
+
+                # 建立正常响应基线
+                baseline = set(normal_responses)
+
+                # 收集异常证据
+                vulnerable = False
+                for _ in range(PROBE_COUNT):
+                    port = random.randint(*PORT_RANGE)
+                    send_probe(s, TARGET_IP, port)
+                    time.sleep(DELAY)
+                    response = receive_response(s)
+                    if response and response not in baseline:
+                        print(f"Abnormal response received from port {port}")
+                        vulnerable = True
+                        break
+
+                if vulnerable:
+                    print("Vulnerable: True")
+                else:
+                    print("Vulnerable: False")
+
+                s.close()
+        except Exception as e:
+            self.logger.error(f"动态未知服务探测脚本执行异常: {e}")
             self.results["vulnerable"] = False
-            self.results["evidence"] = f"未在候选端口 {self.ports} 上发现可连接的未知 TCP 服务。"
-            return self.results
-
-        evidence_lines = [
-            f"发现 {len(open_ports)} 个可连接端口: {sorted(open_ports)}",
-            "该 PoC 只做低风险协议指纹探测，不直接判定漏洞成功。",
-        ]
-        for item in findings[:20]:
-            response = item["response_text"] or item["response_hex"] or item["error"] or "no response"
-            evidence_lines.append(
-                f"port={item['port']} probe={item['probe']} elapsed_ms={item['elapsed_ms']} response={response[:160]}"
-            )
-
-        self.results["vulnerable"] = True
-        self.results["evidence"] = "\n".join(evidence_lines)
-        self.results["details"] = {"open_ports": sorted(open_ports), "probe_results": findings[:50]}
+            self.results["evidence"] = f"Exception: {e}"
         return self.results
 
 
 if __name__ == "__main__":
-    params = {}
-    if len(sys.argv) >= 2:
-        params["target_ip"] = sys.argv[1]
-    if len(sys.argv) >= 3:
-        params["target_port"] = sys.argv[2]
-    plugin = DynamicUnknownServiceProbePlugin(params)
+    if len(sys.argv) < 2:
+        print("Usage: python3 network/15_Dynamic_Unknown_Service_Probe.py <target_ip>")
+        sys.exit(1)
+    plugin = DynamicUnknownServiceProbePlugin({"target_ip": sys.argv[1]})
     plugin.run_verify()

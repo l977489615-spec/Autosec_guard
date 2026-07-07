@@ -1,5 +1,6 @@
 import ast
 import os
+from pathlib import Path
 from typing import Any, Dict
 
 
@@ -61,6 +62,36 @@ def extract_poc_security_profile(poc_path: str, source_text: str | None = None) 
             profile["is_disruptive"] = bool(class_meta.get("is_disruptive", profile["is_disruptive"]))
             break
 
+    try:
+        from poc_metadata_enrich import NEW_POC_KNOWN, enrich_new_poc_meta, normalize_meta
+
+        path = Path(poc_path)
+        if path.stem in NEW_POC_KNOWN:
+            rel = path.as_posix()
+            if "pocs/" in rel:
+                rel = rel.split("pocs/", 1)[1]
+            meta = normalize_meta(enrich_new_poc_meta(Path(rel), source_text or "", {
+                "poc_file": rel,
+                "poc_name": profile.get("poc_name") or path.name,
+                "category": Path(rel).parts[0] if "/" in rel else "",
+                "protocol": profile.get("protocol") or "",
+                "severity": profile.get("severity") or "",
+                "required_params": ",".join(profile.get("required_params") or []),
+                "profiles": [],
+                "destructive_level": profile.get("destructive_level") or "Safe",
+                "is_disruptive": profile.get("is_disruptive") or False,
+            }))
+            profile["poc_name"] = meta.get("poc_name") or profile["poc_name"]
+            profile["severity"] = meta.get("severity") or profile["severity"]
+            profile["protocol"] = meta.get("protocol") or profile["protocol"]
+            profile["required_params"] = [
+                p.strip() for p in str(meta.get("required_params") or "").split(",") if p.strip()
+            ]
+            profile["destructive_level"] = meta.get("destructive_level") or profile["destructive_level"]
+            profile["is_disruptive"] = bool(meta.get("is_disruptive") or profile["is_disruptive"])
+    except Exception:
+        pass
+
     return profile
 
 
@@ -70,4 +101,4 @@ def should_require_disruptive_approval(profile: Dict[str, Any], params: Dict[str
     destructive_level = str(profile.get("destructive_level") or "").lower()
     if profile.get("is_disruptive"):
         return True
-    return destructive_level in {"restart", "dataloss", "brick"}
+    return destructive_level in {"disruptive", "restart", "dataloss", "brick"}

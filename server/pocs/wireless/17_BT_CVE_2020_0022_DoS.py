@@ -38,7 +38,8 @@ class BlueFrag2020DoSPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = "BT CVE 2020 0022 DoS"
     meta_cve_id = "N/A"
     meta_severity = "High"
-    meta_protocol = "rf"
+    meta_protocol = "bluetooth"
+    meta_profiles = ["bluetooth"]
     meta_target_os = ["all"]
     meta_required_params = ["target_mac"]
     is_disruptive = False

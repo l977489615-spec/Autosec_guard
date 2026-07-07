@@ -189,12 +189,13 @@ class AuthStateDetector:
             # 尝试用 paramiko 探测支持的认证方式
             try:
                 import paramiko
+                from paramiko.ssh_exception import BadAuthenticationType
                 transport = paramiko.Transport((target_ip, port))
                 transport.connect()
                 auth_methods = []
                 try:
                     transport.auth_none("probe_user")
-                except paramiko.ssh_exception.BadAuthenticationType as e:
+                except BadAuthenticationType as e:
                     auth_methods = getattr(e, "allowed_types", [])
                 transport.close()
 
@@ -439,8 +440,8 @@ class AdaptiveContextEngine:
         """返回当前建议的 PoC 执行间隔（秒），基于 IVI 负载状态"""
         return self.load_probe.get_recommended_interval_ms() / 1000.0
 
-    def get_context_summary(self, recommended_interval: float = None,
-                            load_status: str = None, latency: float = None) -> dict:
+    def get_context_summary(self, recommended_interval: Optional[float] = None,
+                            load_status: Optional[str] = None, latency: Optional[float] = None) -> dict:
         """返回完整上下文摘要字典（供 API 和 Agent 使用）"""
         return {
             "target_ip": self.target_ip,

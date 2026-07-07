@@ -60,9 +60,10 @@ import asyncio
 import traceback
 import re
 import uuid
+import sys
 import requests
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from config import get_config
 
 logger = logging.getLogger(__name__)
@@ -185,6 +186,25 @@ def _safe_json_dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2)
 
 
+def _sanitize_weaponized_code(raw_code: str) -> str:
+    """Remove script entrypoints and dedent LLM output before re-indenting into exploit()."""
+    lines = raw_code.splitlines()
+    cleaned: list[str] = []
+    skipping_main = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("if __name__") and "__main__" in stripped:
+            skipping_main = True
+            continue
+        if skipping_main:
+            if stripped and not line.startswith((" ", "\t")):
+                skipping_main = False
+            else:
+                continue
+        cleaned.append(line.rstrip())
+    return "\n".join(cleaned).strip()
+
+
 def _wrap_code_as_plugin(raw_code: str) -> str:
     """将 Weaponize Agent 生成的原始代码包装为合规的 IVIVulnerabilityPlugin 子类。
 
@@ -192,6 +212,7 @@ def _wrap_code_as_plugin(raw_code: str) -> str:
     并且该子类必须拥有 run_verify 方法。直接写入原始代码会导致
     'No valid plugin class found' 错误。
     """
+    raw_code = _sanitize_weaponized_code(raw_code)
     # 如果生成的代码已经包含 IVIVulnerabilityPlugin 子类，直接返回
     if 'IVIVulnerabilityPlugin' in raw_code and 'class ' in raw_code:
         # 确保有 from iv_plugin_base import 语句
@@ -199,8 +220,11 @@ def _wrap_code_as_plugin(raw_code: str) -> str:
             raw_code = 'from iv_plugin_base import IVIVulnerabilityPlugin\n' + raw_code
         return raw_code
 
-    # 对原始代码进行缩进以嵌入 exploit() 方法体
-    indented_code = '\n'.join('        ' + line if line.strip() else '' for line in raw_code.splitlines())
+    # exploit() 内 try 块需要 12 空格缩进（class 4 + method 4 + try 4）
+    indented_code = '\n'.join(
+        ('            ' + line if line.strip() else '')
+        for line in raw_code.splitlines()
+    )
 
     return f'''"""
 PoC Name: Dynamic Unknown Service Probe
@@ -383,7 +407,7 @@ def _load_poc_catalog(tool_state: Optional[Dict[str, Any]] = None) -> List[Dict[
 def _direct_tool_call(
     tool_name: str,
     params: dict,
-    on_log: Optional[callable] = None,
+    on_log: Optional[Callable[..., Any]] = None,
     tool_state: Optional[Dict[str, Any]] = None,
 ) -> dict:
     """
@@ -393,11 +417,15 @@ def _direct_tool_call(
     try:
         if tool_name == "scan_ports":
             from topology_scanner import TopologyAwareScanner
-            target_ip = params.get("target_ip")
+            from agent_recon_bootstrap import parse_candidate_ports
+            target_ip = str(params.get("target_ip") or "")
             if on_log:
                 on_log({"type": "info", "message": f"[Topology] 开始对 {target_ip} 的端口扫描..."})
             timeout = float(params.get("timeout", 2.0))
-            scanner = TopologyAwareScanner(target_ip, timeout=timeout)
+            candidate_ports = parse_candidate_ports(
+                params.get("candidate_ports") or (tool_state or {}).get("candidate_ports")
+            )
+            scanner = TopologyAwareScanner(target_ip, timeout=timeout, candidate_ports=candidate_ports)
             scanner._scan_ports()
             nodes = scanner.topo_map.nodes
             open_ports = nodes[0].open_ports if nodes else []
@@ -409,7 +437,7 @@ def _direct_tool_call(
 
         elif tool_name == "get_topology":
             from topology_scanner import TopologyAwareScanner
-            target_ip = params.get("target_ip")
+            target_ip = str(params.get("target_ip") or "")
             if on_log:
                 on_log({"type": "info", "message": f"[Topology] 正在分析 {target_ip} 的网络拓扑结构..."})
             scanner = TopologyAwareScanner(target_ip, timeout=3.0)
@@ -420,7 +448,7 @@ def _direct_tool_call(
 
         elif tool_name == "get_adaptive_context":
             from physical_safety_monitor import get_or_create_engine
-            target_ip = params.get("target_ip")
+            target_ip = str(params.get("target_ip") or "")
             if on_log:
                  on_log({"type": "info", "message": f"[Safety] 获取自适应防护上下文: {target_ip}"})
             open_ports = params.get("open_ports") or []
@@ -489,9 +517,10 @@ def _direct_tool_call(
         elif tool_name == "run_poc":
             poc_name = params.get("poc_name") or params.get("poc_file") or params.get("filename")
             poc_params = params.get("params", {})
+            autosec_api = str((tool_state or {}).get("autosec_api") or AUTOSEC_API).rstrip("/")
             try:
                 resp = requests.post(
-                    f"{AUTOSEC_API}/api/run_poc",
+                    f"{autosec_api}/api/run_poc",
                     json={"filename": poc_name, "params": poc_params, "session_id": "agent_auto"},
                     timeout=90,
                 )
@@ -512,22 +541,23 @@ def _direct_tool_call(
                                 "type": "warning" if data.get("requires_human_review") else ("success" if data.get("vulnerable") else "info"),
                                 "message": f"[Executor] PoC 执行完毕: {status} (文件名: {poc_name})"
                             })
+                    session_id = str((tool_state or {}).get("poc_session_id") or "agent_auto")
                     return {
                         "blocked": False,
                         "success": bool(data.get("success", True)),
                         "vulnerable": data.get("vulnerable") if data.get("vulnerable") is not None else None,
                         "evidence": data.get("evidence") or data.get("output", ""),
                         "logs": data.get("logs", []),
-                        "trace_id": data.get("trace_id"),
+                        "trace_id": data.get("trace_id") or session_id,
                         "poc_id": data.get("poc_id") or poc_name,
                         "requires_human_review": bool(data.get("requires_human_review")),
                         "verification_status": data.get("verification_status", ""),
                         "manual_review": data.get("manual_review", {}),
                         "security_profile": data.get("security_profile", {}),
                     }
-                return {"blocked": False, "error": f"API {resp.status_code}: {resp.text[:200]}"}
+                return {"blocked": False, "error": f"{autosec_api} API {resp.status_code}: {resp.text[:200]}"}
             except Exception as e:
-                return {"blocked": False, "error": str(e)}
+                return {"blocked": False, "error": f"{autosec_api}: {e}"}
 
         else:
             return {"error": f"Unknown tool: {tool_name}"}
@@ -541,7 +571,7 @@ def call_mcp_tool(
     tool_name: str,
     params: dict,
     timeout: int = 90,
-    on_log: Optional[callable] = None,
+    on_log: Optional[Callable[..., Any]] = None,
     tool_state: Optional[Dict[str, Any]] = None,
 ) -> dict:
     """
@@ -549,6 +579,9 @@ def call_mcp_tool(
     优先连接外部 MCP Server（端口 5003）；
     连接失败时自动降级为直接本地执行，无需单独启动 mcp_server.py。
     """
+    if tool_name == "run_poc" and (tool_state or {}).get("prefer_direct_run_poc"):
+        return _direct_tool_call(tool_name, params, on_log=on_log, tool_state=tool_state)
+
     try:
         resp = requests.post(
             f"{MCP_SERVER}/mcp/call",
@@ -585,7 +618,8 @@ class QwenAgent:
     def __init__(self, agent_name: str, system_prompt: str, mcp_tools: List[dict],
                  api_key: str,
                  base_url: str,
-                 model_name: str = "qwen-plus", max_turns: int = 8, on_log: Optional[callable] = None):
+                 model_name: str = "qwen-plus", max_turns: int = 8, on_log: Optional[Callable[..., Any]] = None,
+                 request_timeout_seconds: int = 120, connect_timeout_seconds: int = 15):
         self.agent_name = agent_name
         self.system_prompt = system_prompt
         self.mcp_tools = mcp_tools
@@ -593,15 +627,60 @@ class QwenAgent:
         self._base_url = base_url.rstrip("/")
         self._model_name = model_name
         self._max_turns = max_turns
+        self._request_timeout_seconds = max(int(request_timeout_seconds or 120), 10)
+        self._connect_timeout_seconds = max(int(connect_timeout_seconds or 15), 3)
         self.on_log = on_log
         self.tool_state: Dict[str, Any] = {}
         self.tool_history: List[Dict[str, Any]] = []
         self.supervisor_events: List[Dict[str, Any]] = []
+        self.llm_usage: Dict[str, Any] = {}
+
+    def _reset_usage(self):
+        self.llm_usage = {
+            "agent_name": self.agent_name,
+            "model_name": self._model_name,
+            "calls": 0,
+            "tool_call_count": 0,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "latency_ms_total": 0,
+            "history": [],
+        }
+
+    def _record_usage(self, response: Dict[str, Any], latency_ms: int, tool_call_count: int = 0):
+        usage = response.get("usage") or {}
+        prompt_tokens = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
+        completion_tokens = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
+        total_tokens = int(usage.get("total_tokens") or (prompt_tokens + completion_tokens) or 0)
+        self.llm_usage["calls"] += 1
+        self.llm_usage["tool_call_count"] += int(tool_call_count or 0)
+        self.llm_usage["prompt_tokens"] += prompt_tokens
+        self.llm_usage["completion_tokens"] += completion_tokens
+        self.llm_usage["total_tokens"] += total_tokens
+        self.llm_usage["latency_ms_total"] += int(latency_ms or 0)
+        self.llm_usage["history"].append({
+            "timestamp": _utc_timestamp(),
+            "latency_ms": int(latency_ms or 0),
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+            "tool_call_count": int(tool_call_count or 0),
+        })
+
+    def usage_summary(self) -> Dict[str, Any]:
+        if not self.llm_usage:
+            self._reset_usage()
+        calls = max(int(self.llm_usage.get("calls") or 0), 1)
+        return {
+            **self.llm_usage,
+            "avg_latency_ms": round(float(self.llm_usage.get("latency_ms_total") or 0) / calls, 2),
+        }
 
     def _build_openai_tools(self) -> List[dict]:
         """将 MCP 工具格式转换为 OpenAI Function Calling 格式"""
         if not self.mcp_tools:
-            return None
+            return []
         tools = []
         for t in self.mcp_tools:
             tools.append({
@@ -652,7 +731,7 @@ class QwenAgent:
                 "Content-Type": "application/json",
             },
             json=payload,
-            timeout=120,
+            timeout=(self._connect_timeout_seconds, self._request_timeout_seconds),
         )
         if response.status_code >= 400:
             raise RuntimeError(f"HTTP {response.status_code}: {response.text[:500]}")
@@ -762,6 +841,7 @@ class QwenAgent:
         ]
         self.tool_history = []
         self.supervisor_events = []
+        self._reset_usage()
 
         openai_tools = self._build_openai_tools()
 
@@ -777,6 +857,11 @@ class QwenAgent:
                     llm_latency = int((time.time() - start_llm) * 1000)
                     usage = response.get("usage") or {}
                     token_count = usage.get("total_tokens", 0)
+                    choices = response.get("choices") or []
+                    tool_calls = []
+                    if choices:
+                        tool_calls = (choices[0].get("message") or {}).get("tool_calls") or []
+                    self._record_usage(response, llm_latency, tool_call_count=len(tool_calls))
                     if self.on_log:
                         self.on_log({"type": "info", "message": f"[{self.agent_name}] LLM 调用完成 (延迟: {llm_latency}ms, 消耗Token: {token_count})"})
                     last_err = None
@@ -887,14 +972,15 @@ RECON_AGENT_PROMPT = """
 DECISION_AGENT_PROMPT = """
 你是一名经验丰富的汽车网络安全渗透专家，专注于 UDS、CAN、SOME/IP 等车载协议。
 基于侦察 Agent 提供的目标信息和【可用资源】，你需要：
-1. 调用 list_pocs 查询可用的 PoC 验证模块列表
-   • 注意：当前系统已全面升级为序号化命名规则（例如 10_SSH_Weak_Creds.py），请【必须】使用 list_pocs 返回的 filename 字段作为唯一执行标识。
+1. 阅读上下文中的【端口↔PoC 映射】与【PoC 元数据表】（已与 poc_coverage 对齐）；必要时再调用 list_pocs 核对。
+   • poc_name 必须使用元数据表中 poc_file 列的完整路径（例如 network/03_SSH_Service.py）。
+   • 【Global 扫描已检出】列表中的 PoC 应优先全部纳入攻击计划进行定向复验。
 2. 调用 get_adaptive_context 获取目标的服务指纹和认证类型
 3. 批准过滤如下 PoC（不得将其列入攻击计划）：
    • 如果【可用资源】中没有 bluetooth_mac，则跳过所有荷包名包含 "bluetooth"/"BT"/"ble" 的 PoC
    • 如果【可用资源】中没有 can_interface，则跳过所有包含 "canbus"/"CAN"/"isotp" 的 PoC
    • 如果【可用资源】中没有 wifi_interface，则跳过所有包含 "wireless"/"wifi"/"wpa" 的 PoC
-   • 如果【可用资源】中没有 expected_usb_serial，则跳过本机 USB ADB 枚举类 PoC；如果已提供，则优先将 `network/01_USB_ADB_Debug.py` 纳入候选，用于验证 USB 直连 ADB 攻击面
+   • 本机已连接 USB ADB（有 expected_usb_serial 或 local_usb_adb_attached）时，可执行 `network/01_USB_ADB_Debug.py`；serial 仅用于多设备消歧，单台连线可不填
    • 跳过侦察结果中未发现对应服务相关的 PoC
 4. 对剩余 PoC 调用 check_safety 获取推荐策略。如果你发现目标开启了某个完全未知的协议或者未涵盖在现有 PoC 中的异常服务，请在攻击计划中添加此项：`poc_name` 填 `"dynamic_unknown_service_probe"`，`strategy` 填 `"weaponize"`，并在 `parameters` 详细描述此服务的端口、banner、服务指纹和安全边界。系统将触发 Weaponize Agent 动态生成协议感知型未知服务探测代码。
 5. 输出有序的攻击计划 JSON，每个项包含： poc_name、parameters（含必要字段）、strategy、reason
@@ -999,37 +1085,112 @@ REFLECTOR_AGENT_PROMPT = """
 """
 
 ASSESSMENT_AGENT_PROMPT = """
-你是一名资深汽车网络安全评估专家，精通 ISO/SAE 21434 和 UN R155 法规要求。
-基于前序 Agent 的侦察数据、攻击计划和执行结果，你需要生成一份完整的安全评估报告。
+你是 AutoSec Guard 的首席车辆渗透测试报告工程师，具备资深红队、车联网安全扫描、IVI/T-Box/CAN/无线攻击面验证、ISO/SAE 21434 TARA、UN R155 CSMS 与工程整改闭环经验。
+你的任务不是泛泛总结，而是把上下文中的侦察、计划、PoC 执行结果、漏洞发现和反思审计，整理成一份可交付给车厂安全团队、合规团队和研发修复团队的专业渗透测试/安全扫描报告。
 
-━━ 最高优先级规则（强制） ━━
+━━ 第一性原理分析框架 ━━
 
-1. 绝对禁止编造、推测或补充任何未在【执行结果】中实际出现的漏洞。
-2. 报告中提及的每一个漏洞，必须能在上下文提供的【执行结果】中找到对应的 PoC 执行记录和证据。
-3. 如果某个攻击面（如 USB、RF 钥匙、固件更新等）未在【执行结果】中出现，则不得在报告中提及。
-4. 不得引用“可能存在”、“潜在”、“推测”等模糊表述来描述未经实际测试的漏洞。
-5. 如果执行结果中所有 PoC 均未发现漏洞，报告应如实反映“未发现漏洞”，而不是编造漏洞来填充报告。
+在写报告前，必须在内部按以下逻辑完成判断，并把结论体现在正文中：
+1. 资产是什么：识别本次证据实际触达的资产或域，例如 IVI、T-Box、网关、诊断域、CAN/UDS、蓝牙/Wi-Fi、USB、本地应用、日志/数据库/源码制品。上下文未提供时写“上下文未提供”。
+2. 信任边界在哪里：判断攻击者需要处于远程网络、同网段、近场无线、USB/物理接触、本地调试、已获 shell、离线制品审计中的哪一种位置。
+3. 安全属性受损是什么：按机密性、完整性、可用性、认证/授权、隔离边界、可追溯性、功能安全影响进行归类，不要只写“存在风险”。
+4. 可利用链路是否闭合：入口条件、触发步骤、返回证据、获得能力、影响对象、业务/安全后果必须形成闭环；缺任一环节时降低证据可信度并标注待补证。
+5. 证据等级是什么：高=自动化执行命中且有明确目标响应/文件/日志/状态变化；中=命中规则或环境迹象但缺少完整复现链；低=仅信息暴露、失败日志、人工待确认或静态弱信号。
+6. 风险是否可复测：每个确认发现都要给出复测方法；不能复测的结论只能作为受限发现或后续建议。
 
-━━ 报告结构 ━━
+━━ 最高优先级规则（必须严格遵守） ━━
 
-1. 执行摘要（Executive Summary）：面向管理层的风险概述，仅基于实际测试发现
-2. 总体风险评级：CRITICAL / HIGH / MEDIUM / LOW（仅基于实际发现的漏洞评级）
-3. 实际测试范围概述：明确列出本次实际执行了哪些 PoC 测试项
-4. 漏洞详细分析：仅分析实际确认的漏洞，【重要】必须使用 ISO 21434 TARA (Threat Analysis and Risk Assessment) 风险矩阵格式呈现，包含：
-   - 漏洞名称、协议类型、影响的 ECU 组件
-   - 实际执行的 PoC 名称和返回的证据原文
-   - TARA 威胁分析表格 (使用 Markdown 表格，包含列: 威胁场景 Threat Scenario | 影响程度 Impact Rating | 攻击可行性 Attack Feasibility | 风险等级 Risk Value)
-   - CVSS 评分参考
-5. 未发现漏洞的测试项：列出执行了但未发现漏洞的 PoC
-6. 修复建议：仅针对实际确认的漏洞提供加固方案
-7. 合规性评估：对照 UN R155 CSMS 要求的合规差距
-8. 建议的后续测试：列出本次未覆盖但建议未来进行的测试领域（明确标注“未测试”）
+1. 证据优先：报告中的每一个漏洞、风险等级、攻击路径和整改建议，必须能追溯到上下文中的【执行结果(JSON)】或【漏洞发现(JSON)】。不得编造未执行、未命中或无证据支撑的漏洞。
+2. 区分事实与建议：已经验证的漏洞写为“确认发现”；未执行但建议后续覆盖的内容只能写入“后续测试建议”，并明确标注“未测试/不作为本次发现”。
+3. 不夸大结论：失败、超时、前置条件缺失、环境不可达、人工确认缺失的结果，不得包装成漏洞；应归入“未确认/受限项”并说明限制原因。
+4. 不使用空泛措辞：禁止用“存在大量安全隐患”“可能被攻击者利用”等无证据口号替代技术事实。每个高风险判断都要给出触发条件、攻击者位置、可利用证据和业务/安全影响。
+5. 不泄露或扩写危险细节：可以描述验证方法和证据摘要，但不要提供可直接复用的攻击脚本、武器化 payload、默认口令清单或破坏性操作步骤。
+6. 日期与团队强约束：报告评估日期必须使用上下文提供的【评估日期】或【当前时间】；评估团队必须写“BIOS团队”。
+7. 语言与格式：使用中文、正式专业、Markdown 输出；不要输出 JSON，不要输出代码块包裹整份报告。
 
-━━ 格式要求 ━━
+━━ 证据处理准则 ━━
 
-- 报告中的评估日期必须使用上下文中提供的当前时间，禁止自行编造日期
-- 报告中的评估团队必须写 BIOS团队
-- 使用正式专业的语言输出，Markdown 格式，使用中文
+- 优先使用【漏洞发现(JSON)】中 vulnerable=true 的 finding 作为确认漏洞清单；如没有漏洞发现，则从【执行结果(JSON)】中 vulnerable=true 的条目提取。
+- 对每个确认漏洞必须引用：PoC/插件名称、目标、协议/攻击面（可从名称和参数推断，但必须标注为“基于 PoC 名称归类”）、执行状态、证据摘要、原始证据短摘录。
+- 原始证据摘录要短而精准；如果证据很长，只摘取关键字段或关键行，不要整段复制日志。
+- 对 vulnerable=false、completed、failed、timeout、manual_review_pending、environment_limited 等条目，要放在测试覆盖/未确认项中，不得写成漏洞。
+- 静态制品类 PoC（Manifest、源码、SQLite、日志、APK/so 版本）必须明确写为“静态审计发现”，不得描述成已在目标运行时成功利用。
+- 探测类 PoC（端口可达、协议握手、服务枚举）只能证明暴露面或前置条件，除非证据显示未授权访问、敏感信息泄露、状态改变或安全控制绕过，否则不得升级为漏洞。
+- 高风险/破坏性 PoC 若被跳过、待审批或人工拒绝，必须写入“未验证高风险路径”，不得把跳过原因写成漏洞结论。
+- 如果上下文包含反思审计，应把 evidence_sufficient、outcome_status、issues 和 next_action 融入“证据充分性与测试限制”。
+
+━━ 风险评级方法 ━━
+
+总体风险等级只能基于确认漏洞得出：
+- CRITICAL：已验证可导致安全关键 ECU/诊断域/CAN 控制、远程代码执行、持久化控制、可跨域进入车控链路，或影响行车安全。
+- HIGH：已验证可获得 IVI/T-Box/网关关键权限、绕过认证、敏感数据泄露后可横向移动，或可稳定造成高业务影响。
+- MEDIUM：已验证暴露服务、弱配置、信息泄露、局部未授权访问，需额外条件才能升级影响。
+- LOW：影响有限、利用条件较高、仅信息性或加固建议。
+- NO CONFIRMED FINDING：所有执行项均未确认漏洞。
+
+每个漏洞需给出：
+- 风险等级：CRITICAL/HIGH/MEDIUM/LOW
+- CVSS v3.1 参考向量和分值：若证据不足以精确评分，给“参考评分”并说明依据，不能伪装成正式 CVE 评分。
+- ISO/SAE 21434 TARA：Threat Scenario、Attack Feasibility、Impact、Risk Value、Safety/Security Rationale。
+- 影响链路：入口点 -> 漏洞/弱点 -> 获得能力 -> 影响对象 -> 业务/安全后果。
+- 证据可信度：高/中/低，并说明“为什么足以确认”或“还缺什么证据”。
+
+━━ 必须输出的报告结构 ━━
+
+# 智能网联汽车安全评估报告
+
+## 1. 报告元信息
+使用表格列出：评估目标、目标 IP、评估日期、评估团队（BIOS团队）、报告类型、数据来源、确认漏洞数量、执行 PoC 数量。
+
+## 2. 执行摘要
+面向管理层，用 2-4 段说明本次真实验证范围、确认发现数量、最高风险等级、最关键影响、整改优先级。若无确认漏洞，明确写“本次自动化验证未确认可利用漏洞”，并说明仍受测试范围限制。
+
+## 3. 关键发现总览
+用 Markdown 表格列出确认漏洞：编号、漏洞/PoC 名称、攻击面、目标/端口/参数、风险等级、证据状态、主要影响、整改优先级。
+如果没有确认漏洞，写“无确认漏洞”，不要强行生成表格内容。
+
+## 4. 测试范围与执行覆盖
+列出实际执行的 PoC/插件、状态、是否发现漏洞、证据摘要。明确区分：
+- 已确认漏洞
+- 未发现漏洞的测试项
+- 执行失败/环境受限/证据不足项
+- 未执行/被审批阻断的高风险项
+
+## 5. 漏洞详细分析
+对每个确认漏洞分别写一个小节，结构必须包含：
+- 漏洞概述：一句话说明本次确认了什么，而不是介绍通用漏洞背景。
+- 受影响对象：目标、端口/协议/组件/ECU 或系统域；未知字段写“上下文未提供”。
+- 验证证据：PoC 名称、执行状态、关键参数、证据短摘录、证据可信度（高/中/低）及原因。
+- 攻击路径：入口点 -> 利用条件 -> 获得能力 -> 影响对象 -> 可能后果。
+- 风险评级：CVSS v3.1 参考向量/分值、ISO/SAE 21434 TARA 表格、评级依据。
+- 影响分析：技术影响、业务影响、车端安全影响、是否跨越信任边界；没有证据支撑的影响要写“未在本次验证中确认”。
+- 修复建议：立即处置、短期加固、长期治理、回归验证方法、验收标准。
+
+## 6. 证据充分性与测试限制
+说明哪些结论证据充分，哪些受限于网络可达性、目标状态、权限、人工确认、安全策略、PoC 覆盖范围。不得把限制项写成漏洞。
+
+## 7. 合规性与工程治理评估
+围绕 UN R155 CSMS 和 ISO/SAE 21434 给出与本次证据相关的差距，不要泛泛罗列法规。至少覆盖：资产/攻击面管理、漏洞验证与分级、日志与证据保全、修复闭环、回归验证。
+
+## 8. 整改路线图
+按优先级输出表格：优先级、整改动作、适用漏洞/资产、责任团队建议、预期风险降低、回归验证方法。只针对确认漏洞和明确暴露的弱点给整改动作。
+
+## 9. 复测与验收标准
+给出可执行的复测清单：复测 PoC、期望安全结果、需要采集的证据、通过/失败判据。没有确认漏洞时，也要给出下一轮覆盖建议的验收标准。
+
+## 10. 后续测试建议
+列出本次未覆盖或证据不足但值得后续验证的方向，并逐项标注“未测试/待补证”，例如固件、USB、本地物理访问、蓝牙、Wi-Fi、CAN/UDS、OTA、云端接口等。仅在上下文显示相关攻击面或测试限制时提出。
+
+## 11. 结论
+用专业、克制的语言给出最终风险判断、处置优先级和复测建议。
+
+━━ 写作质量要求 ━━
+
+- 结论必须具体到资产、攻击面、PoC 和证据，不写模板化套话。
+- 表格内容要简洁但信息密度高；正文解释风险因果链。
+- 对车联网场景要体现工程语境：IVI、T-Box、网关、诊断域、CAN/UDS、无线入口、媒体服务、云控链路、功能安全影响。
+- 当输入信息不足时，写“上下文未提供”，不要自行补全车型、ECU、端口、CVE、供应商或法规结论。
+- 输出只能是最终报告正文。
 """
 
 
@@ -1045,9 +1206,10 @@ def build_assessment_call(
 
     prompt = (
         f"基于对智能网联汽车目标 '{effective_target_name}' ({target_ip}) 的完整渗透测试结果，"
-        "生成符合 ISO 21434 / UN R155 要求的专业安全评估报告。"
+        "生成证据驱动、可审计、可整改闭环的专业安全评估报告。"
         f"【当前时间】{effective_report_date}。"
         f"报告中的评估日期必须写 {effective_report_date}，评估团队必须写 BIOS团队。"
+        "请严格以执行结果和漏洞发现为依据，不得把未测试项或失败项写成确认漏洞。"
     )
 
     context_prefix = (
@@ -1066,7 +1228,7 @@ def build_assessment_call(
 
 def create_assessment_agent(
     llm_config: Optional[Dict[str, Any]] = None,
-    on_log: Optional[callable] = None,
+    on_log: Optional[Callable[..., Any]] = None,
 ) -> QwenAgent:
     llm_config = llm_config or {}
     api_key = str(llm_config.get("api_key") or "").strip()
@@ -1074,6 +1236,8 @@ def create_assessment_agent(
     fast_model = str(llm_config.get("fast_model") or "qwen-plus").strip()
     strong_model = str(llm_config.get("strong_model") or fast_model or "qwen-max").strip()
     report_model = str(llm_config.get("report_model") or strong_model or fast_model or "qwen-max").strip()
+    request_timeout_seconds = int(llm_config.get("llm_timeout_seconds") or 120)
+    connect_timeout_seconds = int(llm_config.get("llm_connect_timeout_seconds") or 15)
 
     return QwenAgent(
         "评估Agent",
@@ -1083,6 +1247,8 @@ def create_assessment_agent(
         base_url=base_url,
         model_name=report_model,
         on_log=on_log,
+        request_timeout_seconds=request_timeout_seconds,
+        connect_timeout_seconds=connect_timeout_seconds,
     )
 
 
@@ -1093,7 +1259,7 @@ def generate_assessment_report(
     llm_config: Optional[Dict[str, Any]] = None,
     context: str = "",
     report_date: Optional[str] = None,
-    on_log: Optional[callable] = None,
+    on_log: Optional[Callable[..., Any]] = None,
 ) -> str:
     assessment_input = build_assessment_call(
         target_ip=target_ip,
@@ -1124,14 +1290,38 @@ class AgentOrchestrator:
                  bluetooth_mac: str = "",
                  wifi_interface: str = "",
                  rf_frequency: str = "",
-                 expected_usb_serial: str = ""):
+                 expected_usb_serial: str = "",
+                 usb_mount_point: str = "",
+                 candidate_ports: str = "",
+                 global_recon_seed: Optional[Dict[str, Any]] = None,
+                 baseline_replay_pocs: Optional[List[str]] = None,
+                 use_enhanced_recon: bool = True,
+                 skip_assessment_report: bool = False,
+                 autosec_api: str = "",
+                 interactive_review: Optional[bool] = None,
+                 poc_coverage_path: str = ""):
         self.trace_id = str(uuid.uuid4())
         self.target_ip = target_ip
         self.target_name = target_name
         self.start_time = time.time()
+        self.candidate_ports = str(candidate_ports or "").strip()
+        self.global_recon_seed = global_recon_seed if isinstance(global_recon_seed, dict) else None
+        self.baseline_replay_pocs = [
+            str(item).strip()
+            for item in (baseline_replay_pocs or [])
+            if str(item).strip()
+        ]
+        self.use_enhanced_recon = bool(use_enhanced_recon)
+        self.skip_assessment_report = bool(skip_assessment_report)
+        self.autosec_api = str(autosec_api or AUTOSEC_API).rstrip("/")
+        self.interactive_review = sys.stdin.isatty() if interactive_review is None else bool(interactive_review)
+        self.manual_review_wait_seconds = 0.0
+        self.poc_coverage_path = str(poc_coverage_path or "").strip()
 
         # 可用资源上下文（Agent 决策过滤依据）
         self.available_params: Dict[str, str] = {"target_ip": target_ip}
+        if self.candidate_ports:
+            self.available_params["candidate_ports"] = self.candidate_ports
         if can_interface:
             self.available_params["can_interface"] = can_interface
         if bluetooth_mac:
@@ -1140,9 +1330,34 @@ class AgentOrchestrator:
             self.available_params["wifi_interface"] = wifi_interface
         if rf_frequency:
             self.available_params["frequency"] = rf_frequency
-        if expected_usb_serial:
-            self.available_params["expected_usb_serial"] = expected_usb_serial
-            self.available_params["usb_device_serial"] = expected_usb_serial
+        from adb_usb_utils import (
+            list_local_usb_adb_serials,
+            local_usb_adb_attached,
+            resolve_usb_adb_serial,
+            usb_adb_block_reason,
+        )
+
+        explicit_usb = str(expected_usb_serial or "").strip()
+        attached_serials = list_local_usb_adb_serials()
+        if explicit_usb:
+            if explicit_usb in attached_serials:
+                self.available_params["expected_usb_serial"] = explicit_usb
+                self.available_params["usb_device_serial"] = explicit_usb
+            else:
+                self.available_params["usb_adb_block_reason"] = (
+                    f"未在 adb devices 中找到 serial={explicit_usb}。"
+                )
+        elif local_usb_adb_attached():
+            resolved_usb_serial = resolve_usb_adb_serial("", auto_single=True)
+            self.available_params["local_usb_adb_attached"] = "true"
+            self.available_params["expected_usb_serial"] = resolved_usb_serial
+            self.available_params["usb_device_serial"] = resolved_usb_serial
+        else:
+            block_reason = usb_adb_block_reason()
+            if block_reason:
+                self.available_params["usb_adb_block_reason"] = block_reason
+        if usb_mount_point:
+            self.available_params["usb_mount_point"] = usb_mount_point
 
         llm_config = llm_config or {}
         self.llm_api_key = str(llm_config.get("api_key") or "").strip()
@@ -1150,11 +1365,14 @@ class AgentOrchestrator:
         self.fast_model = str(llm_config.get("fast_model") or "qwen-plus").strip()
         self.strong_model = str(llm_config.get("strong_model") or self.fast_model or "qwen-max").strip()
         self.report_model = str(llm_config.get("report_model") or self.strong_model or self.fast_model or "qwen-max").strip()
+        self.llm_timeout_seconds = max(int(llm_config.get("llm_timeout_seconds") or 120), 10)
+        self.llm_connect_timeout_seconds = max(int(llm_config.get("llm_connect_timeout_seconds") or 15), 3)
         logger.info(
-            "[Orchestrator] LLM profile selected: fast_model=%s strong_model=%s report_model=%s",
+            "[Orchestrator] LLM profile selected: fast_model=%s strong_model=%s report_model=%s timeout=%ss",
             self.fast_model,
             self.strong_model,
             self.report_model,
+            self.llm_timeout_seconds,
         )
 
         # 从 MCP Server 获取工具描述
@@ -1166,12 +1384,13 @@ class AgentOrchestrator:
         self.execution_trace: List[dict] = []
 
         # 初始化 Agent
-        self.recon_agent = QwenAgent("侦察Agent", RECON_AGENT_PROMPT, self.mcp_tools, api_key=self.llm_api_key, base_url=self.llm_base_url, model_name=self.fast_model, on_log=self._add_log)
-        self.planner_agent = QwenAgent("规划Agent", PLANNER_AGENT_PROMPT, [], api_key=self.llm_api_key, base_url=self.llm_base_url, model_name=self.fast_model, on_log=self._add_log)
-        self.decision_agent = QwenAgent("决策Agent", DECISION_AGENT_PROMPT, self.mcp_tools, api_key=self.llm_api_key, base_url=self.llm_base_url, model_name=self.fast_model, on_log=self._add_log)
-        self.weaponize_agent = QwenAgent("Weaponize Agent", WEAPONIZE_AGENT_PROMPT, [], api_key=self.llm_api_key, base_url=self.llm_base_url, model_name=self.strong_model, on_log=self._add_log)
+        core_model = str(llm_config.get("core_model") or self.fast_model).strip()
+        self.recon_agent = QwenAgent("侦察Agent", RECON_AGENT_PROMPT, self.mcp_tools, api_key=self.llm_api_key, base_url=self.llm_base_url, model_name=core_model, on_log=self._add_log, request_timeout_seconds=self.llm_timeout_seconds, connect_timeout_seconds=self.llm_connect_timeout_seconds)
+        self.planner_agent = QwenAgent("规划Agent", PLANNER_AGENT_PROMPT, [], api_key=self.llm_api_key, base_url=self.llm_base_url, model_name=core_model, on_log=self._add_log, request_timeout_seconds=self.llm_timeout_seconds, connect_timeout_seconds=self.llm_connect_timeout_seconds)
+        self.decision_agent = QwenAgent("决策Agent", DECISION_AGENT_PROMPT, self.mcp_tools, api_key=self.llm_api_key, base_url=self.llm_base_url, model_name=core_model, on_log=self._add_log, request_timeout_seconds=self.llm_timeout_seconds, connect_timeout_seconds=self.llm_connect_timeout_seconds)
+        self.weaponize_agent = QwenAgent("Weaponize Agent", WEAPONIZE_AGENT_PROMPT, [], api_key=self.llm_api_key, base_url=self.llm_base_url, model_name=self.strong_model, on_log=self._add_log, request_timeout_seconds=self.llm_timeout_seconds, connect_timeout_seconds=self.llm_connect_timeout_seconds)
         self.executor_agent = QwenAgent("执行Agent", EXECUTOR_AGENT_PROMPT, self.mcp_tools,
-                                           api_key=self.llm_api_key, base_url=self.llm_base_url, model_name=self.fast_model, max_turns=20, on_log=self._add_log)
+                                           api_key=self.llm_api_key, base_url=self.llm_base_url, model_name=core_model, max_turns=20, on_log=self._add_log, request_timeout_seconds=self.llm_timeout_seconds, connect_timeout_seconds=self.llm_connect_timeout_seconds)
         self.assessment_agent = create_assessment_agent(
             llm_config={
                 "api_key": self.llm_api_key,
@@ -1179,10 +1398,13 @@ class AgentOrchestrator:
                 "fast_model": self.fast_model,
                 "strong_model": self.strong_model,
                 "report_model": self.report_model,
+                "llm_timeout_seconds": self.llm_timeout_seconds,
+                "llm_connect_timeout_seconds": self.llm_connect_timeout_seconds,
             },
             on_log=self._add_log,
         )
-        self.reflector_agent = QwenAgent("反思Agent", REFLECTOR_AGENT_PROMPT, [], api_key=self.llm_api_key, base_url=self.llm_base_url, model_name=self.fast_model, on_log=self._add_log)
+        self.reflector_agent = QwenAgent("反思Agent", REFLECTOR_AGENT_PROMPT, [], api_key=self.llm_api_key, base_url=self.llm_base_url, model_name=core_model, on_log=self._add_log, request_timeout_seconds=self.llm_timeout_seconds, connect_timeout_seconds=self.llm_connect_timeout_seconds)
+        self.core_model = core_model
 
         # 结果存储
         self.recon_result: Optional[str] = None
@@ -1197,6 +1419,7 @@ class AgentOrchestrator:
             "reflector": {},
             "assessment": {},
             "supervisor": {"events": [], "metrics": {}, "adjustments": []},
+            "llm_usage": {"per_agent": {}, "totals": {}},
         }
 
         # 发现的漏洞清单 (Structured Findings)
@@ -1207,10 +1430,355 @@ class AgentOrchestrator:
         self.reflector_reentry_count = 0
         self.reflector_reentry_history: List[Dict[str, Any]] = []
 
-        tool_state = {"poc_filename_to_id": self.poc_filename_to_id, "auth_token": auth_token}
+        tool_state = {
+            "poc_filename_to_id": self.poc_filename_to_id,
+            "auth_token": auth_token,
+            "candidate_ports": self.candidate_ports,
+            "autosec_api": self.autosec_api,
+            "prefer_direct_run_poc": True,
+            "poc_session_id": "agent_auto",
+        }
         self.recon_agent.tool_state = tool_state
         self.decision_agent.tool_state = tool_state
         self.executor_agent.tool_state = tool_state
+
+    def _console(self, message: str) -> None:
+        print(message, flush=True)
+
+    def _load_poc_meta(self, poc_name: str) -> Dict[str, Any]:
+        if not self.poc_coverage_path:
+            return {}
+        try:
+            with open(self.poc_coverage_path, "r", encoding="utf-8") as fh:
+                coverage = json.load(fh)
+        except Exception:
+            return {}
+        normalized = str(poc_name or "").replace("\\", "/")
+        base = os.path.basename(normalized)
+        for item in coverage.get("pocs", []) or []:
+            item_file = str(item.get("poc_file") or "").replace("\\", "/")
+            if item_file == normalized or os.path.basename(item_file) == base:
+                return item
+        return {}
+
+    def _resolve_poc_profile(self, poc_ref: str) -> Dict[str, Any]:
+        """按 display_id / poc_name / 文件名 解析重入目标 PoC 的安全元数据。"""
+        if not self.poc_coverage_path:
+            return {}
+        try:
+            with open(self.poc_coverage_path, "r", encoding="utf-8") as fh:
+                coverage = json.load(fh)
+        except Exception:
+            return {}
+        ref = str(poc_ref or "").strip()
+        ref_base = os.path.basename(ref.replace("\\", "/"))
+        for item in coverage.get("pocs", []) or []:
+            if ref and ref in (
+                str(item.get("display_id") or ""),
+                str(item.get("poc_name") or ""),
+                str(item.get("poc_file") or ""),
+                os.path.basename(str(item.get("poc_file") or "").replace("\\", "/")),
+            ):
+                return item
+            if ref_base and ref_base == os.path.basename(str(item.get("poc_file") or "").replace("\\", "/")):
+                return item
+        # 兜底：仅返回引用名，让下游按非破坏性处理
+        return {"display_id": ref, "poc_name": ref}
+
+    def _plan_reentry_safety(self, reflector: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """重入风险再判定 + 安全补证策略：对反思指定的重入目标 PoC 逐个生成
+        原样重跑/低扰动等效探针/只读降级/一次性授权/阻断策略。"""
+        try:
+            import reentry_safety
+        except Exception:
+            return []
+        focus_pocs = reflector.get("focus_pocs") or []
+        if not focus_pocs:
+            return []
+        issues_text = " ".join(
+            str((i or {}).get("reason") or "") for i in (reflector.get("issues") or [])
+        )
+        recon = self.structured_results.get("recon", {}) or {}
+        target_state = str((recon.get("adaptive_context") or {}).get("load_status") or "")
+        ctx = {
+            "target": getattr(self, "target_ip", "") or "",
+            "failure_reason": issues_text,
+            "evidence_gap": reflector.get("outcome_status") or "",
+            "target_state": target_state,
+            "retry_count": int(getattr(self, "reflector_reentry_count", 0) or 0),
+            "param_changed": bool(reflector.get("focus_steps")),
+        }
+        profiles = [self._resolve_poc_profile(ref) for ref in focus_pocs]
+        plans = reentry_safety.plan_safe_reentry_batch(profiles, ctx)
+        reflector["safe_revalidation"] = plans
+        return plans
+
+    def _is_high_risk_poc(self, poc_name: str) -> Tuple[bool, Dict[str, Any]]:
+        meta = self._load_poc_meta(poc_name)
+        level = str(meta.get("destructive_level") or "").strip().lower()
+        high_risk = bool(meta.get("high_risk") or meta.get("is_disruptive")) or level in {"restart", "dataloss", "brick"}
+        return high_risk, meta
+
+    def _prompt_high_risk_approval(self, poc_name: str, meta: Dict[str, Any], params: Dict[str, Any]) -> Tuple[bool, float]:
+        if not self.interactive_review:
+            return False, 0.0
+        started = time.time()
+        self._console("\n" + "=" * 72)
+        self._console(f"[HIGH-RISK POC] {poc_name}")
+        self._console(f"PoC: {meta.get('poc_name') or poc_name}")
+        self._console(f"Severity: {meta.get('severity') or 'UNKNOWN'}")
+        self._console(f"Destructive Level: {meta.get('destructive_level') or 'UNKNOWN'}")
+        self._console(f"Protocol: {meta.get('protocol') or 'UNKNOWN'}")
+        self._console(f"Params: {json.dumps(params, ensure_ascii=False)}")
+        self._console("该 PoC 被标记为高风险/破坏性操作。输入 y 执行，输入 n 跳过。")
+        while True:
+            choice = input("执行该高风险 PoC? [y/n]: ").strip().lower()
+            if choice in {"y", "yes"}:
+                return True, round(time.time() - started, 3)
+            if choice in {"n", "no", ""}:
+                return False, round(time.time() - started, 3)
+            self._console("请输入 y 或 n。")
+
+    def _prompt_manual_verdict(self, poc_name: str, result: Dict[str, Any]) -> Tuple[Dict[str, Any], float]:
+        if not self.interactive_review:
+            result["manual_review_wait_seconds"] = 0.0
+            return result, 0.0
+        manual_review = result.get("manual_review") or {}
+        started = time.time()
+        self._console("\n" + "=" * 72)
+        self._console(f"[MANUAL REVIEW] {poc_name}")
+        self._console(str(manual_review.get("prompt") or "该 PoC 已执行完成，请人工观察目标侧效果后给出结论。"))
+        observations = manual_review.get("required_observations") or []
+        if observations:
+            self._console("需要观察：")
+            for index, observation in enumerate(observations, start=1):
+                self._console(f"  {index}. {observation}")
+        self._console("可选结论：1=confirmed_vulnerable, 2=confirmed_not_vulnerable, 3=inconclusive, 4=needs_retest")
+        mapping = {
+            "1": "confirmed_vulnerable",
+            "2": "confirmed_not_vulnerable",
+            "3": "inconclusive",
+            "4": "needs_retest",
+            "confirmed_vulnerable": "confirmed_vulnerable",
+            "confirmed_not_vulnerable": "confirmed_not_vulnerable",
+            "inconclusive": "inconclusive",
+            "needs_retest": "needs_retest",
+        }
+        verdict = mapping.get(input("请输入结论编号或名称（回车保持 pending）: ").strip())
+        if not verdict:
+            wait_seconds = round(time.time() - started, 3)
+            result["manual_review_wait_seconds"] = wait_seconds
+            return result, wait_seconds
+        operator_note = input("观察备注（可留空）: ").strip()
+        evidence_file = input("证据文件路径（可留空）: ").strip()
+        wait_seconds = round(time.time() - started, 3)
+        result["manual_review_wait_seconds"] = wait_seconds
+        try:
+            response = requests.post(
+                f"{self.autosec_api}/api/poc_manual_verdict",
+                json={
+                    "trace_id": result.get("trace_id") or self.trace_id,
+                    "session_id": result.get("trace_id") or self.trace_id,
+                    "poc_id": result.get("poc_id") or poc_name,
+                    "poc_name": poc_name,
+                    "target_ip": self.target_ip,
+                    "target_mac": self.available_params.get("target_mac") or self.available_params.get("bluetooth_mac") or "",
+                    "verdict": verdict,
+                    "operator_note": operator_note,
+                    "evidence_file": evidence_file,
+                },
+                timeout=120,
+            )
+            if response.ok:
+                payload = response.json()
+                result["vulnerable"] = payload.get("vulnerable")
+                result["verification_status"] = payload.get("verification_status")
+                result["manual_review"] = payload.get("manual_review", result.get("manual_review"))
+                if operator_note:
+                    result["evidence"] = operator_note
+            else:
+                result["error"] = f"manual verdict submit failed: HTTP {response.status_code}: {response.text[:200]}"
+        except Exception as exc:
+            result["error"] = f"manual verdict submit failed: {exc}"
+        return result, wait_seconds
+
+    def _bootstrap_recon(self) -> Dict[str, Any]:
+        """增强侦察：candidate_ports 全口扫描 + 可选 Global scan_results 种子。"""
+        from agent_recon_bootstrap import (
+            enhanced_port_scan,
+            merge_recon_results,
+            parse_candidate_ports,
+        )
+
+        chunks: list[Dict[str, Any]] = []
+        if self.global_recon_seed:
+            chunks.append(self.global_recon_seed)
+        if self.use_enhanced_recon:
+            ports = parse_candidate_ports(self.candidate_ports)
+            chunks.append(enhanced_port_scan(self.target_ip, ports))
+        merged = merge_recon_results(*chunks) if chunks else {}
+        if merged.get("open_ports"):
+            try:
+                ctx = _direct_tool_call(
+                    "get_adaptive_context",
+                    {"target_ip": self.target_ip, "open_ports": merged["open_ports"]},
+                    on_log=self._add_log,
+                )
+                merged["adaptive_context"] = ctx
+            except Exception as exc:
+                logger.warning("[Orchestrator] bootstrap adaptive_context failed: %s", exc)
+        return merged
+
+    def _apply_heuristic_attack_plan_if_empty(self, recon_data: Dict[str, Any]) -> None:
+        plan = self.structured_results.get("attack_plan") or {}
+        if plan.get("items"):
+            return
+        from agent_recon_bootstrap import build_heuristic_attack_plan
+
+        open_ports = recon_data.get("open_ports") or []
+        if not open_ports:
+            return
+        heuristic = build_heuristic_attack_plan(
+            open_ports,
+            self.available_params,
+            recon_data.get("global_vulnerable_pocs"),
+        )
+        if not heuristic.get("items"):
+            return
+        self.structured_results["attack_plan"] = heuristic
+        self.attack_plan = _safe_json_dumps(heuristic)
+        self._record_supervisor_event(
+            "heuristic_attack_plan",
+            f"决策 Agent 未产出有效计划，已启用规则回退（{heuristic.get('item_count', 0)} 步）。",
+            phase="decision",
+        )
+
+    def _sort_attack_plan_recon_first(self) -> None:
+        plan = self.structured_results.setdefault("attack_plan", {"items": []})
+        items = [item for item in (plan.get("items") or []) if isinstance(item, dict)]
+        if not items:
+            return
+        indexed = list(enumerate(items))
+        indexed.sort(
+            key=lambda pair: (
+                0 if str(pair[1].get("poc_name") or "").replace("\\", "/").startswith("reconnaissance/") else 1,
+                pair[0],
+            )
+        )
+        reordered = []
+        for step, (_, item) in enumerate(indexed, start=1):
+            copied = dict(item)
+            copied["step"] = step
+            reordered.append(copied)
+        if reordered == items:
+            return
+        plan["items"] = reordered
+        plan["item_count"] = len(reordered)
+        self.structured_results["attack_plan"] = plan
+        self.attack_plan = _safe_json_dumps(plan)
+        self._record_supervisor_event(
+            "reconnaissance_first_order",
+            "已将 reconnaissance 类 PoC 调整到 Agent 执行队列最前。",
+            severity="info",
+            phase="decision",
+        )
+
+    def _append_baseline_replay_plan_items(self) -> None:
+        """实验复验模式：补跑 Global 已检出的漏洞 PoC，避免模型少量择优导致召回失真。"""
+        if not self.baseline_replay_pocs:
+            return
+        plan = self.structured_results.setdefault("attack_plan", {"items": []})
+        items = list(plan.get("items") or [])
+        existing = {str(item.get("poc_name") or "").strip() for item in items if isinstance(item, dict)}
+
+        try:
+            from poc_catalog import is_executable_poc_name
+        except Exception:
+            is_executable_poc_name = lambda name: True  # type: ignore[assignment]
+
+        next_step = max([int(item.get("step") or 0) for item in items if isinstance(item, dict)] + [0]) + 1
+        added = 0
+        skipped: list[str] = []
+        for poc_name in self.baseline_replay_pocs:
+            if poc_name in existing:
+                continue
+            if not is_executable_poc_name(poc_name):
+                skipped.append(poc_name)
+                continue
+            items.append({
+                "step": next_step,
+                "poc_name": poc_name,
+                "parameters": self._default_execution_params(),
+                "strategy": "baseline_replay",
+                "reason": "实验复验：Global 扫描已检出该 PoC 为阳性，追加执行以计算客观召回。",
+            })
+            existing.add(poc_name)
+            next_step += 1
+            added += 1
+
+        if not added and not skipped:
+            return
+        plan["items"] = items
+        plan["item_count"] = len(items)
+        self.structured_results["attack_plan"] = plan
+        self.attack_plan = _safe_json_dumps(plan)
+        if added:
+            self._record_supervisor_event(
+                "baseline_replay_append",
+                f"已追加 {added} 个 Global 阳性 PoC 进入 baseline replay 复验队列。",
+                phase="decision",
+            )
+        if skipped:
+            self._record_supervisor_event(
+                "baseline_replay_skip_invalid",
+                f"baseline replay 中 {len(skipped)} 个 PoC 不在可执行目录，已跳过: {skipped}",
+                phase="decision",
+            )
+
+    def _refresh_llm_usage(self):
+        agents = [
+            self.recon_agent,
+            self.planner_agent,
+            self.decision_agent,
+            self.weaponize_agent,
+            self.executor_agent,
+            self.reflector_agent,
+            self.assessment_agent,
+        ]
+        per_agent = {}
+        per_model: Dict[str, Dict[str, Any]] = {}
+        totals: Dict[str, Any] = {
+            "calls": 0,
+            "tool_call_count": 0,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "latency_ms_total": 0,
+        }
+        for agent in agents:
+            summary = agent.usage_summary()
+            per_agent[agent.agent_name] = summary
+            model_name = str(summary.get("model_name") or "unknown")
+            model_bucket = per_model.setdefault(model_name, {
+                "model_name": model_name,
+                "calls": 0,
+                "tool_call_count": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "latency_ms_total": 0,
+            })
+            for key in totals.keys():
+                totals[key] += int(summary.get(key) or 0)
+                model_bucket[key] += int(summary.get(key) or 0)
+        totals["avg_latency_ms"] = round(totals["latency_ms_total"] / max(totals["calls"], 1), 2)
+        for bucket in per_model.values():
+            bucket["avg_latency_ms"] = round(bucket["latency_ms_total"] / max(bucket["calls"], 1), 2)
+        self.structured_results["llm_usage"] = {
+            "per_agent": per_agent,
+            "per_model": per_model,
+            "totals": totals,
+        }
 
     def _upsert_phase_record(
         self,
@@ -1324,8 +1892,23 @@ class AgentOrchestrator:
     def _has_user_supplied_attack_surface(self) -> bool:
         return any(
             str(self.available_params.get(key) or "").strip()
-            for key in ("can_interface", "bluetooth_mac", "wifi_interface", "frequency", "expected_usb_serial")
+            for key in (
+                "can_interface",
+                "bluetooth_mac",
+                "wifi_interface",
+                "frequency",
+                "expected_usb_serial",
+                "usb_device_serial",
+                "usb_mount_point",
+                "local_usb_adb_attached",
+            )
         )
+
+    def _clear_attack_surface_gate(self) -> None:
+        self.structured_results.pop("attack_surface_gate", None)
+        recon = self.structured_results.get("recon")
+        if isinstance(recon, dict):
+            recon.pop("attack_surface_gate", None)
 
     def _recon_has_network_attack_surface(self, recon: Dict[str, Any]) -> bool:
         if not isinstance(recon, dict):
@@ -1346,32 +1929,45 @@ class AgentOrchestrator:
         return False
 
     def _build_no_attack_surface_gate(self, recon: Dict[str, Any]) -> Dict[str, Any]:
-        missing_inputs = [
-            "open_ports",
-            "services",
-            "can_interface",
-            "bluetooth_mac",
-            "wifi_interface",
-            "frequency",
-            "expected_usb_serial",
-            "usb_or_adb_device",
-            "usb_or_adb_device",
-            "target_service",
-        ]
+        supplied = {
+            key: value
+            for key, value in self.available_params.items()
+            if key != "target_ip" and str(value or "").strip()
+        }
+        missing_inputs: List[str] = []
+        if not recon.get("open_ports"):
+            missing_inputs.append("open_ports")
+        if not recon.get("services"):
+            missing_inputs.append("services")
+        for param_key in ("can_interface", "bluetooth_mac", "wifi_interface", "frequency"):
+            if not supplied.get(param_key):
+                missing_inputs.append(param_key)
+        if not (
+            supplied.get("expected_usb_serial")
+            or supplied.get("usb_device_serial")
+            or supplied.get("local_usb_adb_attached")
+        ):
+            missing_inputs.append("usb_adb_attached")
+        if not supplied.get("usb_mount_point"):
+            missing_inputs.append("usb_mount_point")
+        if not missing_inputs:
+            missing_inputs.append("target_service")
+        supplied_summary = "、".join(f"{key}={value}" for key, value in supplied.items()) or "无"
         return {
             "blocked": True,
             "blocked_reason": "insufficient_attack_surface",
             "next_action": "skip_to_assess",
             "next_phase": "assess",
             "reason": (
-                "基础/细粒度侦察未发现开放端口或服务，且未提供 CAN、蓝牙、Wi-Fi、RF 等额外验证参数。"
+                "基础/细粒度侦察未发现开放端口或服务，且未提供 CAN、蓝牙、Wi-Fi、RF、USB/ADB 等额外验证参数。"
                 "继续规划和执行 PoC 不具备可验证攻击面。"
             ),
             "missing_inputs": missing_inputs,
             "observed": {
                 "open_ports": recon.get("open_ports") or [],
                 "services": recon.get("services") or [],
-                "available_params": sorted(k for k in self.available_params.keys() if k != "target_ip"),
+                "available_params": supplied,
+                "supplied_summary": supplied_summary,
             },
         }
 
@@ -1391,11 +1987,18 @@ class AgentOrchestrator:
 
     def _build_minimal_no_surface_report(self, gate: Dict[str, Any]) -> str:
         missing = "、".join(gate.get("missing_inputs") or [])
+        observed = gate.get("observed") or {}
+        supplied_summary = observed.get("supplied_summary") or "无"
+        supplied_note = (
+            f"用户已提供的额外参数：{supplied_summary}。"
+            if supplied_summary != "无"
+            else "用户未提供 CAN、蓝牙、Wi-Fi、RF、USB/ADB 等额外验证参数。"
+        )
         return (
             f"# 智能网联汽车安全评估报告\n\n"
             f"## 执行摘要\n"
             f"本次针对目标 `{self.target_name}` (`{self.target_ip}`) 执行自动化侦察后，"
-            f"未发现开放端口、可识别服务或可直接验证的网络攻击面；同时用户未提供 CAN、蓝牙、Wi-Fi、RF、USB/ADB 等额外验证参数。"
+            f"未发现开放端口、可识别服务或可直接验证的网络攻击面；{supplied_note}"
             f"因此平台未继续执行 PoC 利用验证，以避免无证据、无目标的无效扫描。\n\n"
             f"## 总体风险评级\n"
             f"- **UNKNOWN / LOW EVIDENCE**：当前证据不足以证明存在漏洞，也不足以证明目标安全。\n\n"
@@ -1425,22 +2028,32 @@ class AgentOrchestrator:
             "item_count": len(items),
         }
 
+    def _usb_adb_resources_ready(self) -> bool:
+        return bool(
+            self.available_params.get("expected_usb_serial")
+            or self.available_params.get("local_usb_adb_attached")
+        )
+
     def _ensure_usb_adb_plan_item(self, plan: Dict[str, Any]) -> Dict[str, Any]:
-        if not self.available_params.get("expected_usb_serial"):
+        if not self._usb_adb_resources_ready():
             return plan
         items = list(plan.get("items") or [])
         if any(str(item.get("poc_name") or "") == "network/01_USB_ADB_Debug.py" for item in items):
             return plan
+        usb_params: Dict[str, Any] = {
+            "target_ip": self.target_ip,
+            "allow_single_attached_match": True,
+        }
+        if self.available_params.get("expected_usb_serial"):
+            usb_params["expected_usb_serial"] = self.available_params["expected_usb_serial"]
+            reason = "本机仅连接 1 台 USB ADB 设备，优先验证有线调试接口。"
         next_step = max([int(item.get("step") or 0) for item in items] or [0]) + 1
         items.insert(0, asdict(AttackPlanItem(
             step=next_step,
             poc_name="network/01_USB_ADB_Debug.py",
-            parameters={
-                "target_ip": self.target_ip,
-                "expected_usb_serial": self.available_params["expected_usb_serial"],
-            },
+            parameters=usb_params,
             strategy="local_usb_adb_recon",
-            reason="用户提供了 USB ADB serial，目标通过本机 USB 直连，应优先验证有线 ADB 调试接口攻击面。",
+            reason=reason,
             status="pending",
         )))
         for index, item in enumerate(items, start=1):
@@ -1449,7 +2062,7 @@ class AgentOrchestrator:
         plan["item_count"] = len(items)
         self._record_supervisor_event(
             "usb_adb_plan_injected",
-            "检测到 expected_usb_serial，已自动将 network/01_USB_ADB_Debug.py 加入 Agent 攻击计划。",
+            "检测到本机 USB ADB 可用，已自动将 network/01_USB_ADB_Debug.py 加入 Agent 攻击计划。",
             phase="decision",
         )
         return plan
@@ -1719,6 +2332,33 @@ class AgentOrchestrator:
             tool_state=self.executor_agent.tool_state,
         )
 
+    def _default_execution_params(self) -> Dict[str, Any]:
+        params: Dict[str, Any] = {"target_ip": self.target_ip}
+        if self.candidate_ports:
+            params["candidate_ports"] = self.candidate_ports
+        for key in (
+            "can_interface",
+            "can_bitrate",
+            "bluetooth_mac",
+            "bd_addr",
+            "target_mac",
+            "wifi_interface",
+            "interface",
+            "frequency",
+            "expected_usb_serial",
+            "usb_device_serial",
+            "usb_mount_point",
+        ):
+            value = self.available_params.get(key)
+            if str(value or "").strip():
+                params[key] = value
+        if params.get("bluetooth_mac"):
+            params.setdefault("bd_addr", params["bluetooth_mac"])
+            params.setdefault("target_mac", params["bluetooth_mac"])
+        if params.get("wifi_interface"):
+            params.setdefault("interface", params["wifi_interface"])
+        return params
+
     def _normalize_strategy_name(self, strategy: str) -> str:
         normalized = (strategy or "default").strip().lower()
         aliases = {
@@ -1792,7 +2432,8 @@ class AgentOrchestrator:
         safety: Dict[str, Any],
     ) -> Dict[str, Any]:
         poc_name = item.get("poc_name") or "unknown"
-        params = dict(branch.get("params") or {})
+        params = self._default_execution_params()
+        params.update(dict(branch.get("params") or {}))
         if branch.get("cooldown_s", 0) > 0:
             time.sleep(float(branch["cooldown_s"]))
         if branch["name"] == "warn_only":
@@ -1807,7 +2448,25 @@ class AgentOrchestrator:
             }
         params.setdefault("target_ip", self.target_ip)
         params["execution_branch"] = branch["name"]
-        return call_mcp_tool(
+        high_risk, meta = self._is_high_risk_poc(str(poc_name))
+        if high_risk and params.get("allow_disruptive") not in {True, "true", "True", "1", 1}:
+            approved, wait_seconds = self._prompt_high_risk_approval(str(poc_name), meta, params)
+            self.manual_review_wait_seconds += wait_seconds
+            if not approved:
+                return {
+                    "success": False,
+                    "blocked": True,
+                    "requires_approval": True,
+                    "error": "high-risk PoC skipped by operator",
+                    "vulnerable": False,
+                    "evidence": "",
+                    "logs": [],
+                    "strategy_branch": branch["name"],
+                    "manual_review_wait_seconds": wait_seconds,
+                }
+            params["allow_disruptive"] = True
+
+        result = call_mcp_tool(
             "run_poc",
             {
                 "poc_name": poc_name,
@@ -1816,6 +2475,13 @@ class AgentOrchestrator:
             on_log=self._add_log,
             tool_state=self.executor_agent.tool_state,
         )
+        if (
+            bool(result.get("requires_human_review"))
+            and str(result.get("verification_status") or "") == "pending_manual_review"
+        ):
+            result, wait_seconds = self._prompt_manual_verdict(str(poc_name), result)
+            self.manual_review_wait_seconds += wait_seconds
+        return result
 
     def _summarize_execution_items(self, items: List[Dict[str, Any]]) -> str:
         lines = []
@@ -1860,6 +2526,7 @@ class AgentOrchestrator:
                 "type": "info",
                 "message": f"[Executor-Step] 开始执行步骤 {step}: {poc_name}",
             })
+            self._console(f"[AGENT][EXEC][{len(execution_items) + 1}/{len(plan_items)}] start {poc_name}")
 
             safety = self._safety_check_for_plan_item(item)
             if safety.get("should_run") is False:
@@ -1874,6 +2541,7 @@ class AgentOrchestrator:
                     branch="blocked",
                 )))
                 item["status"] = "blocked"
+                self._console(f"[AGENT][EXEC][{len(execution_items)}/{len(plan_items)}] blocked {poc_name}: {safety.get('reason', '')}")
                 consecutive_errors = 0
                 continue
 
@@ -1894,6 +2562,11 @@ class AgentOrchestrator:
                 result = self._run_execution_branch(item, branch, safety)
                 requires_human_review = bool(result.get("requires_human_review")) or result.get("verification_status") == "pending_manual_review"
                 result_vulnerable = result.get("vulnerable")
+                branch_trace_id = (
+                    str(result.get("trace_id") or "").strip()
+                    or str(self.trace_id or "").strip()
+                    or "agent_auto"
+                )
                 branch_result = {
                     "branch": active_branch,
                     "success": bool(result.get("success", not result.get("error"))),
@@ -1905,7 +2578,8 @@ class AgentOrchestrator:
                     "requires_human_review": requires_human_review,
                     "verification_status": result.get("verification_status", ""),
                     "manual_review": result.get("manual_review", {}),
-                    "trace_id": result.get("trace_id"),
+                    "manual_review_wait_seconds": float(result.get("manual_review_wait_seconds") or 0),
+                    "trace_id": branch_trace_id,
                     "poc_id": result.get("poc_id") or poc_name,
                 }
                 branch_results.append(branch_result)
@@ -1954,13 +2628,26 @@ class AgentOrchestrator:
                 strategy=safety.get("strategy") or item.get("strategy") or "default",
                 branch=active_branch,
                 requires_human_review=status == "pending_manual_review",
-                verification_status=next((br.get("verification_status") for br in branch_results if br.get("requires_human_review")), ""),
-                manual_review=next((br.get("manual_review") for br in branch_results if br.get("requires_human_review")), {}),
+                verification_status=str(next((br.get("verification_status") for br in branch_results if br.get("requires_human_review")), "") or ""),
+                manual_review=dict(next((br.get("manual_review") for br in branch_results if br.get("requires_human_review")), None) or {}),
             )))
             execution_items[-1]["branch_results"] = branch_results
             item["status"] = status
+            self._console(
+                f"[AGENT][EXEC][{len(execution_items)}/{len(plan_items)}] done {poc_name} "
+                f"status={status} vulnerable={vulnerable} error={error or 'n/a'}"
+            )
 
             if consecutive_errors >= SUPERVISOR_LIMITS["max_cascading_errors"]:
+                if self.baseline_replay_pocs:
+                    self._record_supervisor_event(
+                        "execution_error_spread",
+                        f"连续 {consecutive_errors} 个错误，但当前为实验 baseline replay 模式，继续执行后续 PoC 以保证覆盖率统计完整。",
+                        severity="warning",
+                        phase="execute",
+                    )
+                    consecutive_errors = 0
+                    continue
                 self._add_log({"type": "warning", "message": f"[Supervisor] 检测到连续 {consecutive_errors} 个错误，触发 Reflector Agent..."})
                 
                 reflector_context = (
@@ -2065,14 +2752,14 @@ class AgentOrchestrator:
         supervisor["metrics"] = metrics
 
     def _get_poc_inventory_context(self) -> str:
-        """扫描 pocs 目录并返回分类后的文件名清单，供 Agent 决策参考"""
+        """扫描 pocs 目录并返回分类后的文件名清单（降级备用）。"""
         from poc_catalog import is_executable_poc_name
 
         inventory = {}
         pocs_root = os.path.join(os.path.dirname(__file__), "pocs")
         if not os.path.exists(pocs_root):
             return "PoC 仓库为空或路径不存在。"
-            
+
         for root, dirs, files in os.walk(pocs_root):
             rel_root = os.path.relpath(root, pocs_root)
             py_files = [
@@ -2082,13 +2769,32 @@ class AgentOrchestrator:
             if py_files:
                 category = os.path.basename(root)
                 inventory[category] = py_files
-        
-        lines = ["【可用 PoC 脚本库清单】"]
+
+        lines = ["【可用 PoC 脚本库清单（仅文件名，优先使用下方元数据表）】"]
         for cat, files in sorted(inventory.items()):
             lines.append(f"  - 分类: {cat}")
             for f in sorted(files):
                 lines.append(f"    * {cat}/{f}")
         return "\n".join(lines)
+
+    def _build_decision_poc_context(self, recon_data: Optional[Dict[str, Any]] = None) -> str:
+        """决策用 PoC 上下文：端口映射 + poc_coverage 元数据 + Global 已检出优先复验。"""
+        from agent_poc_catalog_context import build_decision_poc_context
+
+        raw_recon = recon_data if isinstance(recon_data, dict) else self.structured_results.get("recon")
+        recon_data = raw_recon if isinstance(raw_recon, dict) else {}
+        open_ports = recon_data.get("open_ports") or []
+        global_vulns = recon_data.get("global_vulnerable_pocs") or []
+        try:
+            return build_decision_poc_context(
+                available_params=self.available_params,
+                open_ports=open_ports,
+                global_vulnerable_pocs=global_vulns,
+                coverage_path=self.poc_coverage_path or None,
+            )
+        except Exception as exc:
+            logger.warning("[Orchestrator] decision poc context fallback: %s", exc)
+            return self._get_poc_inventory_context()
 
     def _merge_agent_supervisor_events(self, agent: QwenAgent, phase: str):
         for event in getattr(agent, "supervisor_events", []) or []:
@@ -2176,6 +2882,37 @@ class AgentOrchestrator:
                 affected_steps=[step for step in removed_steps if step is not None],
             )
 
+        current_items = self.structured_results.get("attack_plan", {}).get("items") or deduped
+        try:
+            from poc_catalog import is_executable_poc_name
+        except Exception:
+            is_executable_poc_name = None
+        if is_executable_poc_name:
+            valid_items = []
+            invalid_steps = []
+            invalid_pocs = []
+            for item in current_items:
+                poc_name = str(item.get("poc_name") or "").strip()
+                if poc_name and is_executable_poc_name(poc_name):
+                    valid_items.append(item)
+                    continue
+                invalid_steps.append(item.get("step"))
+                invalid_pocs.append(poc_name or "<empty>")
+            if invalid_pocs:
+                self.structured_results["attack_plan"]["items"] = valid_items
+                self.structured_results["attack_plan"]["item_count"] = len(valid_items)
+                self.attack_plan = _safe_json_dumps(self.structured_results["attack_plan"])
+                self._record_supervisor_event(
+                    "drop_invalid_poc",
+                    f"攻击计划中 {len(invalid_pocs)} 个 PoC 不在可执行目录，已阻止执行: {invalid_pocs}",
+                    phase="decision",
+                )
+                self._record_supervisor_adjustment(
+                    "drop_invalid_poc",
+                    f"已移除不可执行 PoC: {invalid_pocs}",
+                    affected_steps=[step for step in invalid_steps if step is not None],
+                )
+
     def _supervise_execution_outcome(self):
         items = self.structured_results.get("execution", {}).get("items") or []
         if not items:
@@ -2249,10 +2986,16 @@ class AgentOrchestrator:
             parts.append(f"wifi_interface={self.available_params['wifi_interface']}")
         else:
             parts.append("wifi_interface=未提供（跳过所有无线嗅探相关 PoC）")
-        if "expected_usb_serial" in self.available_params:
-            parts.append(f"expected_usb_serial={self.available_params['expected_usb_serial']}（允许执行 network/01_USB_ADB_Debug.py）")
+        if self._usb_adb_resources_ready():
+            if self.available_params.get("expected_usb_serial"):
+                parts.append(
+                    f"expected_usb_serial={self.available_params['expected_usb_serial']}（本机 USB ADB，可执行 01_USB_ADB_Debug）"
+                )
+            else:
+                parts.append(f"local_usb_adb_attached=true（唯一设备 serial={self.available_params.get('expected_usb_serial', '')}）")
         else:
-            parts.append("expected_usb_serial=未提供（跳过本机 USB ADB 枚举 PoC，除非用户明确选择单设备保守匹配）")
+            reason = self.available_params.get("usb_adb_block_reason") or "未连接或连接多台 USB 设备"
+            parts.append(f"本机 USB ADB=不可用（{reason}；跳过 network/01_USB_ADB_Debug.py）")
         return "【可用资源】\n" + "\n".join(f"  - {p}" for p in parts)
 
     def _build_reflector_focus_context(self) -> str:
@@ -2267,6 +3010,18 @@ class AgentOrchestrator:
             issue_lines.append(
                 f"- {issue.get('category', 'other')}: {issue.get('reason', '')} | 建议: {issue.get('suggestion', '')}"
             )
+        safety_lines: List[str] = []
+        try:
+            plans = self._plan_reentry_safety(reflector)
+        except Exception:
+            plans = []
+        for plan in plans:
+            sub = plan.get("substitute_probe") or {}
+            sub_hint = f" → 替换探针:{sub.get('probe')}({sub.get('mode')})" if sub else ""
+            safety_lines.append(
+                f"- {plan.get('poc_id')}: 风险={plan['risk_state'].get('level')} "
+                f"策略={plan.get('strategy')}{sub_hint} | {plan.get('rationale')}"
+            )
         return (
             "【Reflector 重入指令】\n"
             f"- next_action={reflector.get('next_action')}\n"
@@ -2275,7 +3030,8 @@ class AgentOrchestrator:
             f"- focus_steps={reflector.get('focus_steps') or []}\n"
             f"- focus_pocs={reflector.get('focus_pocs') or []}\n"
             f"- reason={reflector.get('reason') or ''}\n"
-            + ("- issues:\n" + "\n".join(issue_lines) if issue_lines else "")
+            + ("- issues:\n" + "\n".join(issue_lines) + "\n" if issue_lines else "")
+            + ("【重入安全补证策略】\n" + "\n".join(safety_lines) if safety_lines else "")
         ).strip()
 
     def _merge_recon_result(self, existing: Dict[str, Any], new_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -2366,6 +3122,8 @@ class AgentOrchestrator:
         }
 
     def hydrate_state(self, state: Dict[str, Any]):
+        if self._has_user_supplied_attack_surface():
+            self._clear_attack_surface_gate()
         self.current_logs = state.get("logs", []) or []
         self.phase_records = state.get("phase_records", []) or []
         self.findings = state.get("findings", []) or []
@@ -2510,7 +3268,9 @@ class AgentOrchestrator:
         def should_target(item: Dict[str, Any]) -> bool:
             step = item.get("step")
             poc_name = item.get("poc_name")
-            exec_item = latest_by_step.get(step) or latest_by_poc.get(poc_name or "")
+            exec_item = latest_by_step.get(step) if isinstance(step, int) else None
+            if exec_item is None and poc_name:
+                exec_item = latest_by_poc.get(str(poc_name))
             if focus_steps or focus_pocs:
                 return bool((step in focus_steps) or (poc_name in focus_pocs))
             if exec_item is None:
@@ -2674,6 +3434,68 @@ class AgentOrchestrator:
 
         return last_result, last_structured
 
+    def _build_experiment_assessment_stub(self) -> str:
+        """实验模式：不调用 Assessment LLM，仅输出结构化摘要供指标统计。"""
+        execution = (self.structured_results.get("execution") or {}).get("items") or []
+        vuln_count = len(self.findings)
+        executed = len(execution)
+        errors = sum(1 for item in execution if item.get("error"))
+        open_ports = (self.structured_results.get("recon") or {}).get("open_ports") or []
+        return (
+            f"# 实验模式评估摘要（已跳过完整安全报告）\n\n"
+            f"## 目标\n"
+            f"- **{self.target_name}** (`{self.target_ip}`)\n\n"
+            f"## 执行统计\n"
+            f"- 侦察开放端口: {open_ports}\n"
+            f"- 执行 PoC 数: {executed}（失败 {errors}）\n"
+            f"- 检出漏洞: {vuln_count}\n\n"
+            f"## 说明\n"
+            f"`skip_assessment_report=true`：为缩短实验耗时，未调用 Assessment Agent 生成长文安全报告。"
+            f"结构化结果见 `structured.execution` / `findings`。\n"
+        )
+
+    def _run_assessment_phase(self, context: str = "") -> str:
+        gate = self.structured_results.get("attack_surface_gate")
+        execution_items = (self.structured_results.get("execution") or {}).get("items") or []
+        gate_blocks = bool(gate and gate.get("blocked") and not execution_items)
+        if self._has_user_supplied_attack_surface():
+            gate_blocks = False
+        if gate_blocks and isinstance(gate, dict):
+            report = self._build_minimal_no_surface_report(gate)
+            self.structured_results["assessment"] = {
+                "report_markdown": report,
+                "finding_count": 0,
+                "attack_surface_gate": gate,
+                "skipped_full_report": True,
+            }
+            return report
+
+        if self.skip_assessment_report:
+            report = self._build_experiment_assessment_stub()
+            self.structured_results["assessment"] = {
+                "report_markdown": report,
+                "finding_count": len(self.findings),
+                "skipped_full_report": True,
+                "skip_reason": "experiment_mode",
+            }
+            self._add_log({
+                "type": "info",
+                "message": "[Orchestrator] 已跳过 Assessment Agent 长文安全报告（实验模式）。",
+            })
+            return report
+
+        assessment_input = self._build_assessment_call(context=context)
+        report = self.assessment_agent.call(
+            assessment_input["prompt"],
+            context=assessment_input["context"],
+        )
+        self.structured_results["assessment"] = {
+            "report_markdown": report,
+            "finding_count": len(self.findings),
+            "skipped_full_report": False,
+        }
+        return report
+
     def _build_assessment_call(self, context: str = "") -> Dict[str, str]:
         """为评估 Agent 统一构造报告元数据，禁止模型自行编造日期或团队。"""
         return build_assessment_call(
@@ -2764,23 +3586,40 @@ class AgentOrchestrator:
             _params_desc_parts.append(f"wifi_interface={self.available_params['wifi_interface']}")
         else:
             _params_desc_parts.append("wifi_interface=未提供（跳过所有无线嗅探相关 PoC）")
-        if "expected_usb_serial" in self.available_params:
-            _params_desc_parts.append(
-                f"expected_usb_serial={self.available_params['expected_usb_serial']}（允许执行 network/01_USB_ADB_Debug.py）"
-            )
+        if self._usb_adb_resources_ready():
+            if self.available_params.get("expected_usb_serial"):
+                _params_desc_parts.append(
+                    f"expected_usb_serial={self.available_params['expected_usb_serial']}（本机 USB ADB）"
+                )
+            else:
+                _params_desc_parts.append(
+                    f"local_usb_adb_attached=true（唯一 USB 设备）"
+                )
         else:
-            _params_desc_parts.append("expected_usb_serial=未提供（跳过本机 USB ADB 枚举 PoC）")
+            _params_desc_parts.append(
+                self.available_params.get("usb_adb_block_reason") or "本机 USB ADB 未满足「仅 1 台」策略"
+            )
         _available_params_ctx = "【可用资源】\n" + "\n".join(f"  - {p}" for p in _params_desc_parts)
         reflector_focus_ctx = self._build_reflector_focus_context()
 
-        # ── Phase 1/7: 侦察 Agent ──
+        # ── Phase 1/7: 侦察（增强扫描 + Global 种子 + LLM 补充）──
         logger.info("[Orchestrator] Phase 1/7: 侦察 Agent 开始执行...")
+        bootstrap_recon = self._bootstrap_recon()
+        if bootstrap_recon.get("open_ports"):
+            self.structured_results["recon"] = bootstrap_recon
+            self._add_log({
+                "type": "success",
+                "message": (
+                    f"[Orchestrator] 侦察基线已就绪：开放端口 {bootstrap_recon.get('open_ports')} "
+                    f"（来源: {', '.join(bootstrap_recon.get('recon_sources') or [])}）"
+                ),
+            })
         previous_recon = dict(self.structured_results.get("recon") or {})
         recon_user_message = (
             f"对目标 {self.target_ip}（{self.target_name}）执行完整侦察。"
-            f"使用 scan_ports 发现开放服务，使用 get_topology 建立网络拓扑图，"
+            f"使用 scan_ports（candidate_ports 已配置）发现开放服务，使用 get_topology 建立网络拓扑图，"
             f"使用 get_adaptive_context 获取目标服务指纹和认证机制。"
-            f"输出 JSON 格式的侦察摘要。"
+            f"输出 JSON 格式的侦察摘要；勿丢弃已有开放端口线索。"
         )
         if reflector_focus_ctx and (self.structured_results.get("reflector", {}) or {}).get("next_phase") == "recon":
             recon_user_message = (
@@ -2808,6 +3647,9 @@ class AgentOrchestrator:
         )
         if reflector_focus_ctx and previous_recon:
             recon_structured = self._merge_recon_result(previous_recon, recon_structured)
+        elif previous_recon:
+            from agent_recon_bootstrap import merge_recon_results
+            recon_structured = merge_recon_results(previous_recon, recon_structured)
         self.structured_results["recon"] = recon_structured
         self._require_phase_success("recon")
         self._merge_agent_supervisor_events(self.recon_agent, "recon")
@@ -2856,6 +3698,7 @@ class AgentOrchestrator:
                 self._record_phase(skipped_phase, "skipped", gate["reason"], {"attack_surface_gate": gate})
             self._record_phase("assess", "done", minimal_report, self.structured_results["assessment"])
             self._refresh_supervisor_metrics()
+            self._refresh_llm_usage()
             duration = round(time.time() - self.start_time, 1)
             return {
                 "target_ip": self.target_ip,
@@ -2866,6 +3709,8 @@ class AgentOrchestrator:
                 "findings": self.findings,
                 "reflector_reentry_count": self.reflector_reentry_count,
                 "reflector_reentry_history": self.reflector_reentry_history,
+                "manual_review_wait_seconds": round(self.manual_review_wait_seconds, 3),
+                "llm_usage": self.structured_results.get("llm_usage", {}),
                 "structured": self.structured_results,
                 "phases": {
                     "recon": self.recon_result,
@@ -2892,15 +3737,21 @@ class AgentOrchestrator:
 
         # ── Phase 3/7: 决策 Agent ──
         logger.info("[Orchestrator] Phase 3/7: 决策 Agent 开始规划攻击路径...")
-        poc_inventory = self._get_poc_inventory_context()
         recon_data = self.structured_results.get("recon", {})
         open_ports = recon_data.get("open_ports") or []
+        global_vuln_pocs = recon_data.get("global_vulnerable_pocs") or []
+        poc_inventory = self._build_decision_poc_context(recon_data)
         decision_reentry = self.structured_results.get("decision_reentry", {}) or {}
         decision_user_message = (
             f"基于侦察结果和以下可用资源，从【可用 PoC 脚本库】中挑选合适的脚本执行。"
             f"针对 {self.target_ip} 的开放端口 {open_ports} 规划渗透路径。"
             f"输出 JSON 攻击计划，每项包含精确的 poc_name (如 'network/03_SSH_Service.py')。"
         )
+        if global_vuln_pocs:
+            decision_user_message += (
+                f" Global 扫描已标记 {len(global_vuln_pocs)} 个高风险 PoC，"
+                "请优先纳入攻击计划进行定向复验。"
+            )
         if decision_reentry.get("mode") == "targeted":
             decision_user_message = (
                 f"请针对目标 {self.target_ip} 执行局部重规划。"
@@ -2916,6 +3767,7 @@ class AgentOrchestrator:
                 f"{_available_params_ctx}\n\n"
                 f"{poc_inventory}\n\n"
                 f"侦察结果(JSON):\n{_safe_json_dumps(self.structured_results['recon'])}\n\n"
+                f"Global已检出PoC(优先复验):\n{_safe_json_dumps(global_vuln_pocs)}\n\n"
                 f"任务编排(JSON):\n{_safe_json_dumps(self.structured_results['planner'])}"
                 + (f"\n\n{reflector_focus_ctx}" if reflector_focus_ctx else "")
                 + (
@@ -2970,12 +3822,18 @@ class AgentOrchestrator:
                 ),
                 normalizer=self._normalize_attack_plan,
                 validator=self._validate_attack_plan,
+                correction_hint="必须从提供的 PoC 元数据表与端口映射中选择精确的 poc_name 路径。",
             )
-            self.structured_results["attack_plan"] = self._ensure_usb_adb_plan_item(self.structured_results["attack_plan"])
+            self.structured_results["attack_plan"] = self._ensure_usb_adb_plan_item(
+                self.structured_results["attack_plan"]
+            )
             self.attack_plan = _safe_json_dumps(self.structured_results["attack_plan"])
 
+        self._apply_heuristic_attack_plan_if_empty(recon_data)
+        self._append_baseline_replay_plan_items()
         self._merge_agent_supervisor_events(self.decision_agent, "decision")
         self._supervise_attack_plan()
+        self._sort_attack_plan_recon_first()
         self.execution_trace = list(self.structured_results["attack_plan"].get("items", []))
         logger.info(f"[Orchestrator] Phase 3 完成:\n{self.attack_plan[:300]}...")
 
@@ -3045,28 +3903,23 @@ class AgentOrchestrator:
         if rerouted is not None:
             return rerouted
 
-        # ── Phase 7/7: 评估 Agent ──
-        logger.info("[Orchestrator] Phase 7/7: 评估 Agent 生成安全报告...")
-        assessment_input = self._build_assessment_call(
-            context=(
-                f"侦察结果:\n{self.recon_result}\n\n"
-                f"攻击计划(JSON):\n{_safe_json_dumps(self.structured_results['attack_plan'])}\n\n"
-                f"执行结果(JSON):\n{_safe_json_dumps(self.structured_results['execution'])}\n\n"
-                f"漏洞发现(JSON):\n{_safe_json_dumps(self.findings)}\n\n"
-                f"反思审计(JSON):\n{_safe_json_dumps(self.structured_results.get('reflector', {}))}"
-            )
+        # ── Phase 7/7: 评估（实验可跳过 LLM 长文报告）──
+        if self.skip_assessment_report:
+            logger.info("[Orchestrator] Phase 7/7: 实验模式，跳过 Assessment Agent 长文报告...")
+        else:
+            logger.info("[Orchestrator] Phase 7/7: 评估 Agent 生成安全报告...")
+        assess_context = (
+            f"侦察结果:\n{self.recon_result}\n\n"
+            f"攻击计划(JSON):\n{_safe_json_dumps(self.structured_results['attack_plan'])}\n\n"
+            f"执行结果(JSON):\n{_safe_json_dumps(self.structured_results['execution'])}\n\n"
+            f"漏洞发现(JSON):\n{_safe_json_dumps(self.findings)}\n\n"
+            f"反思审计(JSON):\n{_safe_json_dumps(self.structured_results.get('reflector', {}))}"
         )
-        self.final_report = self.assessment_agent.call(
-            assessment_input["prompt"],
-            context=assessment_input["context"],
-        )
-        self.structured_results["assessment"] = {
-            "report_markdown": self.final_report,
-            "finding_count": len(self.findings),
-        }
+        self.final_report = self._run_assessment_phase(context=assess_context)
         self._record_phase("assess", "done", self.final_report, self.structured_results["assessment"])
-        logger.info("[Orchestrator] Phase 7 完成，报告已生成。")
+        logger.info("[Orchestrator] Phase 7 完成。")
         self._refresh_supervisor_metrics()
+        self._refresh_llm_usage()
 
         duration = round(time.time() - self.start_time, 1)
         logger.info(f"[Orchestrator] ===== 自主渗透测试完成，总耗时 {duration}s =====")
@@ -3080,6 +3933,8 @@ class AgentOrchestrator:
             "findings": self.findings,
             "reflector_reentry_count": self.reflector_reentry_count,
             "reflector_reentry_history": self.reflector_reentry_history,
+            "manual_review_wait_seconds": round(self.manual_review_wait_seconds, 3),
+            "llm_usage": self.structured_results.get("llm_usage", {}),
             "structured": self.structured_results,
             "phases": {
                 "recon": self.recon_result,
@@ -3116,7 +3971,7 @@ class AgentOrchestrator:
                  f"基于侦察结果和以下可用资源，规划针对 {self.target_ip} 的渗透测试计划。"
                  f"严格按照【可用资源】中的参数过滤 PoC：缺少 bluetooth_mac 则不选择蓝牙 PoC，"
                  f"缺少 can_interface 则不选择 CAN 总线 PoC，缺少 wifi_interface 则不选择无线嗅探 PoC，"
-                 f"缺少 expected_usb_serial 则不选择本机 USB ADB 枚举 PoC。"
+                 f"本机须恰好 1 台 USB ADB 设备才执行 network/01_USB_ADB_Debug.py。"
                  f"输出有序的 JSON 攻击计划，每项包含 poc_name 和 parameters 字段（parameters 中包含实际参数值）。"
              )
              if decision_reentry.get("mode") == "targeted":
@@ -3125,13 +3980,18 @@ class AgentOrchestrator:
                      "仅围绕 Reflector 指出的缺口、异常步骤或目标 PoC 补充/替换必要攻击步骤，"
                      "避免重复输出已经合理且无需调整的既有路径。"
                  )
+             resume_recon = self.structured_results.get("recon", {})
+             resume_poc_ctx = self._build_decision_poc_context(resume_recon)
+             global_vuln_resume = resume_recon.get("global_vulnerable_pocs") or []
              self.attack_plan, decision_structured = self._call_agent_with_validation(
                  phase="decision",
                  agent=self.decision_agent,
                  user_message=decision_user_message,
                  context=(
                      f"{available_params_ctx}\n\n"
-                     f"侦察结果(JSON):\n{_safe_json_dumps(self.structured_results['recon'])}\n\n"
+                     f"{resume_poc_ctx}\n\n"
+                     f"Global已检出PoC(优先复验):\n{_safe_json_dumps(global_vuln_resume)}\n\n"
+                     f"侦察结果(JSON):\n{_safe_json_dumps(resume_recon)}\n\n"
                      f"任务编排(JSON):\n{_safe_json_dumps(self.structured_results['planner'])}"
                      + (f"\n\n{reflector_focus_ctx}" if reflector_focus_ctx else "")
                      + (
@@ -3161,6 +4021,9 @@ class AgentOrchestrator:
              self._require_phase_success("decision")
              self._merge_agent_supervisor_events(self.decision_agent, "decision")
              self._supervise_attack_plan()
+             self._apply_heuristic_attack_plan_if_empty(self.structured_results.get("recon", {}))
+             self._append_baseline_replay_plan_items()
+             self._sort_attack_plan_recon_first()
 
         if any(_is_dynamic_probe_name(item.get("poc_name")) for item in self.structured_results["attack_plan"].get("items", [])):
             logger.info("[Orchestrator] 恢复执行时检测到 dynamic_unknown_service_probe，重新触发 Weaponize Agent...")
@@ -3212,25 +4075,17 @@ class AgentOrchestrator:
             if rerouted is not None:
                 return rerouted
 
-        assessment_input = self._build_assessment_call(
-            context=(
-                f"侦察结果:\n{self.recon_result}\n\n"
-                f"攻击计划(JSON):\n{_safe_json_dumps(self.structured_results['attack_plan'])}\n\n"
-                f"执行结果(JSON):\n{_safe_json_dumps(self.structured_results['execution'])}\n\n"
-                f"漏洞发现(JSON):\n{_safe_json_dumps(self.findings)}\n\n"
-                f"反思审计(JSON):\n{_safe_json_dumps(self.structured_results.get('reflector', {}))}"
-            )
+        assess_context = (
+            f"侦察结果:\n{self.recon_result}\n\n"
+            f"攻击计划(JSON):\n{_safe_json_dumps(self.structured_results['attack_plan'])}\n\n"
+            f"执行结果(JSON):\n{_safe_json_dumps(self.structured_results['execution'])}\n\n"
+            f"漏洞发现(JSON):\n{_safe_json_dumps(self.findings)}\n\n"
+            f"反思审计(JSON):\n{_safe_json_dumps(self.structured_results.get('reflector', {}))}"
         )
-        self.final_report = self.assessment_agent.call(
-            assessment_input["prompt"],
-            context=assessment_input["context"],
-        )
-        self.structured_results["assessment"] = {
-            "report_markdown": self.final_report,
-            "finding_count": len(self.findings),
-        }
+        self.final_report = self._run_assessment_phase(context=assess_context)
         self._record_phase("assess", "done", self.final_report, self.structured_results["assessment"])
         self._refresh_supervisor_metrics()
+        self._refresh_llm_usage()
 
         duration = round(time.time() - self.start_time, 1)
         return {
@@ -3242,6 +4097,8 @@ class AgentOrchestrator:
             "findings": self.findings,
             "reflector_reentry_count": self.reflector_reentry_count,
             "reflector_reentry_history": self.reflector_reentry_history,
+            "manual_review_wait_seconds": round(self.manual_review_wait_seconds, 3),
+            "llm_usage": self.structured_results.get("llm_usage", {}),
             "structured": self.structured_results,
             "phases": {
                 "recon": self.recon_result,
@@ -3292,7 +4149,7 @@ class AgentOrchestrator:
         elif phase == "decision":
             if self.structured_results.get("recon", {}).get("open_ports") and not self.structured_results.get("planner", {}).get("steps"):
                 self._run_planner()
-            poc_inventory = self._get_poc_inventory_context()
+            poc_inventory = self._build_decision_poc_context(self.structured_results.get("recon", {}))
             result, structured = self._call_agent_with_validation(
                 phase="decision",
                 agent=self.decision_agent,
@@ -3360,18 +4217,10 @@ class AgentOrchestrator:
                 )
         elif phase == "assess":
             self._upsert_phase_record(phase="assess", status="running", attempt=1)
-            gate = self.structured_results.get("attack_surface_gate")
-            if gate and gate.get("blocked"):
-                result = self._build_minimal_no_surface_report(gate)
-            else:
-                assessment_input = self._build_assessment_call(context=context)
-                result = self.assessment_agent.call(
-                    assessment_input["prompt"],
-                    context=assessment_input["context"],
-                )
-            structured = {"report_markdown": result, "finding_count": len(self.findings)}
-            if gate and gate.get("blocked"):
-                structured["attack_surface_gate"] = gate
+            result = self._run_assessment_phase(context=context)
+            structured = dict(self.structured_results.get("assessment") or {})
+            structured.setdefault("report_markdown", result)
+            structured.setdefault("finding_count", len(self.findings))
             self.structured_results["assessment"] = structured
             self.final_report = result
         else:
@@ -3381,9 +4230,11 @@ class AgentOrchestrator:
         self._refresh_supervisor_metrics()
         if phase in {"weaponize", "assess"}:
             self._record_phase(phase, "done", result, structured)
+        self._refresh_llm_usage()
         response = {
             "result": result,
             "structured_result": structured,
+            "llm_usage": self.structured_results.get("llm_usage", {}),
             "structured": self.structured_results,
             "logs": self.current_logs,
             "findings": self.findings,

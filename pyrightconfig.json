@@ -1,0 +1,14 @@
+{
+  "include": ["server", "lab", "client"],
+  "extraPaths": ["server"],
+  "executionEnvironments": [
+    {
+      "root": "lab",
+      "extraPaths": ["../server"]
+    },
+    {
+      "root": "server",
+      "extraPaths": ["."]
+    }
+  ]
+}

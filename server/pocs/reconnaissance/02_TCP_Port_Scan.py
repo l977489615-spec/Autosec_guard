@@ -12,6 +12,7 @@ Usage: python3 02_TCP_Port_Scan.py <target_ip>
 import socket
 import sys
 import time
+import re
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class TCPPortScanPlugin(IVIVulnerabilityPlugin):
@@ -31,8 +32,23 @@ class TCPPortScanPlugin(IVIVulnerabilityPlugin):
         5555, 5900, 6667, 7000, 8000, 8080, 8443, 8888,
         9090, 9200, 27017, 1900, 5353, 554, 1883, 6379,
         4444, 5000, 5555, 6000, 8081, 9000, 10000,
-        49152, 49153, 49154, 2049, 4040, 55555, 61616, 11211
+        13400, 30490, 49152, 49153, 49154, 2049, 4040,
+        55555, 61616, 11211
     ]
+
+    def _scan_ports(self):
+        candidate_ports = self.params.get("candidate_ports")
+        if isinstance(candidate_ports, list):
+            ports = [int(port) for port in candidate_ports if str(port).isdigit()]
+        elif candidate_ports:
+            ports = [
+                int(part)
+                for part in re.split(r"[,;\s]+", str(candidate_ports).strip())
+                if part.isdigit()
+            ]
+        else:
+            ports = []
+        return sorted(set(ports or self.TOP_PORTS))
 
     def check_prerequisites(self):
         if not self.target_ip:
@@ -40,9 +56,10 @@ class TCPPortScanPlugin(IVIVulnerabilityPlugin):
         return True
 
     def exploit(self):
-        self.logger.info(f"扫描 {self.target_ip} Top-50端口...")
+        scan_ports = self._scan_ports()
+        self.logger.info(f"扫描 {self.target_ip} 候选端口: {scan_ports}")
         open_ports = []
-        for port in sorted(set(self.TOP_PORTS)):
+        for port in scan_ports:
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 s.settimeout(1)

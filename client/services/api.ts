@@ -425,6 +425,10 @@ export const generateAttackGraph = async (session: any, token: string | null) =>
   return postAssessment('/api/attack-graph/generate', session, token);
 };
 
+export const generateMultiHopAttackGraph = async (session: any, token: string | null) => {
+  return postAssessment('/api/attack-graph/multihop', session, token);
+};
+
 export const assessPhysicalImpact = async (session: any, token: string | null) => {
   return postAssessment('/api/physical-impact/assess', session, token);
 };

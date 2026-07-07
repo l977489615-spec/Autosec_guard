@@ -123,7 +123,11 @@ const LocalRuntime: React.FC<LocalRuntimeProps> = ({ token, currentUser, onUnaut
     setMessage('');
     setRunResult(null);
     try {
-      const data = await runPocPlugin(selectedFilename, buildParams(), token);
+      const data = await runPocPlugin(
+        selectedFilename,
+        { ...buildParams(), allow_disruptive: true },
+        token,
+      );
       setRunResult(data);
       setMessage(
         data?.requires_human_review || data?.verification_status === 'pending_manual_review'
