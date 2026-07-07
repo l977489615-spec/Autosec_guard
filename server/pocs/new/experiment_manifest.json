@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "description": "IVI 原厂 PoC 遗留实验清单。自动化项已迁移至标准分类目录；manual_cases 需 CAN 工具人工注入。",
+  "manual_cases": [
+    {
+      "poc_id": "can_poc46_replay",
+      "number": 46,
+      "title": "车控 CAN 消息重放测试",
+      "manual": true,
+      "category": "can_manual",
+      "artifact": "CANTest/poc46_replay.csv",
+      "instructions": "连接 USB-CAN 工具，注入 CANTest/poc46_replay.csv，观察车辆是否异常。"
+    },
+    {
+      "poc_id": "can_poc47_fuzz",
+      "number": 47,
+      "title": "车控 CAN 消息模糊测试",
+      "manual": true,
+      "category": "can_manual",
+      "artifact": "CANTest/poc47_fuzz.csv",
+      "instructions": "注入 CANTest/poc47_fuzz.csv 并记录 ECU 响应。"
+    },
+    {
+      "poc_id": "can_poc48_uds",
+      "number": 48,
+      "title": "诊断协议 CAN 注入测试",
+      "manual": true,
+      "category": "can_manual",
+      "artifact": "CANTest/poc48_UDSchk.csv",
+      "instructions": "注入 CANTest/poc48_UDSchk.csv，验证 UDS 诊断会话是否可被滥用。"
+    },
+    {
+      "poc_id": "can_poc49_error_dos",
+      "number": 49,
+      "title": "错误帧 CAN DoS 测试",
+      "manual": true,
+      "category": "can_manual",
+      "artifact": "CANTest/poc49_errormsg_dos.csv",
+      "instructions": "注入 CANTest/poc49_errormsg_dos.csv，观察总线/网关是否异常。"
+    },
+    {
+      "poc_id": "can_poc50_overload_dos",
+      "number": 50,
+      "title": "过载帧 CAN DoS 测试",
+      "manual": true,
+      "category": "can_manual",
+      "artifact": "CANTest/poc50_overloadmsg_dos.csv",
+      "instructions": "注入 CANTest/poc50_overloadmsg_dos.csv。"
+    },
+    {
+      "poc_id": "can_poc51_priority_dos",
+      "number": 51,
+      "title": "优先帧 CAN DoS 测试",
+      "manual": true,
+      "category": "can_manual",
+      "artifact": "CANTest/poc51_priormsg_dos.csv",
+      "instructions": "注入 CANTest/poc51_priormsg_dos.csv。"
+    },
+    {
+      "poc_id": "can_poc52_remote_dos",
+      "number": 52,
+      "title": "远程帧 CAN DoS 测试",
+      "manual": true,
+      "category": "can_manual",
+      "artifact": "CANTest/poc52_remotemsg_dos.csv",
+      "instructions": "注入 CANTest/poc52_remotemsg_dos.csv。"
+    }
+  ]
+}

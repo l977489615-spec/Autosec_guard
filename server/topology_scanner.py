@@ -108,10 +108,17 @@ class TopologyAwareScanner:
     # UDS 侦察探针：发送 DefaultSession 请求
     UDS_PROBE_PAYLOAD = bytes([0x02, 0x10, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00])  # ISO-TP SF
 
-    def __init__(self, target_ip: str, timeout: float = 3.0, can_interface: str = "PCAN_USBBUS1"):
+    def __init__(
+        self,
+        target_ip: str,
+        timeout: float = 3.0,
+        can_interface: str = "PCAN_USBBUS1",
+        candidate_ports: list[int] | None = None,
+    ):
         self.target_ip = target_ip
         self.timeout = timeout
         self.can_interface = can_interface
+        self.candidate_ports = candidate_ports
         self.topo_map = TopologyMap()
 
     def scan(self) -> TopologyMap:
@@ -169,10 +176,16 @@ class TopologyAwareScanner:
                 pass
             return (port, service_name, False)
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        scan_targets = list(self.VEHICLE_PORTS)
+        if self.candidate_ports:
+            known = {(port, proto) for port, proto, _ in self.VEHICLE_PORTS}
+            for port in self.candidate_ports:
+                if (port, "TCP") not in known and (port, "UDP") not in known:
+                    scan_targets.append((port, "TCP", f"tcp/{port}"))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
             futures = {
                 executor.submit(probe_port, port, proto, svc): (port, svc)
-                for port, proto, svc in self.VEHICLE_PORTS
+                for port, proto, svc in scan_targets
             }
             for future in concurrent.futures.as_completed(futures, timeout=self.timeout * 2):
                 result = future.result()

@@ -9,7 +9,7 @@ import { CarModel } from './CarModel';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import AttackGraph from './AttackGraph';
-import { assessPhysicalImpact, buildAiConfigPayload, generateAttackGraph, generateStructuredReport, simulateRemediation, getBackendUrl, setBackendUrl } from '../services/api';
+import { assessPhysicalImpact, buildAiConfigPayload, generateAttackGraph, generateMultiHopAttackGraph, generateStructuredReport, simulateRemediation, getBackendUrl, setBackendUrl } from '../services/api';
 import { AssessmentArtifacts } from '../types';
 import { findPocInCatalog } from '../services/pocCatalog';
 import { usePocCatalog } from '../hooks/usePocCatalog';
@@ -287,11 +287,50 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
   const [results, setResults] = useState<any[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
   const [assessment, setAssessment] = useState<AssessmentArtifacts>({});
+  const [graphMode, setGraphMode] = useState<'simple' | 'multihop'>('multihop');
   const [phaseRecords, setPhaseRecords] = useState<PhaseRecord[]>([]);
   const [structuredState, setStructuredState] = useState<Record<string, any>>({});
   const [findings, setFindings] = useState<any[]>([]);
   const [manualReviewState, setManualReviewState] = useState<AgentManualReviewState>(null);
   const manualReviewResolverRef = React.useRef<((decision: AgentManualReviewDecision) => void) | null>(null);
+  const resourceParamsRef = React.useRef({
+    canInterface,
+    bluetoothMac,
+    wifiInterface,
+    rfFrequency,
+    usbAdbSerial,
+  });
+
+  useEffect(() => {
+    resourceParamsRef.current = {
+      canInterface,
+      bluetoothMac,
+      wifiInterface,
+      rfFrequency,
+      usbAdbSerial,
+    };
+  }, [canInterface, bluetoothMac, wifiInterface, rfFrequency, usbAdbSerial]);
+
+  const buildAgentResourcePayload = () => {
+    const resources = resourceParamsRef.current;
+    const payload: Record<string, string> = {};
+    const can = resources.canInterface.trim();
+    const bt = resources.bluetoothMac.trim();
+    const wifi = resources.wifiInterface.trim();
+    const rf = resources.rfFrequency.trim();
+    const usbSerial = resources.usbAdbSerial.trim();
+    if (can) payload.can_interface = can;
+    if (bt) payload.bluetooth_mac = bt;
+    if (wifi) payload.wifi_interface = wifi;
+    if (rf) payload.frequency = rf;
+    if (usbSerial) {
+      payload.expected_usb_serial = usbSerial;
+      payload.usb_device_serial = usbSerial;
+      payload.usbAdbSerial = usbSerial;
+      payload.usb_adb_serial = usbSerial;
+    }
+    return payload;
+  };
 
   const STORAGE_KEY = 'autosec_agent_scan_state';
 
@@ -531,7 +570,10 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
       ? [...logs, { timestamp: new Date().toLocaleTimeString(), type: 'info', message: `[*] 从阶段 ${resumeFrom} 恢复执行验证任务: ${targetName}` }]
       : [
           { timestamp: new Date().toLocaleTimeString(), type: 'info', message: `[*] 启动自动化验证任务: ${targetName}` },
-          { timestamp: new Date().toLocaleTimeString(), type: 'info', message: `[*] 目标向量: ${targetIp}` }
+          { timestamp: new Date().toLocaleTimeString(), type: 'info', message: `[*] 目标向量: ${targetIp}` },
+          ...(resourceParamsRef.current.usbAdbSerial.trim()
+            ? [{ timestamp: new Date().toLocaleTimeString(), type: 'info', message: `[*] USB ADB Serial 已锁定: ${resourceParamsRef.current.usbAdbSerial.trim()}` }]
+            : []),
         ];
 
     if (!isResume) {
@@ -592,12 +634,8 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
               target_name: targetName,
               resume_from: resumeFrom,
               ai_config: aiConfig,
-              ...(canInterface && { can_interface: canInterface }),
-            ...(bluetoothMac && { bluetooth_mac: bluetoothMac }),
-            ...(wifiInterface && { wifi_interface: wifiInterface }),
-            ...(rfFrequency && { frequency: rfFrequency }),
-            ...(usbAdbSerial && { expected_usb_serial: usbAdbSerial, usb_device_serial: usbAdbSerial }),
-            state: {
+              ...buildAgentResourcePayload(),
+              state: {
               logs: collectedLogs,
               findings: collectedFindings,
               phase_records: collectedPhaseRecords,
@@ -667,11 +705,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
               phase: PHASES[i].name,
               context: prevContext,
               ai_config: aiConfig,
-              ...(canInterface && { can_interface: canInterface }),
-              ...(bluetoothMac && { bluetooth_mac: bluetoothMac }),
-              ...(wifiInterface && { wifi_interface: wifiInterface }),
-              ...(rfFrequency && { frequency: rfFrequency }),
-              ...(usbAdbSerial && { expected_usb_serial: usbAdbSerial, usb_device_serial: usbAdbSerial }),
+              ...buildAgentResourcePayload(),
               state: {
                 logs: collectedLogs,
                 findings: collectedFindings,
@@ -950,15 +984,17 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
       calculatedRisk = Math.min(calculatedRisk, 100);
       setRiskScore(calculatedRisk);
 
+      const resources = resourceParamsRef.current;
       const sessionBase = {
         targetName: targetName,
         connection: {
           ip: targetIp,
-          bluetoothMac: bluetoothMac,
-          canInterface: canInterface,
-          usbAdbSerial: usbAdbSerial,
-          interface: wifiInterface,
-          port: '', url: '', frequency: ''
+          bluetoothMac: resources.bluetoothMac,
+          canInterface: resources.canInterface,
+          usbAdbSerial: resources.usbAdbSerial,
+          interface: resources.wifiInterface,
+          port: '', url: '', frequency: resources.rfFrequency,
+          usbMountPoint: '',
         },
         results: collectedResults,
         riskScore: calculatedRisk,
@@ -966,13 +1002,14 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
 
       let artifacts: AssessmentArtifacts = {};
       try {
-        const [attackGraph, physicalImpact, remediationPlan, structuredReport] = await Promise.all([
+        const [attackGraph, multiHopGraph, physicalImpact, remediationPlan, structuredReport] = await Promise.all([
           generateAttackGraph(sessionBase, token),
+          generateMultiHopAttackGraph(sessionBase, token),
           assessPhysicalImpact(sessionBase, token),
           simulateRemediation(sessionBase, token),
           generateStructuredReport(sessionBase, token),
         ]);
-        artifacts = { attackGraph, physicalImpact, remediationPlan, structuredReport };
+        artifacts = { attackGraph, multiHopGraph, physicalImpact, remediationPlan, structuredReport };
         setAssessment(artifacts);
       } catch (e: any) {
         collectedLogs.push({
@@ -988,11 +1025,12 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
         targetName: targetName,
         connection: {
           ip: targetIp,
-          bluetoothMac: bluetoothMac,
-          canInterface: canInterface,
-          usbAdbSerial: usbAdbSerial,
-          interface: wifiInterface,
-          port: '', url: '', frequency: ''
+          bluetoothMac: resources.bluetoothMac,
+          canInterface: resources.canInterface,
+          usbAdbSerial: resources.usbAdbSerial,
+          interface: resources.wifiInterface,
+          port: '', url: '', frequency: resources.rfFrequency,
+          usbMountPoint: '',
         },
         isConnected: true,
         startTime: now,
@@ -1766,12 +1804,40 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
         </div>
       </div>
 
-      {(assessment.attackGraph || assessment.physicalImpact || assessment.remediationPlan) && (
-        <AttackGraph
-          graph={assessment.attackGraph}
-          physicalImpact={assessment.physicalImpact}
-          remediationPlan={assessment.remediationPlan}
-        />
+      {(assessment.attackGraph || assessment.multiHopGraph || assessment.physicalImpact || assessment.remediationPlan) && (
+        <div className="space-y-2">
+          {assessment.multiHopGraph && assessment.attackGraph && (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-gray-500">攻击图模式：</span>
+              <div className="inline-flex rounded-lg border border-cyan-900/50 overflow-hidden">
+                <button
+                  onClick={() => setGraphMode('simple')}
+                  className={`text-[11px] px-3 py-1 transition-colors ${
+                    graphMode === 'simple' ? 'bg-cyan-950/50 text-cyan-200' : 'text-gray-400 hover:text-cyan-300'
+                  }`}
+                >
+                  语义展开
+                </button>
+                <button
+                  onClick={() => setGraphMode('multihop')}
+                  className={`text-[11px] px-3 py-1 transition-colors border-l border-cyan-900/50 ${
+                    graphMode === 'multihop' ? 'bg-cyan-950/50 text-cyan-200' : 'text-gray-400 hover:text-cyan-300'
+                  }`}
+                >
+                  多跳杀伤链
+                  {typeof assessment.multiHopGraph.killChainCount === 'number' && assessment.multiHopGraph.killChainCount > 0 && (
+                    <span className="ml-1 text-red-400">({assessment.multiHopGraph.killChainCount})</span>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+          <AttackGraph
+            graph={graphMode === 'multihop' && assessment.multiHopGraph ? assessment.multiHopGraph : assessment.attackGraph}
+            physicalImpact={assessment.physicalImpact}
+            remediationPlan={assessment.remediationPlan}
+          />
+        </div>
       )}
 
       {/* Final Report */}

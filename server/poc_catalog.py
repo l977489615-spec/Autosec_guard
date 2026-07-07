@@ -4,15 +4,20 @@ from poc_registry import get_poc_code, list_builtin_pocs
 
 
 SUPPORT_MODULES = {"iv_plugin_base.py", "canbus/can_bus_utils.py", "can_bus_utils.py"}
+NON_POC_SCRIPTS = {"run_experiment.py", "diagnostic_upnp.py", "deep_diagnostic.py"}
 
 
 def is_executable_poc_name(name: str) -> bool:
     normalized = str(name or "").replace("\\", "/").lstrip("./")
     basename = os.path.basename(normalized)
+    parts = [part for part in normalized.split("/") if part]
+    if any(part.startswith("_") for part in parts[:-1]):
+        return False
     return (
         normalized.endswith(".py")
         and not basename.startswith("__")
         and basename not in SUPPORT_MODULES
+        and basename not in NON_POC_SCRIPTS
         and normalized not in SUPPORT_MODULES
     )
 
@@ -57,7 +62,10 @@ def list_available_poc_names(pocs_dir: str) -> list[str]:
     names: set[str] = set()
     if os.path.isdir(pocs_dir):
         for dirpath, dirnames, filenames in os.walk(pocs_dir):
-            dirnames[:] = [d for d in dirnames if not d.startswith('.') and d != '.venv' and d != '__pycache__']
+            dirnames[:] = [
+                d for d in dirnames
+                if not d.startswith('.') and not d.startswith('_') and d != '.venv' and d != '__pycache__'
+            ]
             for filename in filenames:
                 if is_executable_poc_name(filename):
                     names.add(os.path.relpath(os.path.join(dirpath, filename), pocs_dir))

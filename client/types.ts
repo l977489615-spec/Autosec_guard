@@ -75,15 +75,18 @@ export interface AttackGraphNode {
   id: string;
   type: 'entry' | 'vulnerability' | 'capability' | 'impact';
   label: string;
-  severity: string;
-  domain: string;
+  severity?: string;
+  domain?: string;
   evidence?: string;
+  capability?: string;
+  impact?: string;
 }
 
 export interface AttackGraphEdge {
   source: string;
   target: string;
   relation: string;
+  gated?: boolean;
 }
 
 export interface AttackPath {
@@ -92,6 +95,9 @@ export interface AttackPath {
   riskScore: number;
   physicalImpact: string;
   nodes: string[];
+  hops?: number;
+  reachesPhysical?: boolean;
+  gatedHops?: number;
 }
 
 export interface AttackGraph {
@@ -99,6 +105,7 @@ export interface AttackGraph {
   edges: AttackGraphEdge[];
   paths: AttackPath[];
   summary?: string;
+  killChainCount?: number;
 }
 
 export interface PhysicalImpactAssessment {
@@ -145,6 +152,7 @@ export interface StructuredAssessmentReport {
 
 export interface AssessmentArtifacts {
   attackGraph?: AttackGraph;
+  multiHopGraph?: AttackGraph;
   physicalImpact?: PhysicalImpactAssessment;
   remediationPlan?: RemediationPlan;
   structuredReport?: StructuredAssessmentReport;

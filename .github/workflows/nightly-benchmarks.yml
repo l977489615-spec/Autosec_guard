@@ -1,8 +1,7 @@
 name: Nightly Benchmarks
 
+# Automatic schedule disabled; run manually from Actions → Nightly Benchmarks → Run workflow.
 on:
-  schedule:
-    - cron: "0 3 * * *"
   workflow_dispatch:
 
 jobs:

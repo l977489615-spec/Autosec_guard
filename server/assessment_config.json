@@ -1,0 +1,58 @@
+{
+  "_comment": "评估引擎可配置项。修改本文件即可在运行时调整不同车型/评估标准下的评分映射、判级规则、加固动作与风险下降分档，无需改动源码。缺省时回退 assessment_engine.py 内置默认值。",
+  "severity_scores": {
+    "critical": 95,
+    "high": 78,
+    "medium": 55,
+    "low": 25,
+    "info": 10
+  },
+  "severity_score_fallback": 45,
+  "level_rules": {
+    "critical_domains": ["canbus"],
+    "critical_impact_keyword": "ECU",
+    "high_domains": ["wireless", "bluetooth", "firmware"],
+    "medium_min_findings": 2
+  },
+  "reduction": {
+    "high_domains": ["canbus", "firmware", "wireless"],
+    "high_value": 18,
+    "default_value": 12
+  },
+  "pivot_rules": {
+    "remote_shell": ["canbus", "diagnostics", "sensors", "telematics", "firmware"],
+    "privileged_access": ["canbus", "diagnostics", "sensors", "firmware"],
+    "service_execution": ["ivi", "canbus", "diagnostics"],
+    "wireless_pivot": ["ivi", "canbus"],
+    "adjacent_access": ["ivi"],
+    "media_control": ["ivi"],
+    "broker_access": ["telematics", "ivi"],
+    "local_code_exec": ["ivi", "firmware"],
+    "firmware_tampering": ["ivi", "canbus"],
+    "bus_access": [],
+    "diagnostic_access": [],
+    "message_injection": [],
+    "sensor_spoofing": []
+  },
+  "external_entry_domains": ["web", "wireless", "bluetooth", "physical", "telematics", "media", "ivi"],
+  "gateway_protected_domains": ["canbus", "diagnostics"],
+  "physical_impacts": ["ecu_disruption", "persistent_compromise", "navigation_manipulation", "traffic_manipulation"],
+  "multihop_scoring": {
+    "hop_bonus": 5,
+    "gated_penalty": 8,
+    "max_depth": 8
+  },
+  "exploration_planner": {
+    "w_reach": 1.0,
+    "w_info": 0.6,
+    "w_cost": 0.4,
+    "w_risk": 0.5,
+    "cost_by_profile": {
+      "network": 1, "advanced_network": 2, "application": 2,
+      "usb_adb": 3, "local_artifact": 2, "wireless": 4, "canbus": 5, "bluetooth": 4
+    },
+    "risk_by_destructive_level": {
+      "Safe": 0, "Probe": 1, "Disruptive": 3, "restart": 4, "dataloss": 5, "brick": 6
+    }
+  }
+}

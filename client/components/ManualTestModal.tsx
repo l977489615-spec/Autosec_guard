@@ -96,7 +96,18 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
     setConsoleOutput(p => [...p, `[*] Initiating local vehicle runtime execution for ${poc.name}...`]);
 
     try {
-      const result = await runPocPlugin(poc.pocFile, localParams as any, token);
+      const executionParams: Record<string, unknown> = { ...globalConnection, ...localParams };
+      if (executionParams.bluetoothMac) executionParams.bluetooth_mac = executionParams.bluetoothMac;
+      if (executionParams.canInterface) executionParams.can_interface = executionParams.canInterface;
+      if (executionParams.usbAdbSerial) {
+        executionParams.expected_usb_serial = executionParams.usbAdbSerial;
+        executionParams.usb_device_serial = executionParams.usbAdbSerial;
+      }
+      if (executionParams.usbMountPoint) executionParams.usb_mount_point = executionParams.usbMountPoint;
+      // Manual test: clicking RUN LOCALLY is explicit operator approval for disruptive PoCs.
+      executionParams.allow_disruptive = true;
+
+      const result = await runPocPlugin(poc.pocFile, executionParams as any, token);
 
       // Process Result
       if (result.success) {
