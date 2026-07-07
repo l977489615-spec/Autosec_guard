@@ -36,6 +36,8 @@ class WiFiKR00KChipsetAuditPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-021"
     meta_poc_name = "WiFi KR00K Chipset Audit"
     meta_cve_id = "CVE-2019-15126"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2019-15126"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2019-15126']
     meta_severity = "Medium"
     meta_protocol = "wifi"
     meta_target_os = ["all"]

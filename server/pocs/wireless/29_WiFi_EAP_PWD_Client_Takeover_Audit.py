@@ -17,6 +17,8 @@ class WiFiEAPPWDClientTakeoverAuditPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-029"
     meta_poc_name = "WiFi EAP PWD Client Takeover Audit"
     meta_cve_id = "CVE-2019-9499"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2019-9499"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2019-9499']
     meta_severity = "High"
     meta_protocol = "wifi"
     meta_target_os = ["all"]

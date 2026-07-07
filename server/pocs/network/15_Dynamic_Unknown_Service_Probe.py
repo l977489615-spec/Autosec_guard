@@ -1,6 +1,6 @@
 """
 PoC Name: Dynamic Unknown Service Probe
-CVE: N/A
+Identifier: CWE-200
 Component: Unknown Network Service
 Category: Network
 Severity: Medium
@@ -15,7 +15,9 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 
 class DynamicUnknownServiceProbePlugin(IVIVulnerabilityPlugin):
     meta_poc_name = "Dynamic Unknown Service Probe"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-200"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/200.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/200.html']
     meta_severity = "Medium"
     meta_protocol = "tcp"
     meta_target_os = ["all"]

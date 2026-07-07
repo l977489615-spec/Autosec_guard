@@ -40,6 +40,8 @@ class BTBLURtoothCTKDAuditPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-023"
     meta_poc_name = "BT BLURtooth CTKD Audit"
     meta_cve_id = "CVE-2020-15802"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2020-15802"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2020-15802']
     meta_severity = "High"
     meta_protocol = "bluetooth"
     meta_target_os = ["all"]

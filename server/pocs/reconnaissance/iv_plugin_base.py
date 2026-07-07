@@ -1,6 +1,6 @@
 """
 PoC Name: N/A
-CVE: N/A
+Identifier: FRAMEWORK-BASE
 Component: N/A
 Category: N/A
 Severity: N/A
@@ -24,7 +24,7 @@ class IVIVulnerabilityPlugin(metaclass=abc.ABCMeta):
     """
     # ====== PoC 元数据 (Metadata) ======
     meta_poc_name: str = "Unknown PoC"
-    meta_cve_id: str = "Unknown CVE"
+    meta_cve_id: str = "FRAMEWORK-BASE"
     meta_severity: str = "Unknown"  # Low, Medium, High, Critical
     meta_protocol: str = "Unknown"  # e.g., "tcp", "udp", "can", "someip"
     meta_target_os: list = []       # e.g., ["qnx", "android", "linux", "all"]
@@ -60,7 +60,7 @@ class IVIVulnerabilityPlugin(metaclass=abc.ABCMeta):
 
         self.results = {
             "vulnerable": False,
-            "cve_id": "UNKNOWN",
+            "cve_id": self.meta_cve_id,
             "description": "",
             "evidence": ""
         }

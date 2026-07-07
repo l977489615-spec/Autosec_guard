@@ -36,7 +36,9 @@ class BlueFrag2020DoSPlugin(IVIVulnerabilityPlugin):
     安全性: 蓝牙自动恢复，不会造成持久损坏。
     """
     meta_poc_name = "BT CVE 2020 0022 DoS"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CVE-2020-0022"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2020-0022"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2020-0022']
     meta_severity = "High"
     meta_protocol = "bluetooth"
     meta_profiles = ["bluetooth"]

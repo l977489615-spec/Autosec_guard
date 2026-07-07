@@ -228,7 +228,7 @@ def _wrap_code_as_plugin(raw_code: str) -> str:
 
     return f'''"""
 PoC Name: Dynamic Unknown Service Probe
-CVE: N/A
+Identifier: CWE-200
 Component: Unknown Network Service
 Category: Network
 Severity: Medium
@@ -243,7 +243,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 
 class DynamicUnknownServiceProbePlugin(IVIVulnerabilityPlugin):
     meta_poc_name = "Dynamic Unknown Service Probe"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-200"
     meta_severity = "Medium"
     meta_protocol = "tcp"
     meta_target_os = ["all"]

@@ -17,6 +17,8 @@ class BTBlueZPBAPHeapRCEAuditPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-034"
     meta_poc_name = "BT BlueZ PBAP Heap RCE Audit"
     meta_cve_id = "CVE-2023-50230"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2023-50230"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2023-50230']
     meta_severity = "High"
     meta_protocol = "bluetooth"
     meta_target_os = ["linux"]

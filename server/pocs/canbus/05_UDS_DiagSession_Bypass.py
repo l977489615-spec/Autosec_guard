@@ -1,6 +1,6 @@
 """
 PoC Name: UDS Diagnostic Session Bypass
-CVE: N/A
+Identifier: CWE-306
 Component: UDS Protocol (ISO 14229)
 Category: Protocol
 Severity: High
@@ -15,7 +15,9 @@ from can_bus_utils import format_can_settings, get_can_settings, open_can_bus
 class UDSDiagSessionPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-CAN-005"
     meta_poc_name = "UDS Diagnostic Session Bypass"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-306"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/306.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/306.html']
     meta_severity = "High"
     meta_protocol = "can"
     meta_target_os = ["all"]

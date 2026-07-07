@@ -26,6 +26,9 @@ _SocketAddress = Union[tuple[Any, ...], str, bytes]
 
 EMBEDDED_SUPPORT_MODULES = {
     "iv_plugin_base": "iv_plugin_base.py",
+    "poc_runtime_adapter": "poc_runtime_adapter.py",
+    "advisory_audit_core": "advisory_audit_core.py",
+    "active_validation_core": "active_validation_core.py",
     "can_bus_utils": "canbus/can_bus_utils.py",
 }
 
@@ -157,87 +160,6 @@ def _inject_params_env(params):
             os.environ[f"AUTOSEC_{key.upper()}"] = str(value)
 
 
-def _build_script_argv(poc_filename, params):
-    """仅注入各脚本已声明的 CLI 参数；target_ip 统一走 AUTOSEC_TARGET_IP 环境变量。"""
-    argv = [poc_filename]
-    serial = params.get("expected_usb_serial") or params.get("serial")
-    if serial not in (None, ""):
-        argv.extend(["--serial", str(serial)])
-    return argv
-
-
-def _run_standalone_script(module, poc_filename, params):
-    import contextlib
-    import io
-    import logging
-
-    _inject_params_env(params)
-    argv = _build_script_argv(poc_filename, params)
-    log_buffer = io.StringIO()
-    stdout_buffer = io.StringIO()
-    handler = logging.StreamHandler(log_buffer)
-    handler.setLevel(logging.INFO)
-    root = logging.getLogger()
-    previous_level = root.level
-    root.addHandler(handler)
-    if root.level > logging.INFO:
-        root.setLevel(logging.INFO)
-
-    old_argv = sys.argv[:]
-    old_cwd = os.getcwd()
-    sys.argv = argv
-    vulnerable = False
-    evidence = ""
-    error = ""
-    def collected_output():
-        parts = [stdout_buffer.getvalue().strip(), log_buffer.getvalue().strip()]
-        return "\n".join(part for part in parts if part)
-
-    try:
-        module_file = getattr(module, "__file__", "")
-        module_dir = os.path.dirname(module_file) if module_file else ""
-        if module_dir:
-            os.chdir(module_dir)
-        if not hasattr(module, "main") or not callable(module.main):
-            return False, "", "No main() entrypoint found"
-        with contextlib.redirect_stdout(stdout_buffer):
-            result = module.main()
-        if result is True:
-            vulnerable = True
-            evidence = collected_output() or "main() returned True"
-        elif result is False:
-            vulnerable = False
-            evidence = collected_output() or "main() returned False"
-        else:
-            vulnerable = False
-            evidence = collected_output() or "main() completed"
-    except SystemExit as exc:
-        code = exc.code
-        if code is None:
-            code = 0
-        elif isinstance(code, str):
-            try:
-                code = int(code)
-            except Exception:
-                code = 1
-        vulnerable = False
-        evidence = collected_output() or f"exit code {code}"
-        if code not in (0, 1):
-            error = f"script exited with code {code}"
-    except Exception as exc:
-        error = str(exc)
-        evidence = collected_output()
-    finally:
-        sys.argv = old_argv
-        os.chdir(old_cwd)
-        root.removeHandler(handler)
-        root.setLevel(previous_level)
-
-    if error:
-        return False, evidence, error
-    return vulnerable, evidence[:4000], ""
-
-
 def _ensure_embedded_support_modules(pocs_dir):
     for module_name, registry_key in EMBEDDED_SUPPORT_MODULES.items():
         if module_name in sys.modules:
@@ -299,33 +221,31 @@ def main():
                 print(json.dumps({"error": f"Unable to load PoC module from {poc_path}"}))
                 sys.exit(1)
             module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
             spec.loader.exec_module(module)
 
         plugin_class = None
         for attr_name in dir(module):
             attr = getattr(module, attr_name)
-            if isinstance(attr, type) and attr_name not in ['IVIVulnerabilityPlugin'] and hasattr(attr, 'run_verify'):
+            if (
+                isinstance(attr, type)
+                and attr_name != "IVIVulnerabilityPlugin"
+                and getattr(attr, "__module__", None) == module.__name__
+                and hasattr(attr, "run_verify")
+            ):
                 plugin_class = attr
                 break
 
         if not plugin_class:
-            vulnerable, evidence, script_error = _run_standalone_script(module, poc_filename, params)
-            if script_error and not evidence:
-                print(json.dumps({"error": script_error}))
-                sys.exit(1)
-            payload = {
-                "vulnerable": vulnerable,
-                "evidence": evidence,
-                "cve_id": "",
-                "poc_id": poc_filename,
-            }
-            if script_error:
-                payload["error"] = script_error
             print("===RESULT_TOKEN===")
-            print(json.dumps(payload))
-            sys.exit(0 if not script_error else 1)
+            print(json.dumps({
+                "error": "PoC does not expose an IVIVulnerabilityPlugin-compatible class.",
+                "poc_id": poc_filename,
+            }))
+            sys.exit(1)
 
         plugin = plugin_class(params)
+        _inject_params_env(params)
         
         # Capture print output and pass on logs
         plugin.run_verify()

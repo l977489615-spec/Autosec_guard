@@ -15,7 +15,9 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class BLUFFSPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-010"
     meta_poc_name = "BT BLUFFS Key Downgrade"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CVE-2023-24023"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2023-24023"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2023-24023']
     meta_severity = "High"
     meta_protocol = "bluetooth"
     meta_profiles = ["bluetooth"]

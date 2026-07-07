@@ -18,6 +18,8 @@ class WiFiBroadcomFirmwareRCEAuditPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-026"
     meta_poc_name = "WiFi Broadcom Firmware RCE Audit"
     meta_cve_id = "CVE-2017-0561"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2017-0561"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2017-0561']
     meta_severity = "Critical"
     meta_protocol = "wifi"
     meta_target_os = ["android"]

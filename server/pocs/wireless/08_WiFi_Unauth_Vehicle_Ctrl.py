@@ -1,6 +1,6 @@
 """
 PoC Name: WiFi Unauthenticated Vehicle Control
-CVE: N/A
+Identifier: CWE-306
 Component: Wireless Stack
 Category: Wireless
 Severity: High
@@ -15,7 +15,9 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class MitsubishiWiFiExploit(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-008"
     meta_poc_name = "WiFi Unauth Vehicle Ctrl"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-306"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/306.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/306.html']
     meta_severity = "High"
     meta_protocol = "wifi"
     meta_profiles = ["wifi"]

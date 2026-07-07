@@ -17,6 +17,8 @@ class WiFiEAPPWDAuthBypassAuditPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-028"
     meta_poc_name = "WiFi EAP PWD Auth Bypass Audit"
     meta_cve_id = "CVE-2019-9497"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2019-9497"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2019-9497']
     meta_severity = "High"
     meta_protocol = "wifi"
     meta_target_os = ["all"]

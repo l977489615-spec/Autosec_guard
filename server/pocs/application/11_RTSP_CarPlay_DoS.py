@@ -31,6 +31,8 @@ class RTSPCarPlayDoSPlugin(IVIVulnerabilityPlugin):
     """
     meta_poc_name = "RTSP CarPlay DoS"
     meta_cve_id = "CVE-2023-28898"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2023-28898"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2023-28898']
     meta_severity = "High"
     meta_protocol = "tcp"
     meta_target_os = ["automotive_linux", "qnx"]

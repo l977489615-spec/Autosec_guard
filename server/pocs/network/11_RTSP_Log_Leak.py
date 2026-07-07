@@ -1,6 +1,6 @@
 """
 PoC Name: RTSP Log Information Leak
-CVE: N/A
+Identifier: CWE-200
 Component: Network Stack
 Category: Network
 Severity: High
@@ -21,7 +21,9 @@ class RTSPLogLeakPlugin(IVIVulnerabilityPlugin):
     实车执行需人工确认（可能影响 CarPlay/RTSP 服务稳定性）。
     """
     meta_poc_name = "RTSP Log Leak"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-200"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/200.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/200.html']
     meta_severity = "High"
     meta_protocol = "rtsp"
     meta_target_os = ["all"]

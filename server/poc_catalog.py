@@ -3,7 +3,14 @@ import os
 from poc_registry import get_poc_code, list_builtin_pocs
 
 
-SUPPORT_MODULES = {"iv_plugin_base.py", "canbus/can_bus_utils.py", "can_bus_utils.py"}
+SUPPORT_MODULES = {
+    "iv_plugin_base.py",
+    "poc_runtime_adapter.py",
+    "advisory_audit_core.py",
+    "active_validation_core.py",
+    "canbus/can_bus_utils.py",
+    "can_bus_utils.py",
+}
 NON_POC_SCRIPTS = {"run_experiment.py", "diagnostic_upnp.py", "deep_diagnostic.py"}
 
 

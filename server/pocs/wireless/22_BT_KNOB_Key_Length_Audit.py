@@ -31,6 +31,8 @@ class BTKNOBKeyLengthAuditPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-022"
     meta_poc_name = "BT KNOB Key Length Audit"
     meta_cve_id = "CVE-2019-9506"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2019-9506"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2019-9506']
     meta_severity = "High"
     meta_protocol = "bluetooth"
     meta_target_os = ["all"]

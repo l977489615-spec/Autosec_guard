@@ -16,7 +16,9 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class JeepDBusPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-NET-010"
     meta_poc_name = "DBus Anon Auth"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CVE-2015-5611"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2015-5611"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2015-5611']
     meta_severity = "Critical"
     meta_protocol = "tcp"
     meta_target_os = ["all"]

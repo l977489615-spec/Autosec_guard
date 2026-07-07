@@ -1,6 +1,6 @@
 """
 PoC Name: UDS ReadMemoryByAddress
-CVE: N/A
+Identifier: CWE-200
 Component: UDS Protocol (ISO 14229)
 Category: Protocol
 Severity: Critical
@@ -15,7 +15,9 @@ from can_bus_utils import format_can_settings, get_can_settings, open_can_bus
 class UDSReadMemoryPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-CAN-007"
     meta_poc_name = "UDS ReadMemory"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-200"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/200.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/200.html']
     meta_severity = "Critical"
     meta_protocol = "can"
     meta_target_os = ["all"]

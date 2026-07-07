@@ -1,6 +1,6 @@
 """
 PoC Name: HTTP Service Enumeration
-CVE: N/A
+Identifier: CWE-200
 Component: Recon Stack
 Category: Recon
 Severity: Medium
@@ -16,7 +16,9 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class HTTPServiceEnumPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-RECON-008"
     meta_poc_name = "HTTP Service Enum"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-200"
+    meta_source_url = "https://cwe.mitre.org/data/definitions/200.html"
+    meta_references = ['https://cwe.mitre.org/data/definitions/200.html']
     meta_severity = "Medium"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

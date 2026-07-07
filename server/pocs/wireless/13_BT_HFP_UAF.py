@@ -15,7 +15,9 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class BTHFPUAFPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-013"
     meta_poc_name = "BT HFP UAF"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CVE-2025-0084"
+    meta_source_url = "https://nvd.nist.gov/vuln/detail/CVE-2025-0084"
+    meta_references = ['https://nvd.nist.gov/vuln/detail/CVE-2025-0084']
     meta_severity = "Critical"
     meta_protocol = "bluetooth"
     meta_profiles = ["bluetooth"]
