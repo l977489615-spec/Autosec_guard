@@ -21,7 +21,7 @@ class MercedesHiQnetPlugin(IVIVulnerabilityPlugin):
     目标端口: 3804 (TCP)
     """
     meta_poc_name = "HiQnet Stack Overflow TCP"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CVE-2021-23906"
     meta_severity = "Critical"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

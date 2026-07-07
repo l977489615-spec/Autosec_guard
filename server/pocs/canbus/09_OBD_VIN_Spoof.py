@@ -1,6 +1,6 @@
 """
 PoC Name: OBD-II VIN Spoofing
-CVE: N/A
+Identifier: CWE-345
 Component: OBD-II Protocol
 Category: Protocol
 Severity: Medium
@@ -15,7 +15,7 @@ from can_bus_utils import format_can_settings, get_can_settings, open_can_bus
 class OBDVINSpoofPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-CAN-009"
     meta_poc_name = "OBD VIN Spoof"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-345"
     meta_severity = "Medium"
     meta_protocol = "can"
     meta_target_os = ["all"]

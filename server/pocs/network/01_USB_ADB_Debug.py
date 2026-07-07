@@ -1,6 +1,6 @@
 """
 PoC Name: USB ADB Debug Interface Detection
-CVE: N/A
+Identifier: CWE-489
 Component: Android Debug Bridge (ADB) over USB
 Category: Network
 Severity: High
@@ -32,7 +32,7 @@ HIGH_RISK_STATUSES = {"device"}
 class USBADBDebugPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-NET-001"
     meta_poc_name = "USB ADB Debug Interface Detection"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-489"
     meta_severity = "High"
     meta_protocol = "usb"
     meta_target_os = ["android", "harmonyos"]

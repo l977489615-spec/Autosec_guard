@@ -16,7 +16,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class TIWL18xxOverflowPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-005"
     meta_poc_name = "WiFi TI WL18xx Overflow"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CVE-2023-29468"
     meta_severity = "Critical"
     meta_protocol = "wifi"
     meta_profiles = ["wifi"]

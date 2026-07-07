@@ -16,7 +16,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class HiQnetUDPOKPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-APP-005"
     meta_poc_name = "HiQnet Heap Overflow UDP"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CVE-2021-23906"
     meta_severity = "Critical"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

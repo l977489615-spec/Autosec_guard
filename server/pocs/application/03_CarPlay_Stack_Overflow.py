@@ -20,7 +20,7 @@ class AlpineCarPlayPlugin(IVIVulnerabilityPlugin):
     CVE-2025-8474: Alpine iLX-507 CarPlay Stack Overflow POC
     """
     meta_poc_name = "CarPlay Stack Overflow"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CVE-2024-23923,CVE-2025-8474"
     meta_severity = "High"
     meta_protocol = "unknown"
     meta_target_os = ["all"]
@@ -31,7 +31,7 @@ class AlpineCarPlayPlugin(IVIVulnerabilityPlugin):
     
     def __init__(self, target_config, logger=None):
         super().__init__(target_config, logger)
-        self.results["cve_id"] = "CVE-2025-8474"
+        self.results["cve_id"] = "CVE-2024-23923,CVE-2025-8474"
         self.results["description"] = "Alpine CarPlay Protocol Stack Overflow"
         self.target_port = 55555 # 典型 CarPlay 控制端口，需根据实际扫描结果调整
 

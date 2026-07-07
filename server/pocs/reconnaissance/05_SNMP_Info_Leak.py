@@ -1,6 +1,6 @@
 """
 PoC Name: SNMP Community String Check
-CVE: N/A
+Identifier: CWE-798
 Component: Recon Stack
 Category: Recon
 Severity: Medium
@@ -16,7 +16,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class SNMPInfoLeakPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-RECON-005"
     meta_poc_name = "SNMP Info Leak"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-798"
     meta_severity = "Medium"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

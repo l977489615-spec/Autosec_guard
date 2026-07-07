@@ -1,6 +1,6 @@
 """
 PoC Name: Filename Command Injection
-CVE: N/A
+Identifier: CWE-78
 Component: Application Stack
 Category: Application
 Severity: High
@@ -16,7 +16,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class FilenameCmdInjectPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-APP-007"
     meta_poc_name = "Filename Command Injection"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-78"
     meta_severity = "High"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

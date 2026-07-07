@@ -16,7 +16,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class IVIDevModePlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-APP-009"
     meta_poc_name = "IVI DevMode Bypass"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CVE-2025-32063"
     meta_severity = "Critical"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

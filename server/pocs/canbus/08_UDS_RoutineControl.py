@@ -1,6 +1,6 @@
 """
 PoC Name: UDS RoutineControl Abuse
-CVE: N/A
+Identifier: CWE-306
 Component: UDS Protocol (ISO 14229)
 Category: Protocol
 Severity: Critical
@@ -15,7 +15,7 @@ from can_bus_utils import format_can_settings, get_can_settings, open_can_bus
 class UDSRoutineControlPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-CAN-008"
     meta_poc_name = "UDS RoutineControl"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-306"
     meta_severity = "Critical"
     meta_protocol = "can"
     meta_target_os = ["all"]

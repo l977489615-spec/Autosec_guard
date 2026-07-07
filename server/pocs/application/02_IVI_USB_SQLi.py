@@ -30,7 +30,7 @@ def _remove_path(path, *, directory=False):
 class IVIUsbSqliPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-APP-002"
     meta_poc_name = "IVI USB SQLi"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CVE-2024-8355"
     meta_severity = "High"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

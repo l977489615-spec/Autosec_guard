@@ -1,6 +1,6 @@
 """
 PoC Name: UDS Security Access Brute Force
-CVE: N/A
+Identifier: CWE-307
 Component: Canbus Stack
 Category: Canbus
 Severity: Critical
@@ -16,7 +16,7 @@ from can_bus_utils import format_can_settings, get_can_settings, open_can_bus
 class UDSSecurityAccessBrutePlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-CAN-006"
     meta_poc_name = "UDS Security Access Brute"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-307"
     meta_severity = "Critical"
     meta_protocol = "can"
     meta_target_os = ["all"]

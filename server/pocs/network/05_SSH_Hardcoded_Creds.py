@@ -1,6 +1,6 @@
 """
 PoC Name: SSH Hardcoded Credentials
-CVE: N/A
+Identifier: CWE-798
 Component: Network Stack
 Category: Network
 Severity: Critical
@@ -35,7 +35,7 @@ def _resolve_credentials_path():
 class ToyotaHarmanSSHExploit(IVIVulnerabilityPlugin):
     meta_display_id = "POC-NET-005"
     meta_poc_name = "SSH Hardcoded Creds"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-798"
     meta_severity = "Critical"
     meta_protocol = "tcp"
     meta_target_os = ["all"]

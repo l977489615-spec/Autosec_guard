@@ -1,6 +1,6 @@
 """
 PoC Name: V2X BSM Message Injection
-CVE: N/A
+Identifier: CWE-345
 Component: Multiple
 Category: Advanced
 Severity: High
@@ -19,7 +19,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class V2XBSMInjectionPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-ADV-005"
     meta_poc_name = "V2X BSM Injection"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-345"
     meta_severity = "High"
     meta_protocol = "rf"
     meta_target_os = ["all"]

@@ -1,6 +1,6 @@
 """
 PoC Name: WiFi Evil Twin AP
-CVE: N/A
+Identifier: CWE-300
 Component: Wireless Stack
 Category: Wireless
 Severity: High
@@ -16,7 +16,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class EvilTwinPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-003"
     meta_poc_name = "WiFi Evil Twin"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-300"
     meta_severity = "High"
     meta_protocol = "wifi"
     meta_profiles = ["wifi"]

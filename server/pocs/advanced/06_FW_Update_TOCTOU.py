@@ -1,6 +1,6 @@
 """
 PoC Name: Firmware Update TOCTOU Race
-CVE: N/A
+Identifier: CWE-367
 Component: Multiple
 Category: Advanced
 Severity: Critical
@@ -20,7 +20,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class FwUpdateToctouPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-ADV-006"
     meta_poc_name = "FW Update TOCTOU"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-367"
     meta_severity = "Critical"
     meta_protocol = "rf"
     meta_target_os = ["all"]

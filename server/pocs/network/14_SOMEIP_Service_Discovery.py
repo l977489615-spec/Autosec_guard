@@ -1,6 +1,6 @@
 """
 PoC Name: SOME/IP Service Discovery Information Leak
-CVE: N/A
+Identifier: CWE-200
 Component: Network Stack
 Category: Network
 Severity: Medium
@@ -38,7 +38,7 @@ class SOMEIPServiceDiscoveryPlugin(IVIVulnerabilityPlugin):
     参考标准: AUTOSAR R20-11 SOME/IP-SD 规范
     """
     meta_poc_name = "SOMEIP Service Discovery"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-200"
     meta_severity = "Medium"
     meta_protocol = "tcp"
     meta_target_os = ["all"]

@@ -1,6 +1,6 @@
 """
 PoC Name: UPnP AVTransport Unauthenticated Media Injection DoS
-CVE: N/A
+Identifier: CWE-306
 Component: Application Stack
 Category: Application
 Severity: High
@@ -41,7 +41,7 @@ class UPnPAVTransportMediaInjectPlugin(IVIVulnerabilityPlugin):
     - 更精确地判断漏洞是否可利用
     """
     meta_poc_name = "UPnP AVTransport Media Inject"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-306"
     meta_severity = "High"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

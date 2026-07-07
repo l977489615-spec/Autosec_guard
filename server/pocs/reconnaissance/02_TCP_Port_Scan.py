@@ -1,6 +1,6 @@
 """
 PoC Name: TCP Port Scan
-CVE: N/A
+Identifier: CWE-200
 Component: Recon Stack
 Category: Recon
 Severity: Medium
@@ -18,7 +18,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class TCPPortScanPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-RECON-002"
     meta_poc_name = "TCP Port Scan"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-200"
     meta_severity = "Medium"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

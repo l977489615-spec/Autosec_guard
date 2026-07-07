@@ -1,6 +1,6 @@
 """
 PoC Name: WebView file:// Data Exfiltration
-CVE: N/A
+Identifier: CWE-200
 Component: Application Stack
 Category: Application
 Severity: Medium
@@ -44,7 +44,7 @@ EXPLOIT_HTML = '''<!DOCTYPE html>
 class WebViewExfilPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-APP-006"
     meta_poc_name = "WebView File Exfil"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-200"
     meta_severity = "Medium"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

@@ -1,6 +1,6 @@
 """
 PoC Name: MQTT Unauthenticated Subscribe
-CVE: N/A
+Identifier: CWE-306
 Component: Network Stack
 Category: Network
 Severity: High
@@ -16,7 +16,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class MQTTUnauthPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-NET-009"
     meta_poc_name = "MQTT Unauth"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-306"
     meta_severity = "High"
     meta_protocol = "tcp"
     meta_target_os = ["all"]

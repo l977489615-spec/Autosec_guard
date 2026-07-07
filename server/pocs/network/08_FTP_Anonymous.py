@@ -1,6 +1,6 @@
 """
 PoC Name: FTP Anonymous Login
-CVE: N/A
+Identifier: CWE-306
 Component: Network Stack
 Category: Network
 Severity: High
@@ -16,7 +16,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class FTPAnonymousPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-NET-008"
     meta_poc_name = "FTP Anonymous"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-306"
     meta_severity = "High"
     meta_protocol = "tcp"
     meta_target_os = ["all"]

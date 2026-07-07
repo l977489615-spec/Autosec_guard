@@ -1,6 +1,6 @@
 """
 PoC Name: DLNA AVTransport Unauth Control
-CVE: N/A
+Identifier: CWE-306
 Component: Network Stack
 Category: Network
 Severity: Medium
@@ -27,7 +27,7 @@ class DLNAAVTransportPlugin(IVIVulnerabilityPlugin):
     检测目标是否允许未经授权的多媒体控制。
     """
     meta_poc_name = "DLNA AVTransport Unauth"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-306"
     meta_severity = "Medium"
     meta_protocol = "tcp"
     meta_target_os = ["all"]

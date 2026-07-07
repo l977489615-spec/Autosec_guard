@@ -1,6 +1,6 @@
 """
 PoC Name: Mirror Hijack (UPnP AVTransport)
-CVE: N/A
+Identifier: CWE-306
 Component: Application Stack / UPnP
 Category: Application
 Severity: High
@@ -29,7 +29,7 @@ class MirrorHijackPlugin(IVIVulnerabilityPlugin):
     并发送 SetAVTransportURI + Play 指令。
     """
     meta_poc_name = "Mirror Hijack"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-306"
     meta_severity = "High"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

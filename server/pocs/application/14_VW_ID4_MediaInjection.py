@@ -1,6 +1,6 @@
 """
 PoC Name: VW ID.4 UPnP AVTransport Media Injection
-CVE: N/A
+Identifier: CWE-306
 Component: Application Stack / UPnP
 Category: Application
 Severity: High
@@ -23,7 +23,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class VWId4MediaInjectionPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-APP-014"
     meta_poc_name = "VW ID.4 Media Injection"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-306"
     meta_severity = "High"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

@@ -1,6 +1,6 @@
 """
 PoC Name: CAN Message Injection
-CVE: N/A
+Identifier: CWE-306
 Component: CAN Bus (PCAN)
 Category: Protocol
 Severity: Critical
@@ -16,7 +16,7 @@ from can_bus_utils import format_can_settings, get_can_settings, open_can_bus
 class CANInjectionPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-CAN-002"
     meta_poc_name = "CAN Message Injection"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-306"
     meta_severity = "Critical"
     meta_protocol = "can"
     meta_target_os = ["all"]

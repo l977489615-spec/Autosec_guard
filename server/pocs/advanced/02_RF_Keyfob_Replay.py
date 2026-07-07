@@ -22,7 +22,7 @@ class HondaReplayPlugin(IVIVulnerabilityPlugin):
     CVE-2022-27254: Honda Keyless Entry Replay Attack
     """
     meta_poc_name = "RF Keyfob Replay"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CVE-2022-27254"
     meta_severity = "High"
     meta_protocol = "rf"
     meta_target_os = ["all"]

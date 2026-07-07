@@ -16,7 +16,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class QNXQconnReadPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-001"
     meta_poc_name = "QNX Qnet File Read"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CVE-2017-3891"
     meta_severity = "Critical"
     meta_protocol = "rf"
     meta_target_os = ["all"]

@@ -20,7 +20,7 @@ class NissanBlueOverflowPlugin(IVIVulnerabilityPlugin):
     CVE-2025-32059: Nissan Leaf Bluetooth HFP Stack Overflow
     """
     meta_poc_name = "BT HFP AT Overflow"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CVE-2025-32059"
     meta_severity = "High"
     meta_protocol = "bluetooth"
     meta_profiles = ["bluetooth"]

@@ -1,6 +1,6 @@
 """
 PoC Name: WiFi SSID Clone Auto-Connect (No BSSID Validation)
-CVE: N/A
+Identifier: CWE-345
 Component: Wireless Stack
 Category: Wireless
 Severity: Medium
@@ -35,7 +35,7 @@ class WiFiSSIDCloneAutoConnectPlugin(IVIVulnerabilityPlugin):
     安全性: 纯被动扫描，不发射任何 WiFi 信号。
     """
     meta_poc_name = "WiFi SSID Clone AutoConnect"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-345"
     meta_severity = "Medium"
     meta_protocol = "wifi"
     meta_profiles = ["wifi"]

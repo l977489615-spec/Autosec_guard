@@ -1,6 +1,6 @@
 """
 PoC Name: SSH Service Detection
-CVE: N/A
+Identifier: CWE-200
 Component: Network Stack
 Category: Network
 Severity: Medium
@@ -16,7 +16,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class SSHServicePlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-NET-003"
     meta_poc_name = "SSH Service"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-200"
     meta_severity = "Medium"
     meta_protocol = "tcp"
     meta_target_os = ["all"]

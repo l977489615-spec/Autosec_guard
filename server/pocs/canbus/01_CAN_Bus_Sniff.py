@@ -1,6 +1,6 @@
 """
 PoC Name: CAN Bus Traffic Capture
-CVE: N/A
+Identifier: CWE-200
 Component: CAN Bus (PCAN)
 Category: Protocol
 Severity: Medium
@@ -17,7 +17,7 @@ from can_bus_utils import format_can_settings, get_can_settings, open_can_bus
 class CANBusSniffPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-CAN-001"
     meta_poc_name = "CAN Bus Sniff"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-200"
     meta_severity = "Medium"
     meta_protocol = "can"
     meta_target_os = ["all"]

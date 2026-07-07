@@ -1,6 +1,6 @@
 """
 PoC Name: HTTPS Missing Certificate Pinning
-CVE: N/A
+Identifier: CWE-295
 Component: Network Stack
 Category: Network
 Severity: Medium
@@ -17,7 +17,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class CertPinningPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-NET-013"
     meta_poc_name = "HTTPS No Cert Pin"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-295"
     meta_severity = "Medium"
     meta_protocol = "tcp"
     meta_target_os = ["all"]

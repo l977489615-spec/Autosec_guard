@@ -1,6 +1,6 @@
 """
 PoC Name: Telnet Service Detection
-CVE: N/A
+Identifier: CWE-319
 Component: Network Stack
 Category: Network
 Severity: High
@@ -16,7 +16,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class TelnetServicePlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-NET-006"
     meta_poc_name = "Telnet Service"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-319"
     meta_severity = "High"
     meta_protocol = "tcp"
     meta_target_os = ["all"]

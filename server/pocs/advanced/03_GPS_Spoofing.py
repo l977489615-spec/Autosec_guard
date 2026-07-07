@@ -1,6 +1,6 @@
 """
 PoC Name: GPS Signal Spoofing
-CVE: N/A
+Identifier: CWE-345
 Component: Multiple
 Category: Advanced
 Severity: High
@@ -19,7 +19,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class GPSSpoofingPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-ADV-003"
     meta_poc_name = "GPS Spoofing"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-345"
     meta_severity = "High"
     meta_protocol = "rf"
     meta_target_os = ["all"]

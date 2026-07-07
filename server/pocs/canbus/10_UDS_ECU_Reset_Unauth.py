@@ -1,6 +1,6 @@
 """
 PoC Name: UDS ECU Reset Unauthenticated (0x11)
-CVE: N/A
+Identifier: CWE-306
 Component: UDS Protocol (ISO 14229)
 Category: Protocol
 Severity: High
@@ -53,7 +53,7 @@ class UDSECUResetPlugin(IVIVulnerabilityPlugin):
              SoftReset（01h）影响更小，默认优先测试 SoftReset。
     """
     meta_poc_name = "UDS ECU Reset Unauthenticated"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-306"
     meta_severity = "High"
     meta_protocol = "can"
     meta_target_os = ["all"]

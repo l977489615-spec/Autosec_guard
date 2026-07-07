@@ -1,6 +1,6 @@
 """
 PoC Name: Telnet Weak Credentials
-CVE: N/A
+Identifier: CWE-521
 Component: Network Stack
 Category: Network
 Severity: Critical
@@ -35,7 +35,7 @@ def _resolve_credentials_path():
 class TelnetWeakCredsPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-NET-007"
     meta_poc_name = "Telnet Weak Creds"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-521"
     meta_severity = "Critical"
     meta_protocol = "tcp"
     meta_target_os = ["all"]

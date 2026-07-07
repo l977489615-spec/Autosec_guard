@@ -1,6 +1,6 @@
 """
 PoC Name: USB Path Traversal Injection
-CVE: N/A
+Identifier: CWE-22
 Component: Application Stack
 Category: Application
 Severity: Critical
@@ -17,7 +17,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class UsbPathTraversalPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-APP-008"
     meta_poc_name = "USB Path Injection"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-22"
     meta_severity = "Critical"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

@@ -1,6 +1,6 @@
 """
 PoC Name: ICMP Host Discovery
-CVE: N/A
+Identifier: CWE-200
 Component: Recon Stack
 Category: Recon
 Severity: Low
@@ -17,7 +17,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class ICMPHostDiscoveryPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-RECON-001"
     meta_poc_name = "ICMP Host Discovery"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-200"
     meta_severity = "Low"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

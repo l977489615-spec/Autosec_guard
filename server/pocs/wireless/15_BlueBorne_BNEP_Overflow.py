@@ -17,7 +17,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class BlueBorneBNEPPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-015"
     meta_poc_name = "BlueBorne BNEP Overflow"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CVE-2017-0781"
     meta_severity = "Critical"
     meta_protocol = "bluetooth"
     meta_profiles = ["bluetooth"]

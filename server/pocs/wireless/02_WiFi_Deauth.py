@@ -1,6 +1,6 @@
 """
 PoC Name: WiFi Deauthentication Attack
-CVE: N/A
+Identifier: CWE-345
 Component: Wireless Stack
 Category: Wireless
 Severity: Medium
@@ -16,7 +16,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class WiFiDeauthPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-002"
     meta_poc_name = "WiFi Deauth"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-345"
     meta_severity = "Medium"
     meta_protocol = "wifi"
     meta_profiles = ["wifi"]

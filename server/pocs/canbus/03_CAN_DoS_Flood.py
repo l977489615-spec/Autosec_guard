@@ -1,6 +1,6 @@
 """
 PoC Name: CAN Bus DoS Flood
-CVE: N/A
+Identifier: CWE-400
 Component: CAN Bus (PCAN)
 Category: Protocol
 Severity: High
@@ -17,7 +17,7 @@ from can_bus_utils import format_can_settings, get_can_settings, open_can_bus
 class CANDoSFloodPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-CAN-003"
     meta_poc_name = "CAN DoS Flood"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-400"
     meta_severity = "High"
     meta_protocol = "can"
     meta_target_os = ["all"]

@@ -1,6 +1,6 @@
 """
 PoC Name: N/A
-CVE: N/A
+Identifier: CWE-200
 Component: N/A
 Category: N/A
 Severity: N/A
@@ -16,7 +16,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class TBOXPortScanPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-RECON-007"
     meta_poc_name = "TBox Port Scan"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-200"
     meta_severity = "Medium"
     meta_protocol = "unknown"
     meta_target_os = ["all"]

@@ -1,6 +1,6 @@
 """
 PoC Name: CAN Replay Attack
-CVE: N/A
+Identifier: CWE-294
 Component: CAN Bus (PCAN)
 Category: Protocol
 Severity: High
@@ -17,7 +17,7 @@ from can_bus_utils import format_can_settings, get_can_settings, open_can_bus
 class CANReplayPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-CAN-004"
     meta_poc_name = "CAN Replay Attack"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-294"
     meta_severity = "High"
     meta_protocol = "can"
     meta_target_os = ["all"]

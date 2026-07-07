@@ -1,6 +1,6 @@
 """
 PoC Name: TPMS Signal Spoofing
-CVE: N/A
+Identifier: CWE-345
 Component: Multiple
 Category: Advanced
 Severity: Medium
@@ -16,7 +16,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class TPMSSpoofPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-ADV-004"
     meta_poc_name = "TPMS Signal Spoofing"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-345"
     meta_severity = "Medium"
     meta_protocol = "rf"
     meta_target_os = ["all"]

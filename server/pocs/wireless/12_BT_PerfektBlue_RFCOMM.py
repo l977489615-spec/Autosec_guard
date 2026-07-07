@@ -15,7 +15,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class PerfektBlueRFCOMMPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-012"
     meta_poc_name = "BT PerfektBlue RFCOMM"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CVE-2024-45432"
     meta_severity = "High"
     meta_protocol = "bluetooth"
     meta_profiles = ["bluetooth"]

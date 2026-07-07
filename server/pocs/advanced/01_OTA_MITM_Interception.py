@@ -1,6 +1,6 @@
 """
 PoC Name: OTA Update MITM Interception
-CVE: N/A
+Identifier: CWE-295
 Component: Multiple
 Category: Advanced
 Severity: Critical
@@ -16,7 +16,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class OTAMITMPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-ADV-001"
     meta_poc_name = "OTA MITM Interception"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CWE-295"
     meta_severity = "Critical"
     meta_protocol = "rf"
     meta_target_os = ["all"]

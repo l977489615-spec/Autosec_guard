@@ -16,7 +16,7 @@ from iv_plugin_base import IVIVulnerabilityPlugin
 class BroadcomWMEPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-WIRELESS-007"
     meta_poc_name = "Broadcom WME Overflow"
-    meta_cve_id = "N/A"
+    meta_cve_id = "CVE-2017-9417"
     meta_severity = "Critical"
     meta_protocol = "wifi"
     meta_profiles = ["wifi"]
