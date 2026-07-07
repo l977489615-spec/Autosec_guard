@@ -19,7 +19,8 @@ class WiFiKRACKPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = "WiFi KRACK"
     meta_cve_id = "N/A"
     meta_severity = "High"
-    meta_protocol = "rf"
+    meta_protocol = "wifi"
+    meta_profiles = ["wifi"]
     meta_target_os = ["all"]
     meta_required_params = ["interface"]
     is_disruptive = False

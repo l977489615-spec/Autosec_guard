@@ -224,7 +224,13 @@ def _tool_scan_ports(params: dict) -> dict:
     if not target_ip:
         raise ValueError("target_ip is required")
 
-    scanner = TopologyAwareScanner(target_ip, timeout=timeout)
+    candidate_ports = None
+    raw_ports = params.get("candidate_ports")
+    if raw_ports:
+        from agent_recon_bootstrap import parse_candidate_ports
+        candidate_ports = parse_candidate_ports(raw_ports)
+
+    scanner = TopologyAwareScanner(target_ip, timeout=timeout, candidate_ports=candidate_ports)
     scanner._scan_ports()  # 仅执行端口扫描步骤
 
     nodes = scanner.topo_map.nodes
@@ -247,19 +253,31 @@ def _tool_run_poc(params: dict) -> dict:
 
     # 调用主 AutoSec API
     try:
+        session_id = str(params.get("session_id") or "agent_auto")
         resp = requests.post(
             f"{AUTOSEC_API}/api/run_poc",
-            json={"filename": poc_name, "params": poc_params},
+            json={
+                "filename": poc_name,
+                "params": poc_params,
+                "session_id": session_id,
+            },
             timeout=60,
         )
         if resp.ok:
             data = resp.json()
+            trace_id = data.get("trace_id") or session_id
             return {
                 "blocked": False,
+                "success": bool(data.get("success", True)),
                 "vulnerable": data.get("vulnerable"),
                 "evidence": data.get("evidence", ""),
                 "execution_time": data.get("execution_time"),
                 "logs": data.get("logs", []),
+                "trace_id": trace_id,
+                "poc_id": data.get("poc_id") or poc_name,
+                "requires_human_review": bool(data.get("requires_human_review")),
+                "verification_status": data.get("verification_status", ""),
+                "manual_review": data.get("manual_review", {}),
             }
         else:
             return {"blocked": False, "error": f"API returned {resp.status_code}", "details": resp.text}

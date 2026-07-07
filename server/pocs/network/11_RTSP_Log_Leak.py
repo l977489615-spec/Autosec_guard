@@ -3,8 +3,8 @@ PoC Name: RTSP Log Information Leak
 CVE: N/A
 Component: Network Stack
 Category: Network
-Severity: Medium
-CVSS: 5.5
+Severity: High
+CVSS: 7.0
 Description: RTSP ANY请求检测端口7000未授权日志访问
 Prerequisites: 与目标车机处于同一局域网并放行相关应用层端口
 Usage: python3 11_RTSP_Log_Leak.py <target_ip>
@@ -18,23 +18,25 @@ class RTSPLogLeakPlugin(IVIVulnerabilityPlugin):
     """
     RTSP ANY Request Log Leak POC
     检测目标是否允许通过 RTSP ANY 请求未授权访问日志文件。
+    实车执行需人工确认（可能影响 CarPlay/RTSP 服务稳定性）。
     """
     meta_poc_name = "RTSP Log Leak"
     meta_cve_id = "N/A"
-    meta_severity = "Medium"
-    meta_protocol = "tcp"
+    meta_severity = "High"
+    meta_protocol = "rtsp"
     meta_target_os = ["all"]
     meta_required_params = ["target_ip"]
-    is_disruptive = False
-    meta_destructive_level = "Safe"
+    is_disruptive = True
+    meta_destructive_level = "Restart"
 
     
     def __init__(self, target_config, logger=None):
         super().__init__(target_config, logger)
         # 如果你有具体的 CVE 编号，可以在这里修改
-        self.results["cve_id"] = "Unknown-RTSP-Log-Leak" 
+        self.results["cve_id"] = "Unknown-RTSP-Log-Leak"
         self.results["description"] = "RTSP ANY Request Log Information Leak"
-        self.target_port = 7000 # 基于你提供的示例端口，默认设为 7000
+        self.results["requires_human_review"] = True
+        self.target_port = 7000
 
     def check_prerequisites(self):
         if not self.target_ip:

@@ -35,6 +35,9 @@ from assessment_engine import (
     assess_physical_impact,
     generate_attack_graph,
     simulate_remediation,
+    incremental_update_attack_graph,
+    generate_multihop_attack_graph,
+    incremental_update_multihop_attack_graph,
 )
 from benchmark_suite import (
     load_benchmark_suite as load_benchmark_suite_data,
@@ -53,30 +56,8 @@ from auth_service import resolve_user_from_bearer
 
 
 def _list_local_usb_adb_serials(timeout: int = 4) -> List[str]:
-    try:
-        proc = subprocess.run(
-            ["adb", "devices", "-l"],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-    except Exception:
-        return []
-    if proc.returncode != 0:
-        return []
-    serials: List[str] = []
-    for raw_line in proc.stdout.splitlines()[1:]:
-        line = raw_line.strip()
-        if not line or line.startswith("*"):
-            continue
-        parts = line.split()
-        if len(parts) < 2:
-            continue
-        serial, state = parts[0], parts[1]
-        if ":" in serial or serial.startswith("emulator-") or state not in {"device", "unauthorized", "offline"}:
-            continue
-        serials.append(serial)
-    return serials
+    from adb_usb_utils import list_local_usb_adb_serials
+    return list_local_usb_adb_serials(timeout=timeout)
 
 # This server must be running on the device connected to the vehicle (e.g., Raspberry Pi/Laptop)
 # Run with: python3 server.py
@@ -621,7 +602,7 @@ def _build_poc_registry_entry(filepath: str, source_text: str | None = None, rel
                         elif name == "is_disruptive":
                             entry["is_disruptive"] = bool(value)
             break
-        if entry["is_disruptive"] or str(entry["destructive_level"]).lower() in {"restart", "dataloss", "brick"}:
+        if entry["is_disruptive"] or str(entry["destructive_level"]).lower() in {"disruptive", "restart", "dataloss", "brick"}:
             entry["status"] = "approval_required"
         elif entry["severity"] in {"High", "Critical"}:
             entry["status"] = "review_recommended"
@@ -629,6 +610,50 @@ def _build_poc_registry_entry(filepath: str, source_text: str | None = None, rel
             entry["status"] = "ready"
     except Exception as exc:
         entry["parse_error"] = str(exc)
+
+    try:
+        from poc_metadata_enrich import NEW_POC_KNOWN, enrich_new_poc_meta, infer_protocol, normalize_meta
+
+        rel = entry.get("filename") or rel_path
+        if rel.endswith(".py") and Path(rel).stem in NEW_POC_KNOWN:
+            meta = {
+                "poc_file": rel,
+                "display_id": entry.get("display_id") or "",
+                "poc_name": entry.get("poc_name") or "",
+                "category": entry.get("category") or Path(rel).parts[0],
+                "protocol": entry.get("protocol") or "",
+                "severity": entry.get("severity") or "",
+                "required_params": ",".join(entry.get("required_params") or []),
+                "profiles": entry.get("profiles") or [],
+                "destructive_level": entry.get("destructive_level") or "Safe",
+                "is_disruptive": entry.get("is_disruptive") or False,
+            }
+            meta = enrich_new_poc_meta(Path(rel), source_text or "", meta)
+            meta = normalize_meta(meta)
+            entry["display_id"] = meta.get("display_id") or entry["display_id"]
+            entry["poc_name"] = meta.get("poc_name") or entry["poc_name"]
+            entry["category"] = meta.get("category") or entry["category"]
+            entry["severity"] = meta.get("severity") or entry["severity"]
+            entry["protocol"] = meta.get("protocol") or entry["protocol"]
+            entry["destructive_level"] = meta.get("destructive_level") or entry["destructive_level"]
+            entry["is_disruptive"] = bool(meta.get("is_disruptive") or entry["is_disruptive"])
+            if meta.get("required_params"):
+                entry["required_params"] = [
+                    p.strip() for p in str(meta["required_params"]).split(",") if p.strip()
+                ]
+            if meta.get("profiles"):
+                entry["profiles"] = meta["profiles"] if isinstance(meta["profiles"], list) else [
+                    p.strip() for p in str(meta["profiles"]).split(",") if p.strip()
+                ]
+        elif not entry.get("protocol") or str(entry.get("protocol")).lower() == "unknown":
+            entry["protocol"] = infer_protocol({
+                "poc_file": rel,
+                "poc_name": entry.get("poc_name") or "",
+                "category": entry.get("category") or category_dir,
+                "protocol": entry.get("protocol") or "",
+            })
+    except Exception:
+        pass
 
     return entry
 
@@ -640,11 +665,14 @@ def _scan_poc_registry() -> dict:
 
     if os.path.isdir(POCS_DIR):
         for dirpath, dirnames, filenames in os.walk(POCS_DIR):
-            dirnames[:] = [d for d in dirnames if not d.startswith('.') and d != '.venv' and d != '__pycache__']
+            dirnames[:] = [
+                d for d in dirnames
+                if not d.startswith('.') and not d.startswith('_') and d != '.venv' and d != '__pycache__'
+            ]
             for filename in sorted(filenames):
-                if is_executable_poc_name(filename):
-                    filepath = os.path.join(dirpath, filename)
-                    rel_path = os.path.relpath(filepath, POCS_DIR)
+                filepath = os.path.join(dirpath, filename)
+                rel_path = os.path.relpath(filepath, POCS_DIR)
+                if is_executable_poc_name(rel_path):
                     seen.add(rel_path)
                     entries.append(_build_poc_registry_entry(filepath))
 
@@ -1087,6 +1115,79 @@ def attack_graph_generate(current_user):
     graph = generate_attack_graph(session)
     logger.info(f"Attack graph generated by {current_user.username} for {session.get('targetName') or session.get('target_ip') or 'Unknown Target'}")
     return jsonify(graph)
+
+
+@app.route('/api/attack-graph/update', methods=['POST'])
+@token_required
+def attack_graph_update(current_user):
+    """增量更新攻击路径图：将新增已确认漏洞并入既有攻击图后重新排序，避免整体重建。
+
+    请求体：{ "graph": <既有攻击图>, "newFindings": [<新增漏洞...>], "targetName": <可选> }
+    """
+    payload = request.json or {}
+    existing_graph = payload.get('graph') or {}
+    new_findings = payload.get('newFindings') or payload.get('new_findings') or []
+    target_name = payload.get('targetName') or payload.get('target_name') or 'Vehicle Target'
+    graph = incremental_update_attack_graph(existing_graph, new_findings, target_name)
+    logger.info(f"Attack graph incrementally updated by {current_user.username} (+{len(new_findings)} findings)")
+    return jsonify(graph)
+
+
+@app.route('/api/attack-graph/multihop', methods=['POST'])
+@token_required
+def attack_graph_multihop(current_user):
+    """构建跨漏洞多跳攻击图：从外部入口推导贯穿多个漏洞到达车辆物理影响的攻击链。
+
+    请求体沿用会话结构；可选 "topology" 提供网关信息用于转移边门控。
+    """
+    payload = request.json or {}
+    session = _get_session_payload(payload)
+    topology = payload.get('topology')
+    graph = generate_multihop_attack_graph(session, topology)
+    logger.info(f"Multi-hop attack graph generated by {current_user.username} "
+                f"({graph.get('killChainCount', 0)} kill chains)")
+    return jsonify(graph)
+
+
+@app.route('/api/attack-graph/multihop/update', methods=['POST'])
+@token_required
+def attack_graph_multihop_update(current_user):
+    """多跳攻击图增量更新：并入新增已确认漏洞后重新推导跨漏洞攻击链。
+
+    请求体：{ "prevFindings": [...], "newFindings": [...], "targetName": ..., "topology": {...} }
+    """
+    payload = request.json or {}
+    prev = payload.get('prevFindings') or payload.get('prev_findings') or []
+    new = payload.get('newFindings') or payload.get('new_findings') or []
+    target_name = payload.get('targetName') or payload.get('target_name') or 'Vehicle Target'
+    topology = payload.get('topology')
+    graph = incremental_update_multihop_attack_graph(prev, new, target_name, topology)
+    logger.info(f"Multi-hop attack graph incrementally updated by {current_user.username} "
+                f"(+{len(new)} findings, {graph.get('killChainCount', 0)} kill chains)")
+    return jsonify(graph)
+
+
+@app.route('/api/exploration/next-actions', methods=['POST'])
+@token_required
+def exploration_next_actions(current_user):
+    """在线探测引导：基于 PoC 依赖图与执行反馈动态排序下一步候选 PoC。
+
+    请求体：{ "candidatePocs":[...], "confirmedFindings":[...], "executedPocs":[...],
+              "availableParams":{...}, "topK":5 }
+    """
+    import poc_dependency_graph as _pdg
+    payload = request.json or {}
+    coverage_path = os.path.join(os.path.dirname(__file__), '..', 'lab', 'evidence', 'poc_coverage.json')
+    result = _pdg.next_poc_actions(
+        candidate_pocs=payload.get('candidatePocs') or payload.get('candidate_pocs') or [],
+        confirmed_findings=payload.get('confirmedFindings') or payload.get('confirmed_findings') or [],
+        executed_pocs=payload.get('executedPocs') or payload.get('executed_pocs') or [],
+        available_params=payload.get('availableParams') or payload.get('available_params') or {},
+        coverage_path=coverage_path,
+        top_k=int(payload.get('topK') or payload.get('top_k') or 5),
+    )
+    logger.info(f"Exploration next-actions by {current_user.username} (frontier={result.get('frontier_size')})")
+    return jsonify(result)
 
 
 @app.route('/api/physical-impact/assess', methods=['POST'])
@@ -2337,16 +2438,29 @@ def agent_scan(current_user):
     bluetooth_mac  = data.get('bluetooth_mac', '')
     wifi_interface = data.get('wifi_interface', '')
     rf_frequency = data.get('frequency') or data.get('rf_frequency') or ''
-    expected_usb_serial = data.get('expected_usb_serial') or data.get('usb_device_serial') or ''
+    expected_usb_serial = str(
+        data.get('expected_usb_serial')
+        or data.get('usb_device_serial')
+        or data.get('usbAdbSerial')
+        or data.get('usb_adb_serial')
+        or ''
+    ).strip()
+    usb_mount_point = str(data.get('usb_mount_point') or data.get('usbMountPoint') or '').strip()
+    from adb_usb_utils import local_usb_adb_attached, resolve_usb_adb_serial, usb_adb_block_reason
+
     local_usb_adb_serials = _list_local_usb_adb_serials()
-    if not expected_usb_serial and len(local_usb_adb_serials) == 1:
-        expected_usb_serial = local_usb_adb_serials[0]
-        logger.info("Agent scan auto-selected single local USB ADB serial: %s", expected_usb_serial)
-    elif not expected_usb_serial and len(local_usb_adb_serials) > 1:
-        logger.info(
-            "Agent scan detected multiple local USB ADB devices; serial required to disambiguate: %s",
-            ", ".join(local_usb_adb_serials),
-        )
+    if not expected_usb_serial:
+        block_reason = usb_adb_block_reason()
+        if block_reason and len(local_usb_adb_serials) != 1:
+            logger.warning("Agent scan USB ADB: %s", block_reason)
+        elif local_usb_adb_attached():
+            expected_usb_serial = resolve_usb_adb_serial("", auto_single=True)
+            logger.info("Agent scan auto-selected single local USB ADB serial: %s", expected_usb_serial)
+
+    if expected_usb_serial:
+        logger.info("Agent scan USB ADB serial provided: %s", expected_usb_serial)
+    if usb_mount_point:
+        logger.info("Agent scan USB mount point provided: %s", usb_mount_point)
 
     if not target_ip:
         return jsonify({"error": "target_ip is required"}), 400
@@ -2372,6 +2486,7 @@ def agent_scan(current_user):
             wifi_interface=wifi_interface,
             rf_frequency=rf_frequency,
             expected_usb_serial=expected_usb_serial,
+            usb_mount_point=usb_mount_point,
         )
 
         if resume_from:

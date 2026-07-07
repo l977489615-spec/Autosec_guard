@@ -183,16 +183,16 @@ flowchart TD
 
 ## 🧩 PoC Matrix
 
-当前内置 `72` 个业务 PoC。PoC 文件编号采用“类别内独立编号”，每个类别都从 `01` 开始，不再共用全局 `01-71` 序号。
+当前内置 `146` 个业务 PoC。标准分类目录采用类别内独立编号；原 `new/` 扩展 PoC 已按攻击面归入 `application/`、`advanced/`、`canbus/`、`wireless/` 等标准目录，并通过元数据映射参与统一编排。
 
 | Category | Count | ID Range | Focus | 本机依赖 |
 | --- | ---: | --- | --- | --- |
 | Reconnaissance | 8 | `reconnaissance/01-08` | 主机发现、端口扫描、服务枚举 | 网络可达 |
 | Network | 15 | `network/01-15` | USB ADB、有线/网络 ADB、SSH、FTP、MQTT、SOME/IP、未知服务动态探测等 | 网络 / USB |
-| CAN Bus | 10 | `canbus/01-10` | CAN、UDS、OBD、注入、重放、诊断访问 | CAN / PCAN / SocketCAN |
-| Wireless | 18 | `wireless/01-18` | Wi-Fi、Bluetooth、QNX 无线面 | Wi-Fi / Bluetooth |
-| Application | 13 | `application/01-13` | 车机应用、AirPlay、CarPlay、USB、WebView | 网络 / USB / 人工辅助 |
-| Advanced | 8 | `advanced/01-08` | OTA、RF、GPS、TPMS、V2X、固件 | SDR / RF / USB / 台架 |
+| CAN Bus | 15 | `canbus/01-10`, `canbus/poc36`, `canbus/poc134-137` | CAN、UDS、OBD、DoIP、日志重放、诊断访问 | CAN / PCAN / SocketCAN / 网络可达 |
+| Wireless | 35 | `wireless/01-34`, `wireless/poc43` | Wi-Fi、Bluetooth、QNX 无线面 | Wi-Fi / Bluetooth |
+| Application | 57 | `application/01-14`, `application/poc10-35`, `application/poc37-39`, `application/poc120-133`, `application/poc45` | 车机应用、AirPlay、CarPlay、USB、WebView、Manifest、组件库与源码/数据制品检查 | 网络 / USB / 人工辅助 / 静态制品 |
+| Advanced | 16 | `advanced/01-08`, `advanced/poc5-8`, `advanced/poc40-42`, `advanced/poc44` | OTA、RF、GPS、TPMS、V2X、固件、Android 系统加固与内核配置 | SDR / RF / USB / 台架 / ADB |
 
 新增 PoC 时，按类别放入 `server/pocs/<category>/`，使用该类别下的下一个编号，例如 `network/16_New_Check.py` 或 `canbus/11_New_Check.py`。插件类应声明 `meta_display_id`（如 `POC-NET-016`）和 `meta_profiles`，然后运行：
 

@@ -18,7 +18,8 @@ class TIWL18xxOverflowPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = "WiFi TI WL18xx Overflow"
     meta_cve_id = "N/A"
     meta_severity = "Critical"
-    meta_protocol = "rf"
+    meta_protocol = "wifi"
+    meta_profiles = ["wifi"]
     meta_target_os = ["all"]
     meta_required_params = ["interface"]
     is_disruptive = False

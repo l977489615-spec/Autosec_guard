@@ -44,7 +44,7 @@ MANUAL_REVIEW_FILENAME_KEYWORDS = {
     "evil_twin",
 }
 
-MANUAL_REVIEW_PROTOCOLS = {"can", "uds", "obd", "rf", "sdr", "v2x", "tpms"}
+MANUAL_REVIEW_PROTOCOLS = {"can", "uds", "obd", "rf", "sdr", "v2x", "tpms", "rtsp"}
 
 MANUAL_REVIEW_EVIDENCE_KEYWORDS = {
     "requires manual",

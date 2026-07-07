@@ -11,6 +11,7 @@ Usage: python3 07_TBox_Port_Scan.py <target_ip>
 """
 import socket
 import sys
+import re
 from iv_plugin_base import IVIVulnerabilityPlugin
 class TBOXPortScanPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-RECON-007"
@@ -30,16 +31,34 @@ class TBOXPortScanPlugin(IVIVulnerabilityPlugin):
         9090: "Diagnostic", 6667: "D-Bus", 7000: "AirPlay/Ctrl",
         3804: "HiQnet", 5353: "mDNS", 61616: "ActiveMQ",
         1900: "SSDP", 8443: "HTTPS-Alt", 4840: "OPC-UA",
-        502: "Modbus", 102: "S7comm"
+        502: "Modbus", 102: "S7comm", 13400: "DoIP",
+        30490: "SOME/IP-SD"
     }
+
+    def _scan_ports(self):
+        candidate_ports = self.params.get("candidate_ports")
+        if isinstance(candidate_ports, list):
+            ports = [int(port) for port in candidate_ports if str(port).isdigit()]
+        elif candidate_ports:
+            ports = [
+                int(part)
+                for part in re.split(r"[,;\s]+", str(candidate_ports).strip())
+                if part.isdigit()
+            ]
+        else:
+            ports = []
+        return sorted(set(ports or self.TBOX_PORTS.keys()))
+
     def check_prerequisites(self):
         if not self.target_ip:
             raise RuntimeError("需要指定目标IP地址")
         return True
     def exploit(self):
-        self.logger.info(f"T-Box端口扫描 {self.target_ip}...")
+        scan_ports = self._scan_ports()
+        self.logger.info(f"T-Box端口扫描 {self.target_ip} 候选端口: {scan_ports}")
         open_ports = []
-        for port, name in sorted(self.TBOX_PORTS.items()):
+        for port in scan_ports:
+            name = self.TBOX_PORTS.get(port, f"tcp/{port}")
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 s.settimeout(1.5)

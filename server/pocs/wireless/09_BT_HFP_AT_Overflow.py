@@ -22,7 +22,8 @@ class NissanBlueOverflowPlugin(IVIVulnerabilityPlugin):
     meta_poc_name = "BT HFP AT Overflow"
     meta_cve_id = "N/A"
     meta_severity = "High"
-    meta_protocol = "rf"
+    meta_protocol = "bluetooth"
+    meta_profiles = ["bluetooth"]
     meta_target_os = ["all"]
     meta_required_params = ["target_mac"]
     is_disruptive = False
