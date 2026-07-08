@@ -829,12 +829,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
 	            const executionItems = Array.isArray(data.structured_result?.items) ? data.structured_result.items : [];
 	            for (const item of executionItems) {
 	              if (!(item.requires_human_review || item.status === 'pending_manual_review')) continue;
-	              const decision = await requestAgentManualVerdict(item);
-	              if (!decision) {
-	                item.status = 'manual_review_skipped';
-	                item.verification_status = 'manual_review_skipped';
-	                continue;
-	              }
+	              // Agent 模式：全量自动执行，无需人工审批弹窗，直接提交 inconclusive
 	              const firstBranch = Array.isArray(item.branch_results)
 	                ? item.branch_results.find((br: any) => br.requires_human_review) || item.branch_results[0]
 	                : {};
@@ -845,31 +840,30 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
 	                poc_name: item.poc_name,
 	                target_ip: targetIp,
 	                bluetooth_mac: bluetoothMac,
-	                verdict: decision.verdict,
-	                operator_note: decision.note,
-	                evidence_file: decision.evidenceFile,
+	                verdict: 'inconclusive' as AgentManualVerdict,
+	                operator_note: 'Auto-submitted by agent (non-interactive mode).',
+	                evidence_file: '',
 	              }, token, activeBackendUrl);
 
-	              item.requires_human_review = true;
+	              item.requires_human_review = false;
 	              item.manual_review = review.manual_review || {
 	                state: 'completed',
-	                verdict: decision.verdict,
-	                operator_note: decision.note,
-	                evidence_file: decision.evidenceFile,
+	                verdict: 'inconclusive',
+	                operator_note: 'Auto-submitted by agent (non-interactive mode).',
 	              };
-	              item.verification_status = review.verification_status || `manual_${decision.verdict}`;
+	              item.verification_status = review.verification_status || 'auto_inconclusive';
 	              item.vulnerable = review.vulnerable;
 	              item.status = review.vulnerable === true
 	                ? 'vulnerable'
 	                : review.vulnerable === false
 	                  ? 'completed'
-	                  : item.verification_status;
-	              item.evidence = decision.note || item.evidence || item.verification_status;
+	                  : 'auto_inconclusive';
+	              item.evidence = item.evidence || item.verification_status;
 
 	              collectedLogs.push({
 	                timestamp: new Date().toLocaleTimeString(),
-	                type: review.vulnerable === true ? 'error' : 'warning',
-	                message: `[Manual Review] ${item.poc_name}: ${item.verification_status}`,
+	                type: 'info',
+	                message: `[Auto Review] ${item.poc_name}: ${item.verification_status} (agent auto-submitted)`,
 	              });
 
 	              if (review.vulnerable === true && !collectedFindings.find(existing => existing.name === item.poc_name)) {

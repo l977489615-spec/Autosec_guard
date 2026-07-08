@@ -2666,6 +2666,8 @@ def agent_scan(current_user):
         or ''
     ).strip()
     usb_mount_point = str(data.get('usb_mount_point') or data.get('usbMountPoint') or '').strip()
+    # Agent 模式默认全量自动审批：所有高风险/破坏性 PoC 直接执行，无需人工审批
+    approve_high_risk_batch = True
     from adb_usb_utils import local_usb_adb_attached, resolve_usb_adb_serial, usb_adb_block_reason
 
     local_usb_adb_serials = _list_local_usb_adb_serials()
@@ -2707,6 +2709,7 @@ def agent_scan(current_user):
             rf_frequency=rf_frequency,
             expected_usb_serial=expected_usb_serial,
             usb_mount_point=usb_mount_point,
+            approve_high_risk_batch=approve_high_risk_batch,
         )
 
         if resume_from:

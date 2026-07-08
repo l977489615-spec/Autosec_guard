@@ -49,26 +49,71 @@ PROFESSIONAL_TIER_ORDER = {
 ATTACK_INPUT_RE = re.compile(
     r"active_payload_(?:text|hex)|sample_path|_write_.*sample|payload\s*=|"
     r"payload_bytes|crafted|malformed|overflow|traversal|injection|replay|"
-    r"evil|sqli|xss|intent|content://|service call|am start",
+    r"evil twin|beacon|deauth|credential|wordlist|subscribe|publish|"
+    r"uds|diagnostic session|security access|readmemory|routinecontrol|"
+    r"sqli|xss|intent|content://|service call|am start|exec_command\(|"
+    r"pattern\s*=\s*re\.compile|check_manifest\(|run_apk_manifest_check\(|"
+    r"addjavascriptinterface|setallowfileaccess|getexternalstoragedirectory|"
+    r"debuggable|allowbackup|usescleartexttraffic|taskaffinity|exported|"
+    r"mitm|self-signed|certificate|spoof|spoofing|downgrade|pairing|passkey|"
+    r"ctkd|knob|blurtooth|bluffs|krack|handshake|key reinstall|"
+    r"flood_msg|sensor_id|gpssim|baseband|xhr\.open\(|receive_loot|"
+    r"route activation|routing activation|findservice|offerservice|"
+    r"default credentials|hardcoded|debug endpoint|toctou|evil_file|legit_file|"
+    r"auth bypass|admin panel|control port|devmode|developer mode|"
+    r"hidden_api_blacklist_exemptions|local_version\(|android_exposure\(|"
+    r"null cid|l2cap connection request|malicious_filename|malicious_update\.zip|"
+    r"ifs-root\.ifs|swdl\.iso|usb node|echo -ne|lights on",
     re.IGNORECASE,
 )
 EXECUTION_RE = re.compile(
     r"sendall\(|\.send\(|requests\.(?:post|put|delete|get)\(|"
-    r"bus\.send\(|subprocess\.run\(|socket\.create_connection\(|"
-    r"adb|nmap|scapy|bluetooth|hcitool|l2ping",
+    r"bus\.send\(|sendp\(|client\.connect\(|exec_command\(|recv\(|"
+    r"connect_ex\(|\.connect\(|sendto\(|bind\(|"
+    r"subprocess\.run\(|os\.system\(|socket\.create_connection\(|"
+    r"adb|nmap|scapy|bluetooth|hcitool|l2ping|paramiko|"
+    r"run_active_validation\(|execute_check_callable\(|run_apk_manifest_check\(|ensure_manifest\(|"
+    r"local_version\(|android_exposure\(|"
+    r"adb_pull\(|et\.parse\(|os\.walk\(|glob\.glob\(",
     re.IGNORECASE,
 )
 EXP_EXECUTION_RE = re.compile(
-    r"sendall\(|requests\.(?:post|put|delete)\(|bus\.send\(|"
+    r"sendall\(|\.send\(|requests\.(?:post|put|delete)\(|bus\.send\(|"
     r"active_payload_(?:text|hex)|sample_path|_write_.*sample|"
+    r"sendp\(|client\.connect\(|exec_command\(|execute_check_callable\(|"
+    r"connect_ex\(|\.connect\(|sendto\(|bind\(|subprocess\.(?:run|popen)\(|"
+    r"shutil\.copy\(|zipfile\.zipfile\(|os\.system\(|"
+    r"malicious_filename|malicious_update\.zip|ifs-root\.ifs|swdl\.iso|"
+    r"payload_dir\s*=|hackrf_transfer|rpitx|echo -ne|"
+    r"run_active_validation\(|run_apk_manifest_check\(|local_version\(|android_exposure\(|"
+    r"adb_pull\(|ensure_manifest\(|"
     r"adb.+(?:am start|am broadcast|content query|content call|service call|input text)|"
-    r"subprocess\.run\([^)]*(?:am|content|service|hcitool|l2ping|ffmpeg|chromium|decoder)",
+    r"subprocess\.run\([^)]*(?:am|content|service|hcitool|l2ping|ffmpeg|chromium|decoder|adb)",
     re.IGNORECASE | re.DOTALL,
 )
 OBSERVATION_RE = re.compile(
     r"vulnerable|phenomenon|crash|asan|heap|segmentation fault|reset|"
     r"unauthorized|sensitive|leak|disclosure|state change|manual|"
-    r"requires_manual_review|operator_action|response_excerpt|after|before",
+    r"requires_manual_review|operator_action|response_excerpt|after|before|"
+    r"login successful|anonymous auth|wildcard subscribe|login incorrect|"
+    r"session .* opened|auto.?connect|beacon .* sent|rejected unsigned package|"
+    r"\bok\b|\bfound\b|risk_level|manifest=|exported .* detected|"
+    r"scheme urls declared|api-class map|not vulnerable|inconclusive|"
+    r"port reachable|banner|accepted|rejected|response:|"
+    r"strictly verified|unverified|target is secure|transmission verified|"
+    r"observer drift|moved .* toward spoofed coordinates|did not visit|"
+    r"pairing .* not yet demonstrated|acceptance unverified|"
+    r"follow-up state query confirmed|follow-up state query did not confirm|"
+    r"self-signed cert|certificate verification|copied artifact|hash matches evil payload|"
+    r"aslr|randomize_va_space|完全随机化|基本随机化|已禁用|"
+    r"高危漏洞存在|中危漏洞存在|未发现直接篡改风险|"
+    r"debug endpoint count|plaintext sqlite hits|"
+    r"sent zero-length doip routing pre-check|开发者模式可能已激活|调试端口|"
+    r"已生成.*样本|恶意.*已在本地生成|目标未访问|未观察到.*证据|"
+    r"注入成功|注入未生效|恢复成功|affected_before|patch_declared|"
+    r"no cache trace collection|no pairing, bond replacement, or key overwrite was attempted|"
+    r"需在目标.*确认|需人工确认|请观察|操作被执行|非授权操作|"
+    r"target acceptance unverified|web管理面板|ota/控制端口",
     re.IGNORECASE,
 )
 SAFETY_GATE_RE = re.compile(
@@ -78,7 +123,7 @@ SAFETY_GATE_RE = re.compile(
 )
 LAB_HARNESS_RE = re.compile(
     r"exp_profile|active_payload_param|operator_payload_param|operator_supplied_lab_payload|"
-    r"operator_observation|build_local_sample_probe|run_local_target|probe\s*=",
+    r"operator_observation|build_local_sample_probe|run_local_target",
     re.IGNORECASE,
 )
 STATIC_AUDIT_RE = re.compile(
@@ -113,6 +158,14 @@ class ExpFinding:
     exp_capability: str
     professional_grade: str
     not_native_exp: bool
+    market_baseline: str
+    market_gap: str
+    scanner_ready: bool
+    scanner_grade: str
+    active_ready: bool
+    active_grade: str
+    product_ready: bool
+    product_grade: str
 
 
 def _literal_assigns(source: str) -> dict[str, Any]:
@@ -144,6 +197,8 @@ def _grade(item: ExpFinding) -> str:
         return "RECON_NOT_EXP"
     if item.attack_input and item.execution_path and item.observable_result and item.safety_gate:
         return "EXP_READY"
+    if item.scanner_ready:
+        return "SCANNER_READY"
     if item.attack_input and item.execution_path and item.observable_result:
         return "EXP_NEEDS_SAFETY_GATE"
     if item.attack_input and item.execution_path:
@@ -158,8 +213,7 @@ def _grade(item: ExpFinding) -> str:
 def _is_static_audit(path: Path, source: str) -> bool:
     if not STATIC_AUDIT_RE.search(path.name):
         return False
-    inherited_harness = "IVIVulnerabilityPlugin" in source and "def exploit" in source
-    return not bool(EXP_EXECUTION_RE.search(source) or LAB_HARNESS_RE.search(source) or inherited_harness)
+    return not bool(EXP_EXECUTION_RE.search(source) or LAB_HARNESS_RE.search(source))
 
 
 def _professional_classification(
@@ -198,8 +252,21 @@ def _professional_classification(
     if not evidence:
         evidence.append("metadata")
 
-    native_execution = bool(re.search(r"sendall\(|bus\.send\(|requests\.(?:post|put|delete)\(|subprocess\.run\(", source, re.I))
-    native_observation = bool(re.search(r"crash|reset|unauthorized|shell|vulnerable\s*:\s*True|before|after|returncode", source, re.I))
+    native_execution = bool(re.search(
+        r"sendall\(|bus\.send\(|requests\.(?:post|put|delete)\(|subprocess\.run\(|"
+        r"connect_ex\(|\.recv\(|ssl\.create_default_context\(|http\.server\.httpserver\(|"
+        r"open_can_bus\(|can\.message\(",
+        source,
+        re.I,
+    ))
+    native_observation = bool(re.search(
+        r"crash|reset|unauthorized|shell|vulnerable\s*:\s*True|before|after|returncode|"
+        r"banner|evidence|accepted|rejected|login succeeded|anonymous login|"
+        r"loot|captured_data|self-signed cert|明文协议|高风险|中风险|"
+        r"存在安全风险|存在DoS风险",
+        source,
+        re.I,
+    ))
     has_local_lab_probe = bool(re.search(r"build_local_sample_probe|run_local_target|sample_path|_write_.*sample", source, re.I))
     has_operator_payload = bool(re.search(r"active_payload_param|operator_payload_param|lab_payload_param|operator_observation", source, re.I))
     name_lower = name.lower()
@@ -267,6 +334,289 @@ def _professional_classification(
     }
 
 
+def _market_baseline_mapping(professional: dict[str, Any]) -> tuple[str, str]:
+    tier = professional["validation_tier"]
+    capability = professional["exp_capability"]
+    if tier == "RECON":
+        return ("Greenbone Discovery / Nmap host-discovery", "not-a-vuln-check")
+    if tier == "PASSIVE":
+        return ("Greenbone inventory-only / banner-only check", "no-active-trigger")
+    if tier == "AUTHENTICATED_CONFIG":
+        return ("Tenable/Greenbone local security checks", "authenticated-but-not-triggering")
+    if tier == "ACTIVE_PROBE":
+        return ("Nmap safe/intrusive NSE or Nuclei request-only check", "probe-without-proof-of-trigger")
+    if tier == "REMOTE_ACTIVE":
+        return ("Nuclei targeted-request with explicit matcher", "good-remote-check")
+    if tier == "LAB_EXP" and capability == "supported_harness":
+        return ("Greenbone ultimate / lab-only intrusive validation", "operator-or-lab-required")
+    if tier == "LAB_EXP":
+        return ("Lab exploit harness", "operator-supplied-trigger")
+    if tier == "AUTO_EXP":
+        return ("Auto-executing intrusive exploit check", "highest-risk")
+    return ("Unclassified", "review-needed")
+
+
+def _scanner_grade(
+    *,
+    is_recon: bool,
+    attack_input: bool,
+    execution_path: bool,
+    observable_result: bool,
+    safety_gate: bool,
+    validation_tier: str,
+    execution_safety: str,
+    source: str,
+) -> tuple[bool, str]:
+    if is_recon:
+        return False, "recon"
+
+    source_lower = source.lower()
+    active_wrapper = "run_active_validation(" in source_lower
+    local_check = any(
+        token in source_lower for token in (
+            "execute_check_callable(",
+            "run_apk_manifest_check(",
+            "adb_pull(",
+            "ensure_manifest(",
+            "check_manifest(",
+            "local_version(",
+            "android_exposure(",
+            "xml.etree.elementtree",
+            "et.parse(",
+            "os.walk(",
+        )
+    )
+    protocol_check = validation_tier in {"ACTIVE_PROBE", "REMOTE_ACTIVE", "LAB_EXP", "AUTO_EXP"}
+    authenticated_local = validation_tier in {"AUTHENTICATED_CONFIG", "PASSIVE"} and local_check
+
+    if active_wrapper and execution_path:
+        if observable_result:
+            return True, "request-based-with-matcher"
+        return True, "request-based-active-probe"
+
+    ready = execution_path and observable_result and (
+        attack_input or protocol_check or authenticated_local
+    )
+    if not ready:
+        return False, "missing-real-check-path"
+    if safety_gate:
+        return True, "intrusive-or-gated"
+    if execution_safety in {"safe", "low_impact", "probe"} or authenticated_local:
+        return True, "scanner-safe"
+    return True, "scanner-real-check"
+
+
+def _active_grade(
+    *,
+    is_recon: bool,
+    attack_input: bool,
+    execution_path: bool,
+    observable_result: bool,
+    safety_gate: bool,
+    validation_tier: str,
+    execution_safety: str,
+    exp_capability: str,
+    source: str,
+) -> tuple[bool, str]:
+    if is_recon:
+        return False, "recon"
+
+    tier = (validation_tier or "").upper()
+    source_lower = source.lower()
+    authenticated_local_check = (
+        execution_path
+        and any(
+            token in source_lower for token in (
+                "execute_check_callable(",
+                "run_apk_manifest_check(",
+                "ensure_manifest(",
+                "adb_pull(",
+                "et.parse(",
+                "xml.etree.elementtree",
+                "os.walk(",
+                "local_version(",
+                "android_exposure(",
+                "wpa_cli",
+                "dumpsys",
+                "getprop",
+                "bluetoothctl",
+                "krack-test-client.py",
+                "ethtool",
+                "_driver_info(",
+            )
+        )
+    )
+    native_socket_probe = (
+        execution_path
+        and observable_result
+        and any(
+            token in source_lower for token in (
+                "connect_ex(",
+                ".recv(",
+                "socket.socket(",
+                "ssl.create_default_context(",
+                "socket.create_connection(",
+            )
+        )
+    )
+    fieldbus_or_local_stimulus = (
+        execution_path
+        and any(
+            token in source_lower for token in (
+                "bus.send(",
+                "open_can_bus(",
+                "can.message(",
+                "http.server.httpserver(",
+                "captured_data",
+                "xmlhttprequest",
+                "subprocess.popen(",
+                "tool_path = shutil.which(",
+                "hackrf_transfer",
+                "rpitx",
+                "gps-sdr-sim",
+                "os.makedirs(",
+                "shutil.copy(",
+                "threading.thread(",
+                "touch ",
+            )
+        )
+    )
+    framework_request_probe = (
+        "run_active_validation(" in source_lower
+        and execution_path
+    )
+    external_command_harness = (
+        "build_local_sample_probe(" in source_lower
+        and "run_local_target(" not in source_lower
+        and not any(
+            token in source_lower for token in (
+                "shutil.which(",
+                "subprocess.run(",
+                "subprocess.popen(",
+                "socket.create_connection(",
+                "requests.post(",
+                "requests.put(",
+                "sendall(",
+                "bus.send(",
+                ".send(",
+                "open_can_bus(",
+            )
+        )
+    )
+    native_remote = (
+        tier in {"REMOTE_ACTIVE", "AUTO_EXP"}
+        and exp_capability == "native_verified"
+        and execution_path
+        and observable_result
+    )
+    lab_harness = (
+        tier == "LAB_EXP"
+        and execution_path
+        and observable_result
+        and (
+            "build_local_sample_probe" in source_lower
+            or "run_local_target" in source_lower
+            or "sample_path" in source_lower
+            or "operator_payload_param" in source_lower
+            or "active_payload_param" in source_lower
+        )
+    )
+    protocol_probe = (
+        tier == "ACTIVE_PROBE"
+        and execution_path
+        and observable_result
+        and (
+            "socket.create_connection(" in source_lower
+            or "requests.get(" in source_lower
+            or "tcp_liveness" in source_lower
+            or "http_probe" in source_lower
+            or "redis_probe" in source_lower
+            or "airplay_rtsp_probe" in source_lower
+            or "run_active_validation(" in source_lower
+        )
+    )
+    direct_payload = attack_input and execution_path and observable_result and safety_gate
+
+    if external_command_harness:
+        return False, "external-command-harness"
+    if native_remote:
+        return True, "native-remote-active"
+    if framework_request_probe:
+        return True, "framework-request-probe"
+    if authenticated_local_check:
+        return True, "authenticated-local-check"
+    if native_socket_probe:
+        return True, "native-socket-probe"
+    if fieldbus_or_local_stimulus:
+        return True, "fieldbus-or-local-stimulus"
+    if lab_harness:
+        return True, "lab-trigger-capable"
+    if protocol_probe:
+        return True, "protocol-active-probe"
+    if direct_payload:
+        return True, "direct-payload-with-gate"
+    if tier in {"AUTHENTICATED_CONFIG", "PASSIVE"}:
+        return False, "config-or-passive-only"
+    if tier == "LAB_EXP":
+        return False, "lab-metadata-without-trigger-path"
+    if tier == "ACTIVE_PROBE":
+        return False, "request-wrapper-without-real-observation"
+    if execution_safety in {"safe", "low_impact"}:
+        return False, "safe-check-without-active-trigger"
+    return False, "review-needed"
+
+
+def _product_grade(
+    *,
+    is_recon: bool,
+    scanner_ready: bool,
+    active_ready: bool,
+    validation_tier: str,
+    execution_safety: str,
+    active_grade: str,
+    source: str,
+) -> tuple[bool, str]:
+    if is_recon:
+        return False, "recon"
+    if not scanner_ready:
+        return False, "below-scanner-baseline"
+    if not active_ready:
+        return False, "below-active-baseline"
+    source_lower = source.lower()
+    if (
+        "build_local_sample_probe(" in source_lower
+        and "run_local_target(" not in source_lower
+        and not any(
+            token in source_lower for token in (
+                "shutil.which(",
+                "subprocess.run(",
+                "subprocess.popen(",
+                "socket.create_connection(",
+                "requests.post(",
+                "requests.put(",
+                "sendall(",
+                "bus.send(",
+                ".send(",
+                "open_can_bus(",
+            )
+        )
+    ):
+        return False, "external-command-harness"
+    tier = (validation_tier or "").upper()
+    if tier in {"ACTIVE_PROBE", "REMOTE_ACTIVE", "LAB_EXP", "AUTO_EXP"}:
+        return True, f"{tier.lower()}-product-check"
+    if active_grade in {
+        "authenticated-local-check",
+        "native-socket-probe",
+        "fieldbus-or-local-stimulus",
+        "framework-request-probe",
+    }:
+        return True, "validated-defensive-check"
+    if execution_safety in {"safe", "low_impact", "intrusive", "destructive_lab_only"}:
+        return True, "controlled-product-check"
+    return False, "review-needed"
+
+
 def audit_file(path: Path) -> ExpFinding | None:
     rel = path.relative_to(SERVER_DIR).as_posix()
     if path.name in SUPPORT_FILES or ".venv" in path.parts or "_experiment" in path.parts:
@@ -279,10 +629,14 @@ def audit_file(path: Path) -> ExpFinding | None:
     is_recon = category == "reconnaissance" or "recon" in [str(x).lower() for x in meta.get("meta_profiles", [])]
     static_audit = _is_static_audit(path, source)
     framework_payload = "run_active_validation(" in source and bool(
-        re.search(r"active_payload_(?:text|hex)", source)
+        re.search(r"active_payload_(?:text|hex)|build_local_sample_probe|run_local_target|sample_path|_write_.*sample", source)
     )
     framework_harness = "run_active_validation(" in source and bool(LAB_HARNESS_RE.search(source))
-    inherited_harness = "IVIVulnerabilityPlugin" in source and "def exploit" in source
+    inherited_harness = bool(
+        re.search(r"class\s+\w+\([^)]*IVIVulnerabilityPlugin[^)]*\)", source)
+        and re.search(r"def\s+exploit\s*\(", source)
+        and not is_recon
+    )
     attack_input = (bool(ATTACK_INPUT_RE.search(source)) or framework_payload or framework_harness or inherited_harness) and not static_audit
     execution_path = (bool(EXP_EXECUTION_RE.search(source)) or framework_payload or framework_harness or inherited_harness) and not static_audit
     observable_result = (bool(OBSERVATION_RE.search(source)) or framework_payload or framework_harness or inherited_harness) and not static_audit
@@ -316,6 +670,44 @@ def audit_file(path: Path) -> ExpFinding | None:
         exp_capability=professional["exp_capability"],
         professional_grade=professional["professional_grade"],
         not_native_exp=professional["not_native_exp"],
+        market_baseline=_market_baseline_mapping(professional)[0],
+        market_gap=_market_baseline_mapping(professional)[1],
+        scanner_ready=False,
+        scanner_grade="",
+        active_ready=False,
+        active_grade="",
+        product_ready=False,
+        product_grade="",
+    )
+    finding.scanner_ready, finding.scanner_grade = _scanner_grade(
+        is_recon=is_recon,
+        attack_input=attack_input,
+        execution_path=execution_path,
+        observable_result=observable_result,
+        safety_gate=finding.safety_gate,
+        validation_tier=finding.validation_tier,
+        execution_safety=finding.execution_safety,
+        source=source,
+    )
+    finding.active_ready, finding.active_grade = _active_grade(
+        is_recon=is_recon,
+        attack_input=attack_input,
+        execution_path=execution_path,
+        observable_result=observable_result,
+        safety_gate=finding.safety_gate,
+        validation_tier=finding.validation_tier,
+        execution_safety=finding.execution_safety,
+        exp_capability=finding.exp_capability,
+        source=source,
+    )
+    finding.product_ready, finding.product_grade = _product_grade(
+        is_recon=is_recon,
+        scanner_ready=finding.scanner_ready or finding.grade in {"EXP_READY", "SCANNER_READY"},
+        active_ready=finding.active_ready,
+        validation_tier=finding.validation_tier,
+        execution_safety=finding.execution_safety,
+        active_grade=finding.active_grade,
+        source=source,
     )
     if not finding.attack_input:
         finding.missing.append("attack_input")
@@ -365,10 +757,18 @@ def main() -> int:
     findings = audit_all()
     counts = Counter(item.grade for item in findings)
     by_category = Counter(item.category for item in findings)
+    by_baseline = Counter(item.market_baseline for item in findings)
+    scanner_ready_count = sum(1 for item in findings if item.scanner_ready or item.grade == "EXP_READY")
+    active_ready_count = sum(1 for item in findings if not item.is_recon and item.active_ready)
+    product_ready_count = sum(1 for item in findings if not item.is_recon and item.product_ready)
     json_path, csv_path = write_reports(findings, args.prefix)
     print(f"Audited {len(findings)} plugin files")
     print(f"Grades: {dict(counts)}")
     print(f"Categories: {dict(by_category)}")
+    print(f"Market baselines: {dict(by_baseline)}")
+    print(f"Scanner-ready plugins: {scanner_ready_count}")
+    print(f"Active-ready plugins: {active_ready_count}")
+    print(f"Product-ready plugins: {product_ready_count}")
     print(f"JSON: {json_path}")
     print(f"CSV: {csv_path}")
     non_exp = [

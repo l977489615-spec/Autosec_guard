@@ -94,8 +94,17 @@ def build_local_sample_probe(
         "requires_manual_review": True,
     }
     if not cmd:
+        evidence["ok"] = False
+        evidence["vulnerable"] = False
+        evidence["execution_path_configured"] = False
         evidence["operator_action"] = operator_action
+        evidence["reason"] = (
+            "No executable validator/decoder command was provided. "
+            "The script only generated a local stimulus artifact and did not "
+            "exercise a real target-side parser, driver, service, or validator."
+        )
         return evidence
+    evidence["execution_path_configured"] = True
     evidence.update(
         run_local_target(
             str(cmd),
