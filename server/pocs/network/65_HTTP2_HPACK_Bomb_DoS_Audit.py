@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Safe exposure audit for HTTP/2 HPACK amplification DoS risk."""
+"""Safe active validation for HTTP/2 HPACK amplification DoS risk."""
 from __future__ import annotations
 
 from active_validation_core import run_active_validation
@@ -16,7 +16,7 @@ VULN = {
     "type": "资源放大/DoS",
     "summary": "HTTP/2 HPACK 索引引用放大与流控窗口停滞可能导致低流量资源耗尽；车联网 API 网关、OTA/CDN 边缘和充电桩后台入口需排查。",
     "source_description": "poc-lab describes HTTP/2 Bomb affecting implementations such as nginx, Apache httpd, IIS, Envoy, and Pingora when HTTP/2 is enabled and limits are insufficient.",
-    "poc_status": "poc-lab公开复现；本插件仅做安全暴露审计",
+    "poc_status": "poc-lab公开复现；本插件支持主动验证；破坏性 payload 需 allow_disruptive 授权",
     "research_value": "HTTP/2 广泛用于车联网 API、OTA、远程诊断与边缘网关，可用性风险高。",
     "source_url": "https://github.com/Unclecheng-li/poc-lab/tree/main/CVE-2026-49975%20HTTP2%20Bomb",
     "references": ["https://github.com/Unclecheng-li/poc-lab"],

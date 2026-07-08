@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Safe CVE exposure audit PoC for connected-vehicle vulnerability intelligence."""
+"""Active validation PoC for connected-vehicle vulnerability scanning."""
 from __future__ import annotations
 
 from active_validation_core import run_active_validation
@@ -87,7 +87,7 @@ VULN = {
 
 class Poc53CVE20221292InjectionAuditPlugin(IVIVulnerabilityPlugin):
     meta_display_id = 'XLSX-088'
-    meta_poc_name = 'CVE-2022-1292 命令注入 Exposure Audit'
+    meta_poc_name = 'CVE-2022-1292 命令注入 Active Validation'
     meta_cve_id = 'CVE-2022-1292'
     meta_severity = 'High'
     meta_protocol = 'tls'

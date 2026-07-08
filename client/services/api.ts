@@ -108,6 +108,14 @@ export interface ExecutionResult {
   poc_id?: string;
   trace_id?: string;
   requires_human_review?: boolean;
+  requires_disruptive_approval?: boolean;
+  requires_post_execution_review?: boolean;
+  manual_confirmation_required?: boolean;
+  validation_tier?: string;
+  detection_confidence?: number;
+  execution_safety?: string;
+  exp_capability?: string;
+  professional_policy?: Record<string, any>;
   verification_status?: string;
   manual_review?: {
     state: string;
@@ -303,6 +311,79 @@ export const submitPocManualVerdict = async (
       errors: [error?.message || 'Failed to submit manual verdict.'],
       vulnerable: null
     };
+  }
+};
+
+export const submitPocManualVerdictBatch = async (
+  payload: {
+    session_id?: string;
+    target_ip?: string;
+    target_mac?: string;
+    bluetooth_mac?: string;
+    operator_note?: string;
+    evidence_file?: string;
+    items: Array<{
+      trace_id?: string;
+      poc_id?: string;
+      poc_name?: string;
+      verdict: 'confirmed_vulnerable' | 'confirmed_not_vulnerable' | 'inconclusive' | 'needs_retest';
+      operator_note?: string;
+      evidence_file?: string;
+    }>;
+  },
+  token?: string | null,
+  backendOverride?: string | null
+): Promise<{ success: boolean; count?: number; results?: ExecutionResult[]; error?: string }> => {
+  const requestBackendUrl = getRequestBackendUrl(backendOverride);
+  try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const res = await fetch(`${requestBackendUrl}/api/poc_manual_verdict_batch`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      mode: 'cors'
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.message || data.error || `Server returned ${res.status}`);
+    }
+    return await res.json();
+  } catch (error: any) {
+    return { success: false, error: error?.message || 'Failed to submit batch manual verdict.' };
+  }
+};
+
+export const recordScanApprovalPolicy = async (
+  payload: {
+    session_id: string;
+    target_ip?: string;
+    min_tier?: string;
+    max_tier?: string;
+    allow_lab_exp?: boolean;
+    allow_auto_exp?: boolean;
+    allow_disruptive?: boolean;
+  },
+  token?: string | null,
+  backendOverride?: string | null
+): Promise<{ success: boolean; policy?: Record<string, any>; error?: string }> => {
+  const requestBackendUrl = getRequestBackendUrl(backendOverride);
+  try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const res = await fetch(`${requestBackendUrl}/api/scan_approval_policy`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      mode: 'cors'
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.message || data.error || `Server returned ${res.status}`);
+    }
+    return await res.json();
+  } catch (error: any) {
+    return { success: false, error: error?.message || 'Failed to record scan approval policy.' };
   }
 };
 

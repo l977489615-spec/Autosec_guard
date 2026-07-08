@@ -2333,7 +2333,12 @@ class AgentOrchestrator:
         )
 
     def _default_execution_params(self) -> Dict[str, Any]:
-        params: Dict[str, Any] = {"target_ip": self.target_ip}
+        params: Dict[str, Any] = {
+            "target_ip": self.target_ip,
+            "max_tier": "ACTIVE_PROBE",
+            "allow_lab_exp": False,
+            "allow_auto_exp": False,
+        }
         if self.candidate_ports:
             params["candidate_ports"] = self.candidate_ports
         for key in (

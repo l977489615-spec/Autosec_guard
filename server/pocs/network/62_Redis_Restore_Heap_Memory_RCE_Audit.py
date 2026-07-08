@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Safe exposure audit for Redis/Valkey RESTORE malformed payload risk."""
+"""Safe active validation for Redis/Valkey RESTORE malformed payload risk."""
 from __future__ import annotations
 
 from active_validation_core import run_active_validation
@@ -16,7 +16,7 @@ VULN = {
     "type": "堆内存非法访问/RCE",
     "summary": "Redis/Valkey RESTORE 反序列化路径对畸形 RDB/zipmap 载荷校验不足，车联网后端、边缘缓存或测试网关若暴露 Redis 服务需排查。",
     "source_description": "poc-lab describes invalid memory access in the Redis RESTORE command that may lead to remote code execution when an authenticated user with RESTORE privilege submits malformed serialized payloads.",
-    "poc_status": "poc-lab公开复现；本插件仅做安全暴露审计",
+    "poc_status": "poc-lab公开复现；本插件支持主动验证；破坏性 payload 需 allow_disruptive 授权",
     "research_value": "Redis/Valkey 常用于车联网后端缓存、遥测聚合、边缘服务与研发台架，属于车联网通用基础组件风险。",
     "source_url": "https://github.com/Unclecheng-li/poc-lab/tree/main/CVE-2026-25243%20Invalid%20Memory%20Access%20in%20Redis%20RESTORE%20Command%20May%20Lead%20to%20Remote%20Code%20Execution",
     "references": [
@@ -41,6 +41,9 @@ VULN = {
         "restoreCommand", "verifyDumpPayload", "rdbLoadObject", "authenticated",
         "ACL", "heap", "buffer overflow",
     ],
+    # Non-destructive protocol payload used as an authorized trigger placeholder
+    # unless an operator supplies the real RESTORE payload via active_payload_*.
+    "active_payload_text": "PING\r\n",
 }
 
 

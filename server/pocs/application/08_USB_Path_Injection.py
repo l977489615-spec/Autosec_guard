@@ -12,6 +12,7 @@ Usage: python3 08_USB_Path_Injection.py
 import sys
 import os
 import shutil
+import time
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 class UsbPathTraversalPlugin(IVIVulnerabilityPlugin):

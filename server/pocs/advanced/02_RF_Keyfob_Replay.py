@@ -29,8 +29,8 @@ class HondaReplayPlugin(IVIVulnerabilityPlugin):
     meta_protocol = "rf"
     meta_target_os = ["all"]
     meta_required_params = ["frequency"]
-    is_disruptive = False
-    meta_destructive_level = "Safe"
+    is_disruptive = True
+    meta_destructive_level = "Disruptive"
 
     def __init__(self, target_config, logger=None):
         super().__init__(target_config, logger)

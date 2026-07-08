@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Safe exposure audit for Linux Copy Fail local privilege escalation risk."""
+"""Safe active validation for Linux Copy Fail local privilege escalation risk."""
 from __future__ import annotations
 
 from active_validation_core import run_active_validation
@@ -16,7 +16,7 @@ VULN = {
     "type": "本地权限提升/容器逃逸",
     "summary": "Linux Copy Fail 漏洞影响启用 CRYPTO_USER_API_AEAD 的内核，本地低权限用户可能提权；车载 Linux、边缘网关、测试台架和容器化诊断节点需排查。",
     "source_description": "poc-lab documents Copy Fail, a Linux kernel local privilege escalation involving splice and AF_ALG AEAD in-place handling.",
-    "poc_status": "poc-lab公开复现；本插件仅做安全暴露审计",
+    "poc_status": "poc-lab公开复现；本插件支持主动验证；破坏性 payload 需 allow_disruptive 授权",
     "research_value": "车载 Linux 与边缘节点常启用通用发行版内核和容器，LPE/容器逃逸会放大其他入口漏洞。",
     "source_url": "https://github.com/Unclecheng-li/poc-lab/tree/main/CVE-2026-31431%20Copy%20Fail",
     "references": [

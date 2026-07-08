@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Safe CVE exposure audit PoC for connected-vehicle vulnerability intelligence."""
+"""Active validation PoC for connected-vehicle vulnerability scanning."""
 from __future__ import annotations
 
 from active_validation_core import run_active_validation
@@ -84,7 +84,7 @@ VULN = {
 
 class Poc57CVE201713079KRACKAuditPlugin(IVIVulnerabilityPlugin):
     meta_display_id = 'XLSX-072'
-    meta_poc_name = 'CVE-2017-13079 KRACK密钥重装 Exposure Audit'
+    meta_poc_name = 'CVE-2017-13079 KRACK密钥重装 Active Validation'
     meta_cve_id = 'CVE-2017-13079'
     meta_severity = 'High'
     meta_protocol = 'can'

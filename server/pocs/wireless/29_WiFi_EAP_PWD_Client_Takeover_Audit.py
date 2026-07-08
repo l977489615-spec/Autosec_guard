@@ -48,7 +48,7 @@ class WiFiEAPPWDClientTakeoverAuditPlugin(IVIVulnerabilityPlugin):
         self.results.update({
             "vulnerable": vulnerable,
             "cve_id": self.meta_cve_id,
-            "description": "EAP-PWD client session-takeover exposure audit",
+            "description": "EAP-PWD client session-takeover active validation",
             "evidence": evidence,
         })
         return self.results

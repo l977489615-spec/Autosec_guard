@@ -24,8 +24,8 @@ class CANReplayPlugin(IVIVulnerabilityPlugin):
     meta_protocol = "can"
     meta_target_os = ["all"]
     meta_required_params = ["can_interface"]
-    is_disruptive = False
-    meta_destructive_level = "Safe"
+    is_disruptive = True
+    meta_destructive_level = "Disruptive"
 
     def check_prerequisites(self):
         settings = get_can_settings(self.params)

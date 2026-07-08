@@ -41,7 +41,7 @@ class BTAndroidL2CAPUAFRCEAuditPlugin(IVIVulnerabilityPlugin):
         self.results.update({
             "vulnerable": vulnerable,
             "cve_id": self.meta_cve_id,
-            "description": "Android L2CAP use-after-free RCE exposure audit",
+            "description": "Android L2CAP use-after-free RCE active validation",
             "evidence": evidence,
         })
         return self.results

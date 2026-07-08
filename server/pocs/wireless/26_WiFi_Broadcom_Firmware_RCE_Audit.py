@@ -1,5 +1,5 @@
 """
-PoC Name: Broadcom Wi-Fi Firmware RCE Exposure Audit
+PoC Name: Broadcom Wi-Fi Firmware RCE Active Validation
 CVE: CVE-2017-0561
 Category: Wireless
 Severity: Critical
@@ -50,7 +50,7 @@ class WiFiBroadcomFirmwareRCEAuditPlugin(IVIVulnerabilityPlugin):
         self.results.update({
             "vulnerable": vulnerable,
             "cve_id": self.meta_cve_id,
-            "description": "Broadcom Wi-Fi firmware RCE exposure audit",
+            "description": "Broadcom Wi-Fi firmware RCE active validation",
             "evidence": evidence,
         })
         return self.results

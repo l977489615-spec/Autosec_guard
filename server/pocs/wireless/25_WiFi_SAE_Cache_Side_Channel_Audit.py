@@ -50,7 +50,7 @@ class WiFiSAECacheSideChannelAuditPlugin(IVIVulnerabilityPlugin):
         self.results.update({
             "vulnerable": vulnerable,
             "cve_id": self.meta_cve_id,
-            "description": "SAE cache side-channel exposure audit",
+            "description": "SAE cache side-channel active validation",
             "evidence": evidence,
         })
         return self.results

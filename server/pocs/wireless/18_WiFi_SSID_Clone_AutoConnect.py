@@ -43,8 +43,8 @@ class WiFiSSIDCloneAutoConnectPlugin(IVIVulnerabilityPlugin):
     meta_profiles = ["wifi"]
     meta_target_os = ["all"]
     meta_required_params = ["interface"]
-    is_disruptive = False
-    meta_destructive_level = "Safe"
+    is_disruptive = True
+    meta_destructive_level = "Disruptive"
 
 
     # 车机常见的默认 SSID 关键字（通用性较强的命名规律）

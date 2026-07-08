@@ -23,6 +23,7 @@ from typing import Any
 from poc_catalog import list_available_poc_names, resolve_poc_source
 from poc_execution_service import normalize_poc_params
 from poc_worker import _extract_security_profile, poc_requires_human_review
+from audit_exp_readiness import PROFESSIONAL_TIER_ORDER, audit_all, audit_file, write_reports as write_exp_reports
 
 
 SERVER_DIR = Path(__file__).resolve().parent
@@ -160,7 +161,65 @@ def _should_skip_poc(rel_path: str, include_manual: bool, include_disruptive: bo
     return False, ""
 
 
-def _select_pocs(category: str = "", pattern: str = "", limit: int = 0, include_manual: bool = False, include_disruptive: bool = False) -> list[str]:
+def _is_exp_ready_poc(rel_path: str) -> bool:
+    poc_path, normalized, _ = resolve_poc_source(str(POCS_DIR), rel_path)
+    if not poc_path or not normalized:
+        return False
+    path = Path(poc_path)
+    if not path.exists():
+        return False
+    finding = audit_file(path)
+    return bool(finding and finding.grade == "EXP_READY")
+
+
+def _professional_finding(rel_path: str):
+    poc_path, normalized, _ = resolve_poc_source(str(POCS_DIR), rel_path)
+    if not poc_path or not normalized:
+        return None
+    path = Path(poc_path)
+    if not path.exists():
+        return None
+    return audit_file(path)
+
+
+def _tier_allowed(
+    tier: str,
+    min_tier: str = "",
+    max_tier: str = "",
+    allow_lab_exp: bool = False,
+    allow_auto_exp: bool = False,
+) -> bool:
+    tier = (tier or "PASSIVE").upper()
+    min_tier = (min_tier or "").upper()
+    max_tier = (max_tier or "").upper()
+    value = PROFESSIONAL_TIER_ORDER.get(tier, PROFESSIONAL_TIER_ORDER["PASSIVE"])
+    if min_tier and value < PROFESSIONAL_TIER_ORDER.get(min_tier, 0):
+        return False
+    if max_tier and value > PROFESSIONAL_TIER_ORDER.get(max_tier, max(PROFESSIONAL_TIER_ORDER.values())):
+        if tier == "LAB_EXP" and allow_lab_exp:
+            return True
+        if tier == "AUTO_EXP" and allow_auto_exp:
+            return True
+        return False
+    if tier == "LAB_EXP" and max_tier and PROFESSIONAL_TIER_ORDER.get(max_tier, 0) < PROFESSIONAL_TIER_ORDER["LAB_EXP"]:
+        return bool(allow_lab_exp)
+    if tier == "AUTO_EXP" and max_tier and PROFESSIONAL_TIER_ORDER.get(max_tier, 0) < PROFESSIONAL_TIER_ORDER["AUTO_EXP"]:
+        return bool(allow_auto_exp)
+    return True
+
+
+def _select_pocs(
+    category: str = "",
+    pattern: str = "",
+    limit: int = 0,
+    include_manual: bool = False,
+    include_disruptive: bool = False,
+    require_exp: bool = False,
+    min_tier: str = "",
+    max_tier: str = "",
+    allow_lab_exp: bool = False,
+    allow_auto_exp: bool = False,
+) -> list[str]:
     pocs = []
     for rel in list_available_poc_names(str(POCS_DIR)):
         if category and not rel.startswith(category.strip("/") + "/"):
@@ -170,6 +229,18 @@ def _select_pocs(category: str = "", pattern: str = "", limit: int = 0, include_
         skip, _ = _should_skip_poc(rel, include_manual, include_disruptive)
         if skip:
             continue
+        if require_exp and not _is_exp_ready_poc(rel):
+            continue
+        if min_tier or max_tier:
+            finding = _professional_finding(rel)
+            if not finding or not _tier_allowed(
+                finding.validation_tier,
+                min_tier,
+                max_tier,
+                allow_lab_exp,
+                allow_auto_exp,
+            ):
+                continue
         pocs.append(rel)
         if limit and len(pocs) >= limit:
             break
@@ -184,6 +255,11 @@ def run_global_scan(args: argparse.Namespace) -> dict[str, Any]:
         limit=args.limit,
         include_manual=args.include_manual,
         include_disruptive=args.include_disruptive,
+        require_exp=getattr(args, "require_exp", False),
+        min_tier=getattr(args, "min_tier", ""),
+        max_tier=getattr(args, "max_tier", "ACTIVE_PROBE"),
+        allow_lab_exp=getattr(args, "allow_lab_exp", False),
+        allow_auto_exp=getattr(args, "allow_auto_exp", False),
     )
     session_id = args.session_id or f"cli-global-{_now_id()}"
     results = []
@@ -335,6 +411,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     single = sub.add_parser("single", help="Run one PoC and print the result")
     single.add_argument("poc", help="PoC filename or relative path")
+    single.add_argument("--require-exp", action="store_true", help="Refuse to run unless the PoC is EXP_READY")
+    single.add_argument("--min-tier", default="", choices=list(PROFESSIONAL_TIER_ORDER), help="Minimum professional validation tier")
+    single.add_argument("--max-tier", default="", choices=list(PROFESSIONAL_TIER_ORDER), help="Maximum professional validation tier")
+    single.add_argument("--allow-lab-exp", action="store_true", help="Allow LAB_EXP scripts beyond max-tier")
+    single.add_argument("--allow-auto-exp", action="store_true", help="Allow AUTO_EXP scripts beyond max-tier")
     add_common(single)
 
     global_scan = sub.add_parser("global", help="Run a batch/global scan and write reports")
@@ -344,6 +425,11 @@ def build_parser() -> argparse.ArgumentParser:
     global_scan.add_argument("--limit", type=int, default=0, help="Limit number of PoCs")
     global_scan.add_argument("--include-manual", action="store_true", help="Include PoCs requiring manual review")
     global_scan.add_argument("--include-disruptive", action="store_true", help="Include disruptive PoCs")
+    global_scan.add_argument("--require-exp", action="store_true", help="Only run EXP_READY PoCs")
+    global_scan.add_argument("--min-tier", default="", choices=list(PROFESSIONAL_TIER_ORDER), help="Minimum professional validation tier")
+    global_scan.add_argument("--max-tier", default="ACTIVE_PROBE", choices=list(PROFESSIONAL_TIER_ORDER), help="Maximum professional validation tier")
+    global_scan.add_argument("--allow-lab-exp", action="store_true", help="Allow LAB_EXP scripts beyond max-tier")
+    global_scan.add_argument("--allow-auto-exp", action="store_true", help="Allow AUTO_EXP scripts beyond max-tier")
     global_scan.add_argument("--session-id", default="", help="Report session id")
     global_scan.add_argument("--output", default="", help="Output path prefix for reports")
 
@@ -361,12 +447,43 @@ def build_parser() -> argparse.ArgumentParser:
     list_cmd = sub.add_parser("list", help="List available PoCs")
     list_cmd.add_argument("--category", default="", help="Only list a category")
     list_cmd.add_argument("--pattern", default="", help="Only list matching paths")
+    list_cmd.add_argument("--require-exp", action="store_true", help="Only list EXP_READY PoCs")
+    list_cmd.add_argument("--min-tier", default="", choices=list(PROFESSIONAL_TIER_ORDER), help="Minimum professional validation tier")
+    list_cmd.add_argument("--max-tier", default="", choices=list(PROFESSIONAL_TIER_ORDER), help="Maximum professional validation tier")
+    list_cmd.add_argument("--allow-lab-exp", action="store_true", help="Allow LAB_EXP scripts beyond max-tier")
+    list_cmd.add_argument("--allow-auto-exp", action="store_true", help="Allow AUTO_EXP scripts beyond max-tier")
+    list_cmd.add_argument("--include-manual", action="store_true", help="Include PoCs requiring manual review")
+    list_cmd.add_argument("--include-disruptive", action="store_true", help="Include disruptive PoCs")
+
+    exp_audit = sub.add_parser("exp-audit", help="Audit PoCs for exploit-level readiness")
+    exp_audit.add_argument("--prefix", default=f"exp_readiness_{_now_id()}", help="Report filename prefix under server/reports")
+    exp_audit.add_argument("--fail-on-non-exp", action="store_true", help="Exit non-zero when vulnerability PoCs are not EXP_READY")
+    exp_audit.add_argument("--professional-audit", action="store_true", help="Print professional tier distribution")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "single":
+        if getattr(args, "require_exp", False) and not _is_exp_ready_poc(args.poc):
+            print(f"Refusing to run non-EXP PoC: {args.poc}")
+            print("Run `python3 server/scan_cli.py exp-audit` for missing EXP readiness fields.")
+            return 2
+        effective_max_tier = args.max_tier
+        if getattr(args, "require_exp", False) and not effective_max_tier and not args.allow_lab_exp and not args.allow_auto_exp:
+            effective_max_tier = "ACTIVE_PROBE"
+        if getattr(args, "min_tier", "") or effective_max_tier:
+            finding = _professional_finding(args.poc)
+            if not finding or not _tier_allowed(
+                finding.validation_tier,
+                args.min_tier,
+                effective_max_tier,
+                args.allow_lab_exp,
+                args.allow_auto_exp,
+            ):
+                tier = finding.validation_tier if finding else "unknown"
+                print(f"Refusing to run PoC outside professional tier policy: {args.poc} tier={tier}")
+                return 2
         result = run_single_poc(args.poc, _load_params(args), timeout=args.timeout)
         print(_format_single_result(result))
         return 1 if not result.get("success") else 0
@@ -378,9 +495,39 @@ def main(argv: list[str] | None = None) -> int:
         agent_result = report.get("agent_result", {})
         return 1 if agent_result.get("error") else 0
     if args.command == "list":
-        for poc in _select_pocs(category=args.category, pattern=args.pattern):
+        for poc in _select_pocs(
+            category=args.category,
+            pattern=args.pattern,
+            include_manual=args.include_manual,
+            include_disruptive=args.include_disruptive,
+            require_exp=args.require_exp,
+            min_tier=args.min_tier,
+            max_tier=args.max_tier,
+            allow_lab_exp=args.allow_lab_exp,
+            allow_auto_exp=args.allow_auto_exp,
+        ):
             print(poc)
         return 0
+    if args.command == "exp-audit":
+        findings = audit_all()
+        json_path, csv_path = write_exp_reports(findings, args.prefix)
+        non_exp = [
+            item for item in findings
+            if not item.is_recon and item.grade != "EXP_READY"
+        ]
+        print(f"Audited {len(findings)} plugin files")
+        print(f"JSON report: {json_path}")
+        print(f"CSV report: {csv_path}")
+        print(f"Non-EXP vulnerability plugins: {len(non_exp)}")
+        if getattr(args, "professional_audit", False):
+            tier_counts = {}
+            capability_counts = {}
+            for item in findings:
+                tier_counts[item.validation_tier] = tier_counts.get(item.validation_tier, 0) + 1
+                capability_counts[item.exp_capability] = capability_counts.get(item.exp_capability, 0) + 1
+            print(f"Professional tiers: {tier_counts}")
+            print(f"EXP capabilities: {capability_counts}")
+        return 2 if args.fail_on_non_exp and non_exp else 0
     return 2
 
 

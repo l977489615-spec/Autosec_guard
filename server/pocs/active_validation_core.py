@@ -27,6 +27,9 @@ DEFAULT_PORTS = {
     "http": 80,
     "https": 443,
     "http2": 443,
+    "airplay": 7000,
+    "carplay": 7000,
+    "rtsp": 7000,
     "redis": 6379,
 }
 
@@ -39,6 +42,12 @@ def run_active_validation(plugin: Any, vuln: dict[str, Any], *, probe: Any = Non
         return _merge_result(passive, {
             "validation_mode": mode,
             "active_validation": "disabled_by_request",
+            "exposure_detected": bool(passive.get("vulnerable")),
+            "active_probe_observed": False,
+            "exploit_trigger_supported": _has_trigger_payload(plugin, vuln),
+            "exploit_confirmed": None,
+            "validation_tier_achieved": "PASSIVE",
+            "exp_capability": "supported_harness" if _has_trigger_payload(plugin, vuln) else "none",
         })
 
     observations: list[dict[str, Any]] = []
@@ -68,6 +77,14 @@ def run_active_validation(plugin: Any, vuln: dict[str, Any], *, probe: Any = Non
         "active_observations": observations,
         "active_observation_count": len(observations),
         "active_vulnerability_observed": active_hit,
+        "exposure_detected": bool(passive.get("vulnerable")),
+        "active_probe_observed": any(item.get("ok") for item in observations if item.get("kind") != "authorized_trigger"),
+        "exploit_trigger_supported": _has_trigger_payload(plugin, vuln),
+        "exploit_confirmed": True if active_hit else None,
+        "validation_tier_achieved": _validation_tier_achieved(observations),
+        "exp_capability": "operator_supplied" if _has_trigger_payload(plugin, vuln) else "none",
+        "exploit_payload_supported": _has_trigger_payload(plugin, vuln),
+        "payload_authorization_required": _has_trigger_payload(plugin, vuln),
         "manual_confirmation_required": bool(active_inconclusive),
         "operator_observation_targets": _operator_observation_targets(vuln),
     })
@@ -79,6 +96,22 @@ def run_active_validation(plugin: Any, vuln: dict[str, Any], *, probe: Any = Non
         "evidence": json.dumps(evidence, ensure_ascii=False),
         "requires_manual_review": bool(active_inconclusive),
     }
+
+
+def _merge_result(base: dict[str, Any], extra_evidence: dict[str, Any]) -> dict[str, Any]:
+    result = dict(base)
+    evidence = _decode_evidence(result.get("evidence"))
+    evidence.update(extra_evidence)
+    result["evidence"] = json.dumps(evidence, ensure_ascii=False)
+    return result
+
+
+def _validation_tier_achieved(observations: list[dict[str, Any]]) -> str:
+    if any(item.get("kind") == "authorized_trigger" and item.get("ok") and item.get("vulnerable") for item in observations):
+        return "LAB_EXP"
+    if any(item.get("ok") for item in observations):
+        return "ACTIVE_PROBE"
+    return "PASSIVE"
 
 
 def _generic_active_observations(plugin: Any, vuln: dict[str, Any]) -> list[dict[str, Any]]:
@@ -95,6 +128,8 @@ def _generic_active_observations(plugin: Any, vuln: dict[str, Any]) -> list[dict
     observations = [_tcp_liveness(target_ip, target_port, params)]
     if protocol in {"http", "https", "http2"}:
         observations.append(_http_observation(target_ip, target_port, protocol, params, vuln))
+    elif protocol in {"airplay", "carplay", "rtsp"}:
+        observations.append(_airplay_rtsp_observation(target_ip, target_port, params, vuln))
     elif protocol == "redis":
         observations.append(_redis_observation(target_ip, target_port, params))
     return observations
@@ -203,30 +238,83 @@ def _redis_observation(host: str, port: int, params: dict[str, Any]) -> dict[str
         return {"kind": "redis_probe", "ok": False, "error": str(exc)}
 
 
+def _airplay_rtsp_observation(host: str, port: int, params: dict[str, Any], vuln: dict[str, Any]) -> dict[str, Any]:
+    timeout = float(params.get("timeout", 3))
+    payload = (
+        "OPTIONS * RTSP/1.0\r\n"
+        "CSeq: 1\r\n"
+        "User-Agent: AutoSec-Guard-AirPlay-Validation\r\n\r\n"
+    ).encode("ascii")
+    try:
+        raw = _send_tcp(host, port, payload, timeout=timeout, use_tls=False)
+        text = raw.decode("utf-8", errors="replace")
+        hits = [
+            token for token in ("RTSP/1.0", "Public:", "AirPlay", "Apple-Response", "server-info")
+            if token.lower() in text.lower()
+        ]
+        return {
+            "kind": "airplay_rtsp_probe",
+            "ok": True,
+            "target": f"{host}:{port}",
+            "indicator_hits": hits,
+            "response_excerpt": text[:500],
+            "phenomenon": "AirPlay/CarPlay RTSP control surface responded to protocol probe",
+        }
+    except Exception as exc:
+        return {
+            "kind": "airplay_rtsp_probe",
+            "ok": False,
+            "target": f"{host}:{port}",
+            "error": str(exc),
+            "phenomenon": "AirPlay/CarPlay RTSP probe failed",
+        }
+
+
 def _authorized_trigger_payload(plugin: Any, vuln: dict[str, Any]) -> dict[str, Any] | None:
     params = plugin.params or {}
-    payload = params.get("active_payload_hex") or params.get("active_payload_text")
-    if not payload:
+    payload_hex = params.get("active_payload_hex") or _first_declared_param(params, vuln, "hex") or vuln.get("active_payload_hex")
+    payload_text = params.get("active_payload_text") or _first_declared_param(params, vuln, "text") or vuln.get("active_payload_text")
+    payload = payload_hex or payload_text
+    declared_payload = _has_declared_payload_param(vuln)
+    if not payload and not declared_payload:
         return None
     allow = params.get("allow_disruptive") in (True, "true", "True", "1", 1)
-    if not allow:
+    if not allow or not payload:
         return {
             "kind": "authorized_trigger",
             "ok": False,
             "requires_manual_review": True,
-            "reason": "active payload provided but allow_disruptive=true was not set",
+            "payload_supported": True,
+            "payload_available": bool(payload),
+            "payload_source": (
+                "operator_parameter"
+                if params.get("active_payload_hex") or params.get("active_payload_text")
+                else "poc_definition"
+                if payload
+                else "operator_parameter_required"
+            ),
+            "reason": (
+                "operator payload parameter is declared; provide it and set allow_disruptive=true in an isolated lab"
+                if not payload else
+                "trigger payload is available but allow_disruptive=true was not set"
+            ),
+            "phenomenon": "exploit/crash payload intentionally not sent; authorize in lab to observe target-side crash, reset, state change, or sensitive response",
         }
+    protocol = str(getattr(plugin, "meta_protocol", "") or vuln.get("protocol") or "").lower()
+    if not _is_tcp_trigger_protocol(protocol):
+        return _non_network_lab_trigger_result(protocol, params, vuln, payload)
+
     target_ip = str(params.get("target_ip") or "").strip()
-    target_port = _resolve_port(params, str(getattr(plugin, "meta_protocol", "") or ""))
+    target_port = _resolve_port(params, protocol)
     if not target_ip or not target_port:
         return {"kind": "authorized_trigger", "ok": False, "error": "target_ip/target_port required"}
 
     before = _tcp_liveness(target_ip, target_port, params)
     try:
-        if params.get("active_payload_hex"):
-            raw_payload = bytes.fromhex(str(params["active_payload_hex"]).replace(" ", ""))
+        if payload_hex:
+            raw_payload = bytes.fromhex(str(payload_hex).replace(" ", ""))
         else:
-            raw_payload = str(params.get("active_payload_text") or "").encode("utf-8", errors="ignore")
+            raw_payload = str(payload_text or "").encode("utf-8", errors="ignore")
         response = _send_tcp(
             target_ip,
             target_port,
@@ -241,6 +329,11 @@ def _authorized_trigger_payload(plugin: Any, vuln: dict[str, Any]) -> dict[str, 
             "kind": "authorized_trigger",
             "ok": True,
             "payload_bytes": len(raw_payload),
+            "payload_source": (
+                "operator_parameter"
+                if params.get("active_payload_hex") or params.get("active_payload_text")
+                else "poc_definition"
+            ),
             "response_excerpt": response[:300].decode("utf-8", errors="replace"),
             "before": before,
             "after": after,
@@ -264,6 +357,85 @@ def _authorized_trigger_payload(plugin: Any, vuln: dict[str, Any]) -> dict[str, 
             "requires_manual_review": True,
             "phenomenon": "payload send caused exception; compare pre/post liveness and target-side logs",
         }
+
+
+def _has_trigger_payload(plugin: Any, vuln: dict[str, Any]) -> bool:
+    params = plugin.params or {}
+    return any(
+        key in params and params.get(key) not in (None, "")
+        for key in ("active_payload_hex", "active_payload_text")
+    ) or any(vuln.get(key) not in (None, "") for key in ("active_payload_hex", "active_payload_text")) or _has_declared_payload_param(vuln)
+
+
+def _declared_payload_param_names(vuln: dict[str, Any], flavor: str | None = None) -> list[str]:
+    if flavor == "hex":
+        keys = ["active_payload_hex_param", "operator_payload_hex_param", "lab_payload_hex_param"]
+    elif flavor == "text":
+        keys = [
+            "active_payload_text_param",
+            "operator_payload_text_param",
+            "lab_payload_text_param",
+            "active_payload_param",
+            "operator_payload_param",
+            "lab_payload_param",
+        ]
+    else:
+        keys = ["active_payload_param", "operator_payload_param", "lab_payload_param"]
+    names: list[str] = []
+    for key in keys:
+        value = vuln.get(key)
+        if isinstance(value, (list, tuple)):
+            names.extend(str(item) for item in value if str(item).strip())
+        elif value:
+            names.append(str(value))
+    return names
+
+
+def _first_declared_param(params: dict[str, Any], vuln: dict[str, Any], flavor: str) -> Any:
+    for name in _declared_payload_param_names(vuln, flavor):
+        value = params.get(name)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _has_declared_payload_param(vuln: dict[str, Any]) -> bool:
+    return bool(_declared_payload_param_names(vuln))
+
+
+def _is_tcp_trigger_protocol(protocol: str) -> bool:
+    return protocol in {"", "tcp", "http", "https", "http2", "airplay", "carplay", "rtsp", "redis"}
+
+
+def _non_network_lab_trigger_result(protocol: str, params: dict[str, Any], vuln: dict[str, Any], payload: Any) -> dict[str, Any]:
+    payload_names = _declared_payload_param_names(vuln)
+    return {
+        "kind": "authorized_trigger",
+        "ok": True,
+        "protocol": protocol or "local",
+        "payload_supported": True,
+        "payload_available": True,
+        "payload_parameter": ",".join(payload_names) if payload_names else "active_payload_text/active_payload_hex",
+        "payload_bytes": len(str(payload).encode("utf-8", errors="ignore")),
+        "requires_manual_review": True,
+        "payload_source": "operator_parameter" if payload_names else "poc_definition",
+        "operator_action": _operator_trigger_action(protocol, payload_names),
+        "phenomenon": str(
+            vuln.get("operator_observation")
+            or "operator must confirm target-side crash, reset, state change, privilege change, or sensitive response in the lab"
+        ),
+    }
+
+
+def _operator_trigger_action(protocol: str, payload_names: list[str]) -> str:
+    param_hint = ", ".join(payload_names) if payload_names else "active_payload_text/active_payload_hex"
+    if protocol in {"can", "uds", "obd"}:
+        return f"Replay or send the authorized bus stimulus from {param_hint} on an isolated bench, then capture ECU response and bus state."
+    if protocol in {"bluetooth", "ble", "bt"}:
+        return f"Run the authorized Bluetooth lab stimulus from {param_hint} against the target adapter and capture pairing, crash, or reset evidence."
+    if protocol in {"rf", "wifi", "wireless"}:
+        return f"Transmit the authorized RF/WiFi lab stimulus from {param_hint} only in an isolated test environment and record physical or spectrum-visible effects."
+    return f"Execute the authorized local/lab stimulus from {param_hint} in an isolated runtime and record process, privilege, or crash evidence."
 
 
 def _send_tcp(host: str, port: int, payload: bytes, *, timeout: float, use_tls: bool = False) -> bytes:

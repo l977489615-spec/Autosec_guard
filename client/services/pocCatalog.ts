@@ -87,12 +87,21 @@ export const backendPocToCatalogPoc = (item: any): POC => {
   const protocol = item.protocol || item.meta_protocol || category;
   const requiredParams = mapRequiredParams(item.required_params || item.meta_required_params);
   const destructiveLevel = String(item.meta_destructive_level || item.destructive_level || '').toLowerCase();
-  const manualConfirmationRequired = Boolean(
-    item.manual_confirmation_required ||
-    item.is_disruptive ||
+  const requiresDisruptiveApproval = Boolean(
+    item.requires_disruptive_approval ||
     item.execution_requirements?.requires_explicit_approval ||
     item.execution_requirements?.approval_required ||
+    item.is_disruptive ||
     ['restart', 'dataloss', 'brick'].includes(destructiveLevel)
+  );
+  const requiresPostExecutionReview = Boolean(
+    item.requires_post_execution_review ||
+    item.requires_human_review
+  );
+  const manualConfirmationRequired = Boolean(
+    item.manual_confirmation_required ||
+    requiresDisruptiveApproval ||
+    requiresPostExecutionReview
   );
 
   return {
@@ -113,6 +122,15 @@ export const backendPocToCatalogPoc = (item: any): POC => {
     recommendedExecutionPlane: item.recommended_execution_plane || 'cloud',
     executionRequirements: item.execution_requirements,
     manualConfirmationRequired,
+    requiresDisruptiveApproval,
+    requiresPostExecutionReview,
+    validationTier: item.validation_tier,
+    detectionConfidence: item.detection_confidence,
+    executionSafety: item.execution_safety,
+    evidenceBasis: Array.isArray(item.evidence_basis) ? item.evidence_basis : undefined,
+    expCapability: item.exp_capability,
+    professionalGrade: item.professional_grade,
+    notNativeExp: Boolean(item.not_native_exp),
     targetOS: Array.isArray(item.meta_target_os || item.target_os)
       ? (item.meta_target_os || item.target_os)
       : undefined,

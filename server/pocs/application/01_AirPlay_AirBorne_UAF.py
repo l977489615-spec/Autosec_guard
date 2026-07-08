@@ -23,8 +23,8 @@ class AirBorneUAFPlugin(IVIVulnerabilityPlugin):
     meta_protocol = "unknown"
     meta_target_os = ["all"]
     meta_required_params = ["target_ip"]
-    is_disruptive = False
-    meta_destructive_level = "Safe"
+    is_disruptive = True
+    meta_destructive_level = "Disruptive"
 
     def check_prerequisites(self):
         if not self.target_ip or self.target_ip == 'N/A':

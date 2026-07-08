@@ -48,7 +48,7 @@ class WiFiEAPPWDCacheAuditPlugin(IVIVulnerabilityPlugin):
         self.results.update({
             "vulnerable": vulnerable,
             "cve_id": self.meta_cve_id,
-            "description": "EAP-PWD cache side-channel exposure audit",
+            "description": "EAP-PWD cache side-channel active validation",
             "evidence": evidence,
         })
         return self.results

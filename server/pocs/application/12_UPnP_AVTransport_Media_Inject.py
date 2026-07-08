@@ -48,8 +48,8 @@ class UPnPAVTransportMediaInjectPlugin(IVIVulnerabilityPlugin):
     meta_protocol = "unknown"
     meta_target_os = ["all"]
     meta_required_params = ["target_ip"]
-    is_disruptive = False
-    meta_destructive_level = "Safe"
+    is_disruptive = True
+    meta_destructive_level = "Disruptive"
 
 
     SERVICE_TYPE = "urn:schemas-upnp-org:service:AVTransport:1"

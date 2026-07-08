@@ -17,6 +17,10 @@ export enum Category {
 
 export type ParamType = 'ip' | 'port' | 'can_interface' | 'bluetooth_mac' | 'url' | 'frequency' | 'baud_rate' | 'target_mac' | 'interface' | 'usb_mount_point' | 'usb_adb_serial' | 'attacker_ip';
 
+export type ValidationTier = 'RECON' | 'PASSIVE' | 'AUTHENTICATED_CONFIG' | 'ACTIVE_PROBE' | 'REMOTE_ACTIVE' | 'LAB_EXP' | 'AUTO_EXP';
+export type ExecutionSafety = 'safe' | 'low_impact' | 'intrusive' | 'destructive_lab_only';
+export type ExpCapability = 'none' | 'supported_harness' | 'operator_supplied' | 'native_verified';
+
 export interface POC {
   id: string;
   name: string;
@@ -38,6 +42,15 @@ export interface POC {
     cloud_only: boolean;
   };
   manualConfirmationRequired?: boolean;
+  requiresDisruptiveApproval?: boolean;
+  requiresPostExecutionReview?: boolean;
+  validationTier?: ValidationTier;
+  detectionConfidence?: number;
+  executionSafety?: ExecutionSafety;
+  evidenceBasis?: string[];
+  expCapability?: ExpCapability;
+  professionalGrade?: string;
+  notNativeExp?: boolean;
   // Function to generate the actual executable script based on user input
   scriptGenerator?: (params: Record<string, string>) => string;
   targetOS?: ('qnx' | 'android' | 'linux' | 'all')[]; // Used for intelligent OS skipping
@@ -59,7 +72,13 @@ export interface ScanResult {
   severity?: string;
   description?: string;
   requiresHumanReview?: boolean;
+  requiresDisruptiveApproval?: boolean;
+  requiresPostExecutionReview?: boolean;
   verificationStatus?: string;
+  validationTier?: ValidationTier;
+  detectionConfidence?: number;
+  executionSafety?: ExecutionSafety;
+  expCapability?: ExpCapability;
   manualReview?: {
     state: string;
     verdict?: string;

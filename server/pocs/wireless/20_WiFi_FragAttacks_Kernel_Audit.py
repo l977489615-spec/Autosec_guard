@@ -1,5 +1,5 @@
 """
-PoC Name: Wi-Fi FragAttacks Kernel Exposure Audit
+PoC Name: Wi-Fi FragAttacks Kernel Active Validation
 CVE: CVE-2020-24586, CVE-2020-24587, CVE-2020-24588
 Component: IEEE 802.11 fragmentation and aggregation handling
 Category: Wireless

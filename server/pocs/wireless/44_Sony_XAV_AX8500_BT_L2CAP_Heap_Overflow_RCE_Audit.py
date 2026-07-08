@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Safe CVE exposure audit PoC for connected-vehicle vulnerability intelligence."""
+"""Active validation PoC for connected-vehicle vulnerability scanning."""
 from __future__ import annotations
 
 from active_validation_core import run_active_validation
@@ -71,7 +71,7 @@ VULN = {
 
 class Poc44CVE20255477RCEAuditPlugin(IVIVulnerabilityPlugin):
     meta_display_id = 'XLSX-024'
-    meta_poc_name = 'CVE-2025-5477 Bluetooth L2CAP堆溢出/RCE Exposure Audit'
+    meta_poc_name = 'CVE-2025-5477 Bluetooth L2CAP堆溢出/RCE Active Validation'
     meta_cve_id = 'CVE-2025-5477'
     meta_severity = 'High'
     meta_protocol = 'bluetooth'

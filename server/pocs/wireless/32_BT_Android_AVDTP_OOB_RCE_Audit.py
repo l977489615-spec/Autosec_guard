@@ -41,7 +41,7 @@ class BTAndroidAVDTPOOBRCEAuditPlugin(IVIVulnerabilityPlugin):
         self.results.update({
             "vulnerable": vulnerable,
             "cve_id": self.meta_cve_id,
-            "description": "Android AVDTP out-of-bounds RCE exposure audit",
+            "description": "Android AVDTP out-of-bounds RCE active validation",
             "evidence": evidence,
         })
         return self.results

@@ -53,11 +53,61 @@ from local_requirements import (
 from poc_security import extract_poc_security_profile, should_require_disruptive_approval
 from poc_execution_service import normalize_poc_params, resolve_target_label
 from auth_service import resolve_user_from_bearer
+from audit_exp_readiness import PROFESSIONAL_TIER_ORDER, audit_file
 
 
 def _list_local_usb_adb_serials(timeout: int = 4) -> List[str]:
     from adb_usb_utils import list_local_usb_adb_serials
     return list_local_usb_adb_serials(timeout=timeout)
+
+
+def _professional_policy_for_poc(poc_path: str, rel_path: str, profile: dict | None = None, params: dict | None = None) -> dict:
+    profile = profile or {}
+    params = params or {}
+    finding = None
+    try:
+        path_obj = Path(poc_path)
+        if path_obj.exists():
+            finding = audit_file(path_obj)
+    except Exception as exc:
+        logger.warning(f"Failed to compute professional tier for {rel_path}: {exc}")
+
+    validation_tier = getattr(finding, "validation_tier", "PASSIVE") if finding else "PASSIVE"
+    exp_capability = getattr(finding, "exp_capability", "none") if finding else "none"
+    execution_safety = getattr(finding, "execution_safety", "safe") if finding else "safe"
+    requires_disruptive_approval = _should_require_disruptive_approval(profile, params)
+    requires_post_execution_review = poc_requires_human_review(rel_path, profile)
+    return {
+        "grade": getattr(finding, "grade", ""),
+        "professional_grade": getattr(finding, "professional_grade", f"{validation_tier}:{exp_capability}"),
+        "validation_tier": validation_tier,
+        "detection_confidence": getattr(finding, "detection_confidence", 0),
+        "execution_safety": execution_safety,
+        "evidence_basis": getattr(finding, "evidence_basis", []),
+        "exp_capability": exp_capability,
+        "not_native_exp": bool(getattr(finding, "not_native_exp", exp_capability != "native_verified")),
+        "requires_disruptive_approval": bool(requires_disruptive_approval),
+        "requires_post_execution_review": bool(requires_post_execution_review),
+        "manual_confirmation_required": bool(requires_disruptive_approval or requires_post_execution_review),
+    }
+
+
+def _tier_allowed_by_policy(tier: str, params: dict) -> bool:
+    tier = str(tier or "PASSIVE").upper()
+    max_tier = str(params.get("max_tier") or params.get("scan_max_tier") or "").upper()
+    min_tier = str(params.get("min_tier") or params.get("scan_min_tier") or "").upper()
+    allow_lab = params.get("allow_lab_exp") in (True, "true", "True", "1", 1)
+    allow_auto = params.get("allow_auto_exp") in (True, "true", "True", "1", 1)
+    value = PROFESSIONAL_TIER_ORDER.get(tier, PROFESSIONAL_TIER_ORDER["PASSIVE"])
+    if min_tier and value < PROFESSIONAL_TIER_ORDER.get(min_tier, 0):
+        return False
+    if max_tier and value > PROFESSIONAL_TIER_ORDER.get(max_tier, max(PROFESSIONAL_TIER_ORDER.values())):
+        if tier == "LAB_EXP" and allow_lab:
+            return True
+        if tier == "AUTO_EXP" and allow_auto:
+            return True
+        return False
+    return True
 
 # This server must be running on the device connected to the vehicle (e.g., Raspberry Pi/Laptop)
 # Run with: python3 server.py
@@ -1334,10 +1384,7 @@ def list_pocs():
         if 'is_disruptive' not in poc_info:
              poc_info['is_disruptive'] = False
         profile = _extract_poc_security_profile(filepath)
-        poc_info["manual_confirmation_required"] = (
-            _should_require_disruptive_approval(profile, {})
-            or poc_requires_human_review(normalized, profile)
-        )
+        poc_info.update(_professional_policy_for_poc(filepath, normalized, profile, {}))
         poc_info.update(classify_poc_execution_mode(POCS_DIR, filepath, profile, normalized))
         pocs.append(poc_info)
 
@@ -1434,7 +1481,17 @@ def run_poc():
     try:
         target = resolve_target_label(params)
         security_profile = _extract_poc_security_profile(poc_path)
-        requires_approval = _should_require_disruptive_approval(security_profile, params)
+        professional_policy = _professional_policy_for_poc(poc_path, poc_filename, security_profile, params)
+        if not _tier_allowed_by_policy(professional_policy.get("validation_tier"), params):
+            return jsonify({
+                "success": False,
+                "error": "PoC validation tier is blocked by the current scan policy.",
+                "requires_policy_override": True,
+                "trace_id": trace_id,
+                "security_profile": security_profile,
+                "professional_policy": professional_policy,
+            }), 403
+        requires_approval = professional_policy["requires_disruptive_approval"]
 
         # 记录所有高危/强干扰执行
         if requires_approval:
@@ -1458,8 +1515,10 @@ def run_poc():
                 "success": False,
                 "error": "High-risk PoC execution requires explicit approval.",
                 "requires_approval": True,
+                "requires_disruptive_approval": True,
                 "trace_id": trace_id,
                 "security_profile": security_profile,
+                "professional_policy": professional_policy,
             }), 403
     except Exception as e:
         logger.error(f"Failed to record audit log: {e}")
@@ -1495,9 +1554,22 @@ def run_poc():
             "poc_id": poc_filename,
             "trace_id": trace_id,
             "security_profile": security_profile,
+            "professional_policy": _professional_policy_for_poc(poc_path, poc_filename, security_profile, params),
             "sandbox_profile": sandbox_profile,
             "worker_mode": worker_mode,
         }
+        response.update({
+            key: response["professional_policy"].get(key)
+            for key in (
+                "validation_tier",
+                "detection_confidence",
+                "execution_safety",
+                "exp_capability",
+                "requires_disruptive_approval",
+                "requires_post_execution_review",
+                "manual_confirmation_required",
+            )
+        })
         response = apply_manual_review_state(
             response,
             poc_filename=poc_filename,
@@ -1577,7 +1649,17 @@ def run_poc_stream():
         User,
     ) if auth_header else None
     security_profile = _extract_poc_security_profile(poc_path)
-    if _should_require_disruptive_approval(security_profile, params):
+    professional_policy = _professional_policy_for_poc(poc_path, poc_filename, security_profile, params)
+    if not _tier_allowed_by_policy(professional_policy.get("validation_tier"), params):
+        return jsonify({
+            "success": False,
+            "error": "PoC validation tier is blocked by the current scan policy.",
+            "requires_policy_override": True,
+            "trace_id": trace_id,
+            "security_profile": security_profile,
+            "professional_policy": professional_policy,
+        }), 403
+    if professional_policy["requires_disruptive_approval"]:
         try:
             audit = AuditLog(
                 user_id=None,
@@ -1601,8 +1683,10 @@ def run_poc_stream():
             "success": False,
             "error": "High-risk PoC execution requires explicit approval.",
             "requires_approval": True,
+            "requires_disruptive_approval": True,
             "trace_id": trace_id,
             "security_profile": security_profile,
+            "professional_policy": professional_policy,
         }), 403
 
     # Audit Logging
@@ -1656,9 +1740,27 @@ def run_poc_stream():
                     "errors": event.get("errors", []),
                     "trace_id": trace_id,
                     "security_profile": event.get("security_profile", security_profile),
+                    "professional_policy": _professional_policy_for_poc(
+                        poc_path,
+                        poc_filename,
+                        event.get("security_profile", security_profile),
+                        params,
+                    ),
                     "sandbox_profile": event.get("sandbox_profile", plan.sandbox_profile),
                     "worker_mode": event.get("worker_mode", plan.worker_mode),
                 }
+                result.update({
+                    key: result["professional_policy"].get(key)
+                    for key in (
+                        "validation_tier",
+                        "detection_confidence",
+                        "execution_safety",
+                        "exp_capability",
+                        "requires_disruptive_approval",
+                        "requires_post_execution_review",
+                        "manual_confirmation_required",
+                    )
+                })
                 result = apply_manual_review_state(
                     result,
                     poc_filename=poc_filename,
@@ -1800,6 +1902,124 @@ def poc_manual_verdict():
         logger.error(f"Failed to persist manual verdict: {exc}")
 
     return jsonify(response)
+
+
+@app.route('/api/poc_manual_verdict_batch', methods=['POST', 'OPTIONS'])
+@cross_origin()
+def poc_manual_verdict_batch():
+    """Record one operator verdict for multiple PoCs in the same scan session."""
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+
+    current_user = resolve_user_from_bearer(
+        request.headers.get('Authorization'),
+        app.config['SECRET_KEY'],
+        User,
+    )
+    data = request.json or {}
+    items = data.get("items") or []
+    if not isinstance(items, list) or not items:
+        return jsonify({"success": False, "error": "items must be a non-empty list."}), 400
+
+    results = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        payload = {**data, **item}
+        verdict = str(payload.get("verdict") or "").strip()
+        if verdict not in {"confirmed_vulnerable", "confirmed_not_vulnerable", "inconclusive", "needs_retest"}:
+            results.append({
+                "success": False,
+                "trace_id": str(payload.get("trace_id") or ""),
+                "poc_id": str(payload.get("poc_id") or payload.get("poc_filename") or ""),
+                "error": "Invalid manual verdict.",
+            })
+            continue
+
+        vulnerable = None
+        verification_status = f"manual_{verdict}"
+        if verdict == "confirmed_vulnerable":
+            vulnerable = True
+            verification_status = "manual_confirmed_vulnerable"
+        elif verdict == "confirmed_not_vulnerable":
+            vulnerable = False
+            verification_status = "manual_confirmed_not_vulnerable"
+
+        results.append({
+            "success": True,
+            "trace_id": str(payload.get("trace_id") or uuid.uuid4().hex),
+            "session_id": str(payload.get("session_id") or "manual"),
+            "poc_id": str(payload.get("poc_id") or payload.get("poc_filename") or ""),
+            "vulnerable": vulnerable,
+            "requires_human_review": True,
+            "verification_status": verification_status,
+            "manual_review": {
+                "state": "completed",
+                "verdict": verdict,
+                "operator_note": str(payload.get("operator_note") or ""),
+                "evidence_file": str(payload.get("evidence_file") or ""),
+                "reviewed_at": _get_utc_now().strftime('%Y-%m-%dT%H:%M:%SZ'),
+            },
+        })
+
+    try:
+        audit = AuditLog(
+            user_id=current_user.id if current_user else None,
+            action='manual_poc_verdict_batch',
+            target=str(data.get("target") or data.get("target_ip") or ""),
+            details_json=json.dumps({"count": len(results), "results": results}, ensure_ascii=False),
+            ip_address=request.remote_addr,
+        )
+        db.session.add(audit)
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        logger.error(f"Failed to persist batch manual verdict: {exc}")
+
+    return jsonify({
+        "success": all(item.get("success") for item in results),
+        "count": len(results),
+        "results": results,
+    })
+
+
+@app.route('/api/scan_approval_policy', methods=['POST', 'OPTIONS'])
+@cross_origin()
+def scan_approval_policy():
+    """Record an operator-approved scan policy for auditability."""
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+
+    current_user = resolve_user_from_bearer(
+        request.headers.get('Authorization'),
+        app.config['SECRET_KEY'],
+        User,
+    )
+    data = request.json or {}
+    policy = {
+        "session_id": str(data.get("session_id") or "manual"),
+        "min_tier": str(data.get("min_tier") or "RECON").upper(),
+        "max_tier": str(data.get("max_tier") or "ACTIVE_PROBE").upper(),
+        "allow_lab_exp": bool(data.get("allow_lab_exp")),
+        "allow_auto_exp": bool(data.get("allow_auto_exp")),
+        "allow_disruptive": bool(data.get("allow_disruptive")),
+        "operator_confirmed_at": _get_utc_now().strftime('%Y-%m-%dT%H:%M:%SZ'),
+    }
+    try:
+        audit = AuditLog(
+            user_id=current_user.id if current_user else None,
+            action='scan_approval_policy',
+            target=str(data.get("target") or data.get("target_ip") or ""),
+            details_json=json.dumps(policy, ensure_ascii=False),
+            ip_address=request.remote_addr,
+        )
+        db.session.add(audit)
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        logger.error(f"Failed to persist scan approval policy: {exc}")
+
+    return jsonify({"success": True, "policy": policy})
 
 
 @app.route('/api/save_session', methods=['POST', 'OPTIONS'])

@@ -1,5 +1,5 @@
 """
-PoC Name: Wi-Fi KR00K Chipset Exposure Audit
+PoC Name: Wi-Fi KR00K Chipset Active Validation
 CVE: CVE-2019-15126
 Component: Broadcom/Cypress Wi-Fi firmware
 Category: Wireless
@@ -89,7 +89,7 @@ class WiFiKR00KChipsetAuditPlugin(IVIVulnerabilityPlugin):
         self.results.update({
             "vulnerable": vulnerable,
             "cve_id": self.meta_cve_id,
-            "description": "KR00K affected chipset/firmware exposure audit",
+            "description": "KR00K affected chipset/firmware active validation",
             "evidence": evidence,
         })
         return self.results

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Safe exposure audit for LiteLLM API key authorization boundary risk."""
+"""Safe active validation for LiteLLM API key authorization boundary risk."""
 from __future__ import annotations
 
 from active_validation_core import run_active_validation
@@ -16,7 +16,7 @@ VULN = {
     "type": "权限提升",
     "summary": "LiteLLM 低权限 internal_user 可通过 API key 路由授权边界缺陷提升为 proxy_admin；车联网 AI 助手、研发运维平台和云端代理服务需排查。",
     "source_description": "poc-lab describes an authorization chain where /key/generate accepts over-broad allowed_routes and /user/update can be used to elevate privileges.",
-    "poc_status": "poc-lab公开复现；本插件仅做安全暴露审计",
+    "poc_status": "poc-lab公开复现；本插件支持主动验证；破坏性 payload 需 allow_disruptive 授权",
     "research_value": "车联网安全平台、数据分析平台和研发运维环境可能部署 LiteLLM 作为模型代理，权限提升会影响密钥与管理面。",
     "source_url": "https://github.com/Unclecheng-li/poc-lab/tree/main/CVE-2026-47101%20LiteLLM",
     "references": ["https://github.com/Unclecheng-li/poc-lab"],
@@ -31,6 +31,7 @@ VULN = {
         "/health",
         "/version",
         "/key/generate",
+        "/user/update",
     ],
     "signature_tokens": [
         "CVE-2026-47101", "LiteLLM", "litellm", "1.83.14", "1.82.6",

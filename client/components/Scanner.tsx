@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { flushSync, createPortal } from 'react-dom';
-import { ScanSession, ScanLog, ScanResult, Severity, POC, Category, ConnectionParams } from '../types';
+import { ScanSession, ScanLog, ScanResult, Severity, POC, Category, ConnectionParams, ValidationTier } from '../types';
 import ScanLogs from './ScanLogs';
 import { generateSecurityReport } from '../services/LLMService';
 import PocDetailModal from './PocDetailModal';
 import ManualTestModal from './ManualTestModal';
-import { checkBackendHealth, executePocScript, setBackendUrl, getBackendUrl, fingerprintOS, runPocPlugin, saveScanSession, submitPocManualVerdict } from '../services/api';
+import { checkBackendHealth, executePocScript, setBackendUrl, getBackendUrl, fingerprintOS, runPocPlugin, saveScanSession, submitPocManualVerdict, recordScanApprovalPolicy } from '../services/api';
 import { Play, RotateCw, FileText, AlertTriangle, ShieldCheck, Wifi, Cable, Bluetooth, Power, Crosshair, List, Server, ArrowRight, Settings, Save, WifiOff, Link, CheckCircle, Radio, Activity, Download, ChevronRight, Bot, Usb } from 'lucide-react';
 import AgentScan from './AgentScan';
 import { AgentScanErrorBoundary } from './AgentScanErrorBoundary';
@@ -69,6 +69,25 @@ type DisruptiveApprovalState = {
 type DisruptiveApprovalDecision = 'approved' | 'approved_all' | 'skipped' | 'timeout';
 
 type ManualVerdict = 'confirmed_vulnerable' | 'confirmed_not_vulnerable' | 'inconclusive' | 'needs_retest';
+
+const TIER_ORDER: Record<ValidationTier, number> = {
+  RECON: 0,
+  PASSIVE: 1,
+  AUTHENTICATED_CONFIG: 2,
+  ACTIVE_PROBE: 3,
+  REMOTE_ACTIVE: 4,
+  LAB_EXP: 5,
+  AUTO_EXP: 6,
+};
+
+const DEFAULT_BATCH_MAX_TIER: ValidationTier = 'ACTIVE_PROBE';
+
+const isTierAllowedForBatch = (poc: POC, allowLabExp: boolean, allowAutoExp: boolean) => {
+  const tier = (poc.validationTier || 'PASSIVE') as ValidationTier;
+  if (tier === 'LAB_EXP') return allowLabExp;
+  if (tier === 'AUTO_EXP') return allowAutoExp;
+  return (TIER_ORDER[tier] ?? TIER_ORDER.PASSIVE) <= TIER_ORDER[DEFAULT_BATCH_MAX_TIER];
+};
 
 type ManualVerdictState = {
   poc: POC;
@@ -139,7 +158,14 @@ const Scanner: React.FC<ScannerProps> = ({
   const [filterCategory, setFilterCategory] = useState<string>('All');
   const [manualSearch, setManualSearch] = useState('');
   const [disruptiveApproval, setDisruptiveApproval] = useState<DisruptiveApprovalState>(null);
+  const [allowLabExpBatch, setAllowLabExpBatch] = useState(false);
+  const [allowAutoExpBatch, setAllowAutoExpBatch] = useState(false);
   const autoApproveDisruptiveForRunRef = React.useRef(false);
+  const autoManualVerdictForRunRef = React.useRef<{
+    verdict: ManualVerdict;
+    note: string;
+    evidenceFile: string;
+  } | null>(null);
   const pocRuntimeMetadataRef = React.useRef<Record<string, Partial<POC>>>({});
   const approvalResolverRef = React.useRef<((decision: DisruptiveApprovalDecision) => void) | null>(null);
   const manualVerdictResolverRef = React.useRef<((result: any) => void) | null>(null);
@@ -191,6 +217,15 @@ const Scanner: React.FC<ScannerProps> = ({
         recommendedExecutionPlane: poc.recommendedExecutionPlane,
         executionRequirements: poc.executionRequirements,
         manualConfirmationRequired: poc.manualConfirmationRequired,
+        requiresDisruptiveApproval: poc.requiresDisruptiveApproval,
+        requiresPostExecutionReview: poc.requiresPostExecutionReview,
+        validationTier: poc.validationTier,
+        detectionConfidence: poc.detectionConfidence,
+        executionSafety: poc.executionSafety,
+        evidenceBasis: poc.evidenceBasis,
+        expCapability: poc.expCapability,
+        professionalGrade: poc.professionalGrade,
+        notNativeExp: poc.notNativeExp,
       };
     });
 
@@ -277,9 +312,16 @@ const Scanner: React.FC<ScannerProps> = ({
     });
   };
 
-  const resolveManualVerdict = async (verdict: ManualVerdict) => {
+  const resolveManualVerdict = async (verdict: ManualVerdict, applyToRest = false) => {
     if (!manualVerdictState) return;
     const current = manualVerdictState;
+    if (applyToRest) {
+      autoManualVerdictForRunRef.current = {
+        verdict,
+        note: current.note,
+        evidenceFile: current.evidenceFile,
+      };
+    }
     const submitted = await submitPocManualVerdict({
       trace_id: current.result?.trace_id,
       session_id: session.id,
@@ -348,8 +390,11 @@ const Scanner: React.FC<ScannerProps> = ({
       aiReport: null
     }));
     autoApproveDisruptiveForRunRef.current = false;
+    autoManualVerdictForRunRef.current = null;
     const refreshedCatalog = await fetchPocs();
-    const activePocs = refreshedCatalog.length ? refreshedCatalog : pocCatalogRef.current;
+    const catalogForRun = refreshedCatalog.length ? refreshedCatalog : pocCatalogRef.current;
+    const activePocs = catalogForRun.filter((poc) => isTierAllowedForBatch(poc, allowLabExpBatch, allowAutoExpBatch));
+    const policySkippedCount = catalogForRun.length - activePocs.length;
     const runtimeMetadata = pocRuntimeMetadataRef.current;
 
     if (!activePocs.length) {
@@ -359,7 +404,22 @@ const Scanner: React.FC<ScannerProps> = ({
     }
 
     addLog(`Starting batch execution of ${activePocs.length} modules...`, 'info');
+    addLog(`Policy: max tier ${DEFAULT_BATCH_MAX_TIER}, LAB_EXP=${allowLabExpBatch ? 'allowed' : 'blocked'}, AUTO_EXP=${allowAutoExpBatch ? 'allowed' : 'blocked'}`, 'info');
+    if (policySkippedCount > 0) {
+      addLog(`Policy skipped ${policySkippedCount} LAB/AUTO exploit modules. Enable explicit lab/auto authorization to include them.`, 'warning');
+    }
     addLog(`Engine: ${engineUrl} | Target: ${session.targetName}`, 'info');
+    recordScanApprovalPolicy({
+      session_id: newSessionId,
+      target_ip: session.connection.ip,
+      min_tier: 'RECON',
+      max_tier: DEFAULT_BATCH_MAX_TIER,
+      allow_lab_exp: allowLabExpBatch,
+      allow_auto_exp: allowAutoExpBatch,
+      allow_disruptive: allowLabExpBatch || allowAutoExpBatch,
+    }, token, engineUrl).then((res) => {
+      if (!res.success) addLog(`Warning: failed to persist scan policy: ${res.error}`, 'warning');
+    });
 
     let detectedOS = 'unknown';
     if (session.connection.ip) {
@@ -408,37 +468,47 @@ const Scanner: React.FC<ScannerProps> = ({
 
       const startTime = Date.now();
       const runtimeMeta = runtimeMetadata[poc.id] || pocRuntimeMetadataRef.current[poc.id] || {};
-      const requiresManualConfirmation = Boolean(runtimeMeta.manualConfirmationRequired);
-      const shouldAllowDisruptive = requiresManualConfirmation || autoApproveDisruptiveForRunRef.current;
+      const requiresDisruptiveApproval = Boolean(runtimeMeta.requiresDisruptiveApproval);
+      const requiresPostExecutionReview = Boolean(runtimeMeta.requiresPostExecutionReview);
+      const shouldAllowDisruptive = autoApproveDisruptiveForRunRef.current;
       const executionParams = buildExecutionParams(
         session.connection,
-        shouldAllowDisruptive ? { allow_disruptive: true } : {},
+        {
+          max_tier: DEFAULT_BATCH_MAX_TIER,
+          allow_lab_exp: allowLabExpBatch,
+          allow_auto_exp: allowAutoExpBatch,
+          ...(shouldAllowDisruptive ? { allow_disruptive: true } : {}),
+        },
       );
 
-      if (requiresManualConfirmation && autoApproveDisruptiveForRunRef.current) {
+      if (requiresDisruptiveApproval && autoApproveDisruptiveForRunRef.current) {
         addLog(`${progress} ⇢ ${poc.name} → Auto-approved by current scan policy.`, 'warning');
-      } else if (requiresManualConfirmation) {
-        addLog(`${progress} ! ${poc.name} → High-risk PoC requires confirmation. Waiting up to 60s...`, 'warning');
+      } else if (requiresDisruptiveApproval) {
+        addLog(`${progress} ! ${poc.name} → High-risk PoC requires explicit confirmation. Waiting up to 60s...`, 'warning');
         const approvalDecision = await requestDisruptiveApproval(poc, progress);
-        if (approvalDecision === 'skipped') {
+        if (approvalDecision === 'skipped' || approvalDecision === 'timeout') {
           addLog(`${progress} ⏭ ${poc.name} — Skipped by user`, 'warning');
           results.push({
             pocId: poc.id,
             vulnerable: false,
-            details: 'Skipped by user during disruptive PoC confirmation.',
+            details: approvalDecision === 'timeout'
+              ? 'Skipped because disruptive execution was not explicitly confirmed before timeout.'
+              : 'Skipped by user during disruptive PoC confirmation.',
             detectedAt: new Date().toISOString(),
             elapsedSeconds: 0,
           });
           continue;
         }
-        if (approvalDecision === 'timeout') {
-          addLog(`${progress} ! ${poc.name} → No confirmation within 60s. Auto-approving and continuing.`, 'warning');
-        } else if (approvalDecision === 'approved_all') {
+        if (approvalDecision === 'approved_all') {
           autoApproveDisruptiveForRunRef.current = true;
           addLog(`${progress} ⇢ ${poc.name} → User confirmed and enabled auto-approval for the rest of this scan.`, 'info');
         } else {
           addLog(`${progress} ⇢ ${poc.name} → User confirmed disruptive execution.`, 'info');
         }
+        executionParams.allow_disruptive = true;
+      }
+      if (requiresPostExecutionReview) {
+        addLog(`${progress} ⇢ ${poc.name} → Post-execution operator verdict will be required.`, 'warning');
       }
 
       if (runtimeMeta.executionRequirements?.requires_edge) {
@@ -453,7 +523,7 @@ const Scanner: React.FC<ScannerProps> = ({
         params.poc_id = poc.id;
         params.poc_name = poc.name;
 
-        const body = JSON.stringify({ filename: poc.pocFile, params, stream: true });
+        const body = JSON.stringify({ filename: poc.pocFile, params, stream: true, session_id: newSessionId });
 
         fetch(`${engineUrl}/api/run_poc_stream`, {
           method: 'POST',
@@ -530,8 +600,25 @@ const Scanner: React.FC<ScannerProps> = ({
 
       let resolvedResult = result;
       if (result.success && (result.requires_human_review || result.verification_status === 'pending_manual_review')) {
-        addLog(`${progress} ? ${poc.name} → Waiting for operator verdict (${elapsed}s)`, 'warning');
-        resolvedResult = await requestManualVerdict(poc, progress, result);
+        const autoManualVerdict = autoManualVerdictForRunRef.current;
+        if (autoManualVerdict) {
+          addLog(`${progress} ⇢ ${poc.name} → Applying batch operator verdict (${autoManualVerdict.verdict}).`, 'warning');
+          const submitted = await submitPocManualVerdict({
+            trace_id: result?.trace_id,
+            session_id: newSessionId,
+            poc_id: result?.poc_id || poc.pocFile || poc.id,
+            poc_name: poc.name,
+            target_ip: session.connection.ip,
+            bluetooth_mac: session.connection.bluetoothMac,
+            verdict: autoManualVerdict.verdict,
+            operator_note: autoManualVerdict.note,
+            evidence_file: autoManualVerdict.evidenceFile,
+          }, token, engineUrl);
+          resolvedResult = { ...result, ...submitted };
+        } else {
+          addLog(`${progress} ? ${poc.name} → Waiting for operator verdict (${elapsed}s)`, 'warning');
+          resolvedResult = await requestManualVerdict(poc, progress, result);
+        }
       }
 
       if (resolvedResult.success) {
@@ -803,8 +890,8 @@ const Scanner: React.FC<ScannerProps> = ({
           </div>
           <div className="space-y-4 px-6 py-5 text-sm text-gray-300">
             <p>{disruptiveApproval.progress} {disruptiveApproval.poc.name}</p>
-            <p>这个 PoC 被标记为高风险/破坏性操作。确认后将带 `allow_disruptive=true` 继续执行。</p>
-            <p>如果你在 {disruptiveApproval.secondsLeft}s 内没有操作，系统会自动继续本项扫描。</p>
+            <p>这个 PoC 被标记为高风险/破坏性操作。确认后才会带 `allow_disruptive=true` 继续执行。</p>
+            <p>如果你在 {disruptiveApproval.secondsLeft}s 内没有操作，系统会跳过本项，不会自动放行。</p>
           </div>
           <div className="flex items-center justify-end gap-3 border-t border-cyber-700 px-6 py-4">
             <button
@@ -877,6 +964,12 @@ const Scanner: React.FC<ScannerProps> = ({
             </button>
             <button onClick={() => resolveManualVerdict('needs_retest')} className="rounded-md border border-cyber-500 px-4 py-2 text-sm text-cyber-accent hover:bg-cyber-800">
               标记复测
+            </button>
+            <button onClick={() => resolveManualVerdict('confirmed_vulnerable', true)} className="rounded-md border border-red-500/70 px-4 py-2 text-xs text-red-200 hover:bg-red-900/30">
+              确认成功并应用剩余复核
+            </button>
+            <button onClick={() => resolveManualVerdict('confirmed_not_vulnerable', true)} className="rounded-md border border-emerald-500/70 px-4 py-2 text-xs text-emerald-200 hover:bg-emerald-900/30">
+              确认失败并应用剩余复核
             </button>
           </div>
         </div>
@@ -1093,6 +1186,38 @@ const Scanner: React.FC<ScannerProps> = ({
                         />
                       </div>
                     </div>
+                  </div>
+
+                  <div className="p-3 bg-cyber-900/70 border border-cyber-700 rounded space-y-3">
+                    <div className="flex items-start gap-2">
+                      <ShieldCheck size={14} className="mt-0.5 text-cyber-accent" />
+                      <div>
+                        <p className="text-xs text-cyber-300 uppercase font-bold">Professional Scan Policy</p>
+                        <p className="text-[11px] text-gray-400">
+                          Default batch ceiling: {DEFAULT_BATCH_MAX_TIER}. LAB_EXP / AUTO_EXP require explicit operator authorization.
+                        </p>
+                      </div>
+                    </div>
+                    <label className="flex items-center justify-between gap-3 text-xs text-gray-300">
+                      <span>Include authorized LAB_EXP modules</span>
+                      <input
+                        type="checkbox"
+                        checked={allowLabExpBatch}
+                        disabled={session.status === 'running'}
+                        onChange={(e) => setAllowLabExpBatch(e.target.checked)}
+                        className="h-4 w-4 accent-cyber-accent"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-xs text-gray-300">
+                      <span>Include AUTO_EXP modules</span>
+                      <input
+                        type="checkbox"
+                        checked={allowAutoExpBatch}
+                        disabled={session.status === 'running'}
+                        onChange={(e) => setAllowAutoExpBatch(e.target.checked)}
+                        className="h-4 w-4 accent-amber-400"
+                      />
+                    </label>
                   </div>
 
                   {!session.isConnected ? (

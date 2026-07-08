@@ -1,9 +1,9 @@
-"""Evidence-based advisory PoC helpers.
+"""Passive evidence helpers for IVI vulnerability PoCs.
 
-The generated CVE plugins in this repository are intentionally safe probes:
-they do not send exploit payloads. They validate exposure by correlating CVE
-metadata, affected-product records, software inventory, SBOM/configuration
-evidence, service banners, logs, and optional reachability checks.
+This module only scores inventory, SBOM, configuration, banner, log, and
+version evidence. Protocol probes, malformed inputs, and operator-authorized
+trigger payloads are handled by active_validation_core so the scanner can
+separate passive exposure evidence from observable exploit phenomena.
 """
 from __future__ import annotations
 

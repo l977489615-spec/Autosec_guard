@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Safe exposure audit for Nezha dashboard traversal and JWT secret leakage."""
+"""Safe active validation for Nezha dashboard traversal and JWT secret leakage."""
 from __future__ import annotations
 
 from active_validation_core import run_active_validation
@@ -16,7 +16,7 @@ VULN = {
     "type": "路径遍历/JWT伪造",
     "summary": "Nezha Monitoring Dashboard 路径前缀判断缺陷可能泄露 config.yaml 与 JWT 密钥，进而接管管理后台；车联网边缘节点与运维监控平台需排查。",
     "source_description": "poc-lab documents unauthenticated path traversal via /dashboard../data/config.yaml leading to jwt_secret_key leakage and administrator takeover.",
-    "poc_status": "poc-lab公开复现；本插件仅做安全暴露审计",
+    "poc_status": "poc-lab公开复现；本插件支持主动验证；破坏性 payload 需 allow_disruptive 授权",
     "research_value": "哪吒监控常用于服务器/边缘节点观测，若被用于车联网研发、云边协同或测试台架，属于高危管理面风险。",
     "source_url": "https://github.com/Unclecheng-li/poc-lab/tree/main/CVE-2026-53519%20Nezha%20Monitoring",
     "references": [

