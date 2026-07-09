@@ -5,7 +5,7 @@
 
 <p>
   <img src="https://img.shields.io/badge/Product-Edge%20Workstation-16c47f?style=flat-square" />
-  <img src="https://img.shields.io/badge/PoC-72-f59e0b?style=flat-square" />
+  <img src="https://img.shields.io/badge/PoC-317-f59e0b?style=flat-square" />
   <img src="https://img.shields.io/badge/Attack%20Surfaces-6-2563eb?style=flat-square" />
   <img src="https://img.shields.io/badge/UI-React%20%2B%20Vite-0ea5e9?style=flat-square" />
   <img src="https://img.shields.io/badge/API-Flask-64748b?style=flat-square" />
@@ -31,13 +31,14 @@
 
 因此，本项目现在按 **边缘端产品** 组织：
 
-- 🧪 **本机执行 72 个 PoC**，不依赖远端节点调度
+- 🧪 **本机执行 317 个 PoC**，不依赖远端节点调度
 - 🔌 **本机硬件能力检测**，展示 USB、CAN、PCAN、蓝牙、Wi-Fi、SDR 状态
-- 🛡️ **高风险 PoC 审批与后端强校验**
+- 🛡️ **高风险 PoC 审批与后端强校验**（破坏性操作须审批 token，一次性使用）
 - 🧱 **本机沙箱 Runner**，限制 CPU、内存、输出大小、文件句柄和访问目标
 - 📊 **本地历史记录、证据、攻击图、物理影响和报告**
-- 🤖 **可选 Agent Scan / MCP**，仍在本机服务内运行
-- 👤 **本地用户体系与用户级 AI 配置**
+- 🤖 **可选多 Agent Scan / MCP**，支持任意 OpenAI 兼容 LLM，仍在本机服务内运行
+- 👤 **本地用户体系、Bootstrap 管理员初始化与用户级 AI 配置**
+- 🔐 **运行时安全加固**：目标范围校验、AI Key 加密存储、PDF 导出 XSS 防护、可选强制 JWT
 
 ---
 
@@ -75,7 +76,9 @@ python3 server.py
 - Health Check: `http://127.0.0.1:5002/api/health`
 - Local Capability: `http://127.0.0.1:5002/api/local/capabilities`
 - SQLite: `server/autosec.db`
-- Log: `server/logs/autosec.log`
+- Log: `server/logs/autosec.log`（20MB × 5 轮转）
+
+启动时会自动执行 Alembic 数据库迁移（`flask-migrate`）。
 
 ### 3) 启动前端
 
@@ -101,17 +104,20 @@ Agent Scan 仍然是本机产品的一部分，只是需要额外启动本机 MC
 
 - MCP Server: `http://127.0.0.1:5003`
 
+在 `Profile` 页面配置任意 **OpenAI 兼容 API**（Base URL + Report / Fast / Strong 模型名 + API Key）。
+
 ---
 
 ## 🧭 First Run
 
-1. 注册并登录本地账号。
-2. 进入 `Local Runtime`，点击“刷新本机能力”。
-3. 检查 USB、CAN、PCAN、蓝牙、Wi-Fi、SDR 是否被识别。
-4. 进入 `Scan Engine`，填写目标 IP、蓝牙 MAC、CAN Interface、Wi-Fi Interface 或 RF Frequency。
-5. 执行 Manual Scan / Global Scan / Agent Scan。
-6. 高风险 PoC 会弹出确认，不会默认静默执行。
-7. 扫描完成后进入 `Scan History` 查看证据、报告和结构化结果。
+1. 首次打开登录页：空库时进入 **系统初始化**（`AUTOSEC_BOOTSTRAP_MODE=edge`），创建首管理员；企业部署可设 `cli_only` 并通过 `flask create-admin` 初始化。
+2. 登录后进入 `Profile`，配置 OpenAI 兼容 LLM（API Key 加密存服务端，前端不回传明文）。
+3. 进入 `Local Runtime`，点击“刷新本机能力”。
+4. 检查 USB、CAN、PCAN、蓝牙、Wi-Fi、SDR 是否被识别。
+5. 进入 `Scan Engine`，填写目标 IP、蓝牙 MAC、CAN Interface、Wi-Fi Interface 或 RF Frequency。
+6. 执行 Manual Scan / Global Scan / Agent Scan。
+7. 高风险 / 破坏性 PoC 会弹出确认，须审批 token 放行，不会默认静默执行。
+8. 扫描完成后进入 `Scan History` 查看证据、报告和结构化结果。
 
 ---
 
@@ -125,7 +131,7 @@ flowchart TD
     FE --> API[⚙️ Local Flask Engine]
     FE --> LR[🔌 Local Runtime Page]
 
-    API --> AUTH[🔐 Local User / JWT / AI Config]
+    API --> AUTH[🔐 JWT / Bootstrap / AI Config]
     API --> CAPP[🔍 Local Capability Probe]
     API --> ORCH[🧠 Scanner / Agent Orchestrator]
     API --> AUDIT[🧾 History / Artifacts / Audit]
@@ -149,6 +155,7 @@ flowchart TD
 - **本机就是执行面**：所有扫描动作默认在当前工作站执行。
 - **Local Runtime 只做本机能力检测**：不再作为远端 Edge 节点控制台。
 - **硬件类 PoC 不再排队到远端节点**：Global Scan 和 Manual Scan 会通过本机 Runner 执行。
+- **AI 与密钥本机托管**：LLM 调用走用户自持 Key，服务端 Fernet 加密存储，浏览器不持久化明文。
 
 ---
 
@@ -183,18 +190,24 @@ flowchart TD
 
 ## 🧩 PoC Matrix
 
-当前内置 `146` 个业务 PoC。标准分类目录采用类别内独立编号；原 `new/` 扩展 PoC 已按攻击面归入 `application/`、`advanced/`、`canbus/`、`wireless/` 等标准目录，并通过元数据映射参与统一编排。
+当前内置 `317` 个可执行 PoC 插件，覆盖 6 大攻击面。插件按 `server/pocs/<category>/` 组织，通过 `meta_display_id`、`meta_profiles` 和 `validation_tier` 参与统一编排。
 
-| Category | Count | ID Range | Focus | 本机依赖 |
-| --- | ---: | --- | --- | --- |
-| Reconnaissance | 8 | `reconnaissance/01-08` | 主机发现、端口扫描、服务枚举 | 网络可达 |
-| Network | 15 | `network/01-15` | USB ADB、有线/网络 ADB、SSH、FTP、MQTT、SOME/IP、未知服务动态探测等 | 网络 / USB |
-| CAN Bus | 15 | `canbus/01-10`, `canbus/poc36`, `canbus/poc134-137` | CAN、UDS、OBD、DoIP、日志重放、诊断访问 | CAN / PCAN / SocketCAN / 网络可达 |
-| Wireless | 35 | `wireless/01-34`, `wireless/poc43` | Wi-Fi、Bluetooth、QNX 无线面 | Wi-Fi / Bluetooth |
-| Application | 57 | `application/01-14`, `application/poc10-35`, `application/poc37-39`, `application/poc120-133`, `application/poc45` | 车机应用、AirPlay、CarPlay、USB、WebView、Manifest、组件库与源码/数据制品检查 | 网络 / USB / 人工辅助 / 静态制品 |
-| Advanced | 16 | `advanced/01-08`, `advanced/poc5-8`, `advanced/poc40-42`, `advanced/poc44` | OTA、RF、GPS、TPMS、V2X、固件、Android 系统加固与内核配置 | SDR / RF / USB / 台架 / ADB |
+| Category | Count | Focus | 本机依赖 |
+| --- | ---: | --- | --- |
+| Reconnaissance | 8 | 主机发现、端口扫描、服务枚举 | 网络可达 |
+| Network | 65 | USB ADB、有线/网络 ADB、SSH、FTP、MQTT、SOME/IP、公开 CVE 主动验证等 | 网络 / USB |
+| CAN Bus | 17 | CAN、UDS、OBD、DoIP、日志重放、诊断访问 | CAN / PCAN / SocketCAN / 网络可达 |
+| Wireless | 108 | Wi-Fi、Bluetooth、KRACK、FragAttacks、QNX 无线面 | Wi-Fi / Bluetooth |
+| Application | 76 | 车机应用、AirPlay、CarPlay、USB、WebView、Manifest、媒体解析与组件库检查 | 网络 / USB / 人工辅助 / 静态制品 |
+| Advanced | 43 | OTA、RF、GPS、TPMS、V2X、固件、内核 LPE、Android 系统加固 | SDR / RF / USB / 台架 / ADB |
 
-新增 PoC 时，按类别放入 `server/pocs/<category>/`，使用该类别下的下一个编号，例如 `network/16_New_Check.py` 或 `canbus/11_New_Check.py`。插件类应声明 `meta_display_id`（如 `POC-NET-016`）和 `meta_profiles`，然后运行：
+分层说明：
+
+- `ACTIVE_PROBE`：常规主动探测，默认可批量执行
+- `LAB_EXP` / `AUTO_EXP`：台架级实验 harness，须显式授权
+- 破坏性 PoC 须审批 token，客户端 `allow_disruptive` 不能单独绕过
+
+新增 PoC 时，按类别放入 `server/pocs/<category>/`，然后运行：
 
 ```bash
 python3 server/generate_poc_registry.py
@@ -206,16 +219,21 @@ python3 server/generate_poc_registry.py
 
 ## 🛡️ Safety Model
 
-车端 PoC 可能造成 DoS、复位、总线注入或目标异常，因此系统保留安全控制：
+车端 PoC 可能造成 DoS、复位、总线注入或目标异常，因此系统保留多层安全控制：
 
 - AST 提取 PoC 元数据和破坏等级
 - `is_disruptive` / `meta_destructive_level` 风险判断
-- 高风险 PoC 前端确认
-- 后端二次拦截
-- 本机沙箱进程执行
+- 破坏性 PoC 前端确认 + 后端二次拦截（审批 token 一次性、TTL 300s）
+- 本机沙箱进程执行（`start_new_session=True`）
 - CPU / 内存 / 输出 / 文件句柄限制
-- 网络访问白名单默认绑定目标地址
-- 执行日志、错误、证据和 trace_id 结构化保存
+- 网络访问白名单默认绑定目标地址；无 `target_ip` 时拒绝出站
+- `run_poc` / `fingerprint` / `agent-scan` 目标范围校验
+- Weaponize Agent 生成代码仅写入 `/tmp/autosec_sandbox/`，禁止覆盖仓库 PoC
+- Agent 默认 `allow_disruptive=false`；人工复核须操作员在 UI 确认，不自动伪造结论
+- 并发限制：`AUTOSEC_MAX_CONCURRENT_POCS`（默认 5）
+- 执行日志、错误脱敏、证据和 trace_id 结构化保存
+
+企业部署加固清单见 [`SECURITY.md`](SECURITY.md)。
 
 ---
 
@@ -232,12 +250,16 @@ python3 server/generate_poc_registry.py
 │   │   ├── LocalRuntime.tsx       # 本机能力与本机 PoC 快速验证
 │   │   ├── PocDatabase.tsx
 │   │   ├── ScanHistory.tsx
-│   │   ├── AuthPage.tsx
-│   │   └── Profile.tsx
+│   │   ├── AuthPage.tsx           # 登录 / 系统初始化
+│   │   └── Profile.tsx            # 用户与 OpenAI 兼容 AI 配置
+│   ├── utils/security.ts          # XSS 转义 / localStorage 脱敏
 │   ├── services/api.ts
 │   └── package.json
 ├── server/
 │   ├── server.py                  # 本机 Flask 检测引擎
+│   ├── config.py
+│   ├── security_utils.py          # 路径穿越 / 目标范围校验
+│   ├── agent_execution_policy.py  # Agent 风险分级与 scope token
 │   ├── local_capability_probe.py  # 本机硬件能力探测
 │   ├── poc_security.py            # PoC 安全画像
 │   ├── poc_worker.py              # 本机 PoC Worker
@@ -245,10 +267,13 @@ python3 server/generate_poc_registry.py
 │   ├── assessment_engine.py
 │   ├── agent_orchestrator.py
 │   ├── mcp_server.py
+│   ├── migrations/                # Alembic 数据库迁移
 │   ├── pocs/
 │   └── benchmarks/
 ├── assets/
 ├── docs/
+│   └── nginx-tls.conf               # 生产 TLS 反向代理参考
+├── SECURITY.md
 ├── .env.example
 └── README.md
 ```
@@ -257,23 +282,35 @@ python3 server/generate_poc_registry.py
 
 ## 🔧 Configuration
 
-`.env.example` 当前按本地边缘端工作站配置：
+`.env.example` 当前按本地边缘端工作站配置，关键项如下：
 
 ```env
 AUTOSEC_SECRET_KEY=replace_with_a_long_random_secret
 AUTOSEC_DB_URI=sqlite:///server/autosec.db
 AUTOSEC_API=http://localhost:5002
 MCP_SERVER=http://localhost:5003
-AUTOSEC_HOST=0.0.0.0
+AUTOSEC_HOST=127.0.0.1
 AUTOSEC_PORT=5002
 AUTOSEC_DEBUG=false
+
+# 安全强化
+AUTOSEC_REQUIRE_AUTH=false
+AUTOSEC_CORS_ORIGINS=
+AUTOSEC_MAX_CONCURRENT_POCS=5
+
+# Bootstrap 管理员
+AUTOSEC_BOOTSTRAP_MODE=edge          # edge | cli_only
+# AUTOSEC_BOOTSTRAP_TOKEN=             # 可选防抢注
+# AUTOSEC_ALLOW_OPEN_REGISTRATION=false
 ```
 
 说明：
 
-- `AUTOSEC_API` 仍用于本机 Agent / MCP 调用主 API。
-- `MCP_SERVER` 仍用于本机 Agent Scan。
-- 旧的远端 Edge Agent / task queue 路径已移除，当前产品只保留本地工作站执行面。
+- `AUTOSEC_HOST=127.0.0.1` 为默认最安全绑定；局域网共享时改为 `0.0.0.0` 并开启 `AUTOSEC_REQUIRE_AUTH=true`。
+- `AUTOSEC_API` 用于本机 Agent / MCP 调用主 API。
+- `MCP_SERVER` 用于本机 Agent Scan。
+- 企业部署推荐 `AUTOSEC_BOOTSTRAP_MODE=cli_only` + `flask create-admin` + Nginx TLS（见 `docs/nginx-tls.conf`）。
+- AI 配置在 Profile 页面填写，支持任意 OpenAI 兼容服务商。
 
 ---
 
@@ -384,6 +421,16 @@ CI 会执行：
 
 ## 🔌 API Overview
 
+### 认证与用户
+
+- `GET /api/auth/status`
+- `POST /api/register`
+- `POST /api/login`
+- `GET /api/profile`
+- `PUT /api/profile`
+- `GET /api/admin/users`
+- `POST /api/admin/users`
+
 ### 本地运行时
 
 - `GET /api/health`
@@ -393,10 +440,14 @@ CI 会执行：
 
 - `GET /api/list_pocs`
 - `GET /api/poc-registry`
+- `GET /api/auto_discovery`
 - `POST /api/fingerprint`
 - `POST /api/run_poc`
 - `POST /api/run_poc_stream`
 - `POST /api/execute`
+- `POST /api/poc_manual_verdict`
+- `POST /api/poc_manual_verdict_batch`
+- `POST /api/scan_approval_policy`
 
 ### 报告与评估
 
@@ -443,25 +494,44 @@ python3 validate_benchmark_suite.py
 python3 run_benchmark_suite.py --strict
 ```
 
+企业首管理员 CLI 初始化：
+
+```bash
+cd server
+source .venv/bin/activate
+export FLASK_APP=server.py
+flask create-admin --username admin
+```
+
 ---
 
 ## ❓ FAQ
 
-### 1) 产品形态是什么吗？
+### 1) 产品形态是什么？
 
 当前主产品路径是本地边缘端工作站，默认 UI 和扫描流程只依赖本机执行引擎。
 
-### 2) 为什么硬件能力没识别到？
+### 2) 首次部署如何创建管理员？
+
+- 默认（`AUTOSEC_BOOTSTRAP_MODE=edge`）：空库时 Web 登录页显示「系统初始化」。
+- 企业模式（`cli_only`）：执行 `flask create-admin`，禁止 Web 自助创建首管理员。
+- 网络暴露时建议设置 `AUTOSEC_BOOTSTRAP_TOKEN` 防抢注。
+
+### 3) 支持哪些 AI 模型？
+
+任意 **OpenAI 兼容 API**（OpenAI、Azure OpenAI、DeepSeek、通义千问等）。在 Profile 填写 Base URL 和 Report / Fast / Strong 模型名即可，API Key 加密存服务端。
+
+### 4) 为什么硬件能力没识别到？
 
 请检查本机驱动和权限。例如 Linux 下需要 SocketCAN / BlueZ / `iw` / `lsusb` / SDR 工具；Windows 需要对应 PCAN 或 USB 驱动；macOS 的底层 Wi-Fi / 蓝牙能力会受系统限制。
 
-### 3) 硬件类 PoC 现在怎么执行？
+### 5) 硬件类 PoC 现在怎么执行？
 
 直接由本机 `poc_worker.py` 和 `sandbox_runner.py` 执行。执行前先在 `Local Runtime` 页面确认本机能力。
 
-### 4) Agent Scan 是否还可用？
+### 6) Agent Scan 是否还可用？
 
-可用。它作为本机 Agent Scan 能力保留，需要启动本机 `mcp_server.py` 并配置用户级 AI 参数。
+可用。它作为本机 Agent Scan 能力保留，需要启动本机 `mcp_server.py` 并在 Profile 配置 OpenAI 兼容 LLM 参数。
 
 ---
 

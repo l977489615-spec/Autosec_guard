@@ -65,7 +65,7 @@ lab/
 *.mp4
 
 # reports
-reports/
+server/reports/
 
 # public poc resources
-public_poc_resources/
+server/public_poc_resources/
