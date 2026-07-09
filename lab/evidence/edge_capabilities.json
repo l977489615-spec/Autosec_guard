@@ -1,0 +1,21 @@
+[
+  {
+    "target_id": "LAB-WORKSTATION",
+    "target_ip": "127.0.0.1",
+    "can_interface": "REPLACE_CAN_INTERFACE",
+    "bluetooth_mac": "",
+    "wifi_interface": "",
+    "usb": "manual_check",
+    "sdr": "manual_check",
+    "host_tools_checked": true,
+    "tool_adb": true,
+    "tool_bluetoothctl": false,
+    "tool_hciconfig": false,
+    "tool_ip": false,
+    "tool_iw": false,
+    "tool_lsusb": false,
+    "tool_candump": false,
+    "tool_cansend": false,
+    "tool_hackrf_info": false
+  }
+]

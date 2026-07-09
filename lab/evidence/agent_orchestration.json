@@ -1,0 +1,16 @@
+[
+  {
+    "task_id": "AGENT-MOCK-LOCAL",
+    "target_ip": "127.0.0.1",
+    "method": "ours_full",
+    "planned_poc_count": 6,
+    "executed_poc_count": 6,
+    "reflection_reentry_count": 0,
+    "reflection_next_action": "rerun",
+    "reflection_issue_count": 4,
+    "retry_or_error_count": 0,
+    "finding_count": 1,
+    "elapsed_seconds": 229.875,
+    "report_file": "lab/evidence/agent_runs/AGENT-MOCK-LOCAL_20260601_224754.json"
+  }
+]

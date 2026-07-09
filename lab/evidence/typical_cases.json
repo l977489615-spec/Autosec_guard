@@ -1,0 +1,9 @@
+[
+  {
+    "case_id": "CASE-001",
+    "case_name": "mock 正样本网络暴露验证",
+    "target_id": "MOCK-LOCAL",
+    "attack_surface": "网络服务",
+    "expected_evidence": "ADB/RTSP/MQTT/mock unknown service 响应证据"
+  }
+]

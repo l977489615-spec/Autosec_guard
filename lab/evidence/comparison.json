@@ -1,0 +1,12 @@
+[
+  {
+    "case_id": "CMP-001",
+    "target_id": "MOCK-LOCAL",
+    "task": "Mock positive-sample validation",
+    "manual_elapsed_seconds": 180,
+    "platform_elapsed_seconds": 36.392,
+    "manual_steps": 6,
+    "platform_poc_count": 18,
+    "same_conclusion": ""
+  }
+]

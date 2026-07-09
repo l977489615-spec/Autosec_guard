@@ -1,0 +1,90 @@
+{
+  "cve_id": "CVE-2018-6242",
+  "elapsed_seconds": 0.061,
+  "errors": [],
+  "evidence": "其余开放端口未确认可直接获得 shell：\n  端口 5555 (标准 ADB over TCP)\n  端口 5037 (ADB server 本地通信)",
+  "logs": [
+    "[*] Executing sandbox command: /Library/Frameworks/Python.framework/Versions/3.13/bin/python3 /Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/server/sandbox_runner.py /Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/server/pocs/network/09B_ADB_Debug_Port.py {\"target_ip\": \"127.0.0.1\", \"candidate_ports\": \"5555,1883,7000,19090,13400,30490\"}",
+    "[2026-06-02 14:53:59,492][INFO] 已初始化漏洞验证模块: ADBDebugPortPlugin，目标: 127.0.0.1",
+    "[2026-06-02 14:53:59,492][INFO] 正在执行前置条件检查...",
+    "[2026-06-02 14:53:59,492][INFO] 前置条件满足。开始执行漏洞验证...",
+    "[2026-06-02 14:53:59,492][INFO] 开始网络扫描 127.0.0.1 上所有已知 ADB 端口（共 13 个）...",
+    "[2026-06-02 14:53:59,492][INFO]   探测 127.0.0.1:5555 (标准 ADB over TCP)...",
+    "[2026-06-02 14:53:59,494][INFO]     [+] 端口开放",
+    "[2026-06-02 14:53:59,494][INFO]     [*] 收到 CNXN 但未能确认 shell OPEN，结果保守处理。",
+    "[2026-06-02 14:53:59,494][INFO]   探测 127.0.0.1:5556 (多设备顺延-2)...",
+    "[2026-06-02 14:53:59,494][INFO]     [-] 端口关闭",
+    "[2026-06-02 14:53:59,494][INFO]   探测 127.0.0.1:5558 (多设备顺延-3)...",
+    "[2026-06-02 14:53:59,494][INFO]     [-] 端口关闭",
+    "[2026-06-02 14:53:59,494][INFO]   探测 127.0.0.1:9527 (工程模式 (AION/国产 IVI))...",
+    "[2026-06-02 14:53:59,495][INFO]     [-] 端口关闭",
+    "[2026-06-02 14:53:59,495][INFO]   探测 127.0.0.1:6789 (HarmonyOS/鸿蒙车机)...",
+    "[2026-06-02 14:53:59,495][INFO]     [-] 端口关闭",
+    "[2026-06-02 14:53:59,495][INFO]   探测 127.0.0.1:4444 (旧版 ADB server)...",
+    "[2026-06-02 14:53:59,496][INFO]     [-] 端口关闭",
+    "[2026-06-02 14:53:59,496][INFO]   探测 127.0.0.1:7777 (MTK/高通车机测试)...",
+    "[2026-06-02 14:53:59,496][INFO]     [-] 端口关闭",
+    "[2026-06-02 14:53:59,496][INFO]   探测 127.0.0.1:8888 (第三方工具监听)...",
+    "[2026-06-02 14:53:59,496][INFO]     [-] 端口关闭",
+    "[2026-06-02 14:53:59,496][INFO]   探测 127.0.0.1:9999 (第三方工具监听)...",
+    "[2026-06-02 14:53:59,497][INFO]     [-] 端口关闭",
+    "[2026-06-02 14:53:59,497][INFO]   探测 127.0.0.1:2233 (OEM 私有工程端口)...",
+    "[2026-06-02 14:53:59,498][INFO]     [-] 端口关闭",
+    "[2026-06-02 14:53:59,498][INFO]   探测 127.0.0.1:4567 (OEM 私有工程端口)...",
+    "[2026-06-02 14:53:59,498][INFO]     [-] 端口关闭",
+    "[2026-06-02 14:53:59,498][INFO]   探测 127.0.0.1:5037 (ADB server 本地通信)...",
+    "[2026-06-02 14:53:59,501][INFO]     [+] 端口开放",
+    "[2026-06-02 14:53:59,501][INFO]     [*] 未确认未授权 ADB shell（首包=b''）: (无响应)",
+    "[2026-06-02 14:53:59,501][INFO]   探测 127.0.0.1:1234 (root 工具绑定)...",
+    "[2026-06-02 14:53:59,502][INFO]     [-] 端口关闭",
+    "[2026-06-02 14:53:59,502][INFO] 漏洞验证流程结束。",
+    "",
+    "[*] 正在启动检测任务: ADBDebugPortPlugin",
+    "[*] 描述: ",
+    "",
+    "==================================================",
+    "检测结果报告: ADBDebugPortPlugin",
+    "--------------------------------------------------",
+    "[-] 状态: 【未检测到漏洞】 (NOT VULNERABLE)",
+    "[-] 信息: 其余开放端口未确认可直接获得 shell：",
+    "  端口 5555 (标准 ADB over TCP)",
+    "  端口 5037 (ADB server 本地通信)",
+    "==================================================",
+    ""
+  ],
+  "manual_review": {
+    "state": "not_required"
+  },
+  "poc_id": "network/09B_ADB_Debug_Port.py",
+  "requires_human_review": false,
+  "sandbox_profile": {
+    "allowed_hosts": [
+      "127.0.0.1"
+    ],
+    "cpu_seconds": 60,
+    "memory_mb": 256,
+    "nofile": 256,
+    "output_mb": 8
+  },
+  "security_profile": {
+    "cve_id": "CVE-2018-6242",
+    "destructive_level": "Safe",
+    "is_disruptive": false,
+    "poc_name": "Network ADB Debug Port Detection",
+    "protocol": "tcp",
+    "required_params": [
+      "target_ip"
+    ],
+    "severity": "Critical",
+    "target_os": [
+      "android",
+      "harmonyos"
+    ]
+  },
+  "success": true,
+  "trace_id": "MOCK-LOCAL_09B_ADB_Debug_Port.py_20260602_145359",
+  "verification_status": "auto_confirmed_not_vulnerable",
+  "vulnerable": false,
+  "worker_mode": "local_sandbox",
+  "http_status": 200
+}

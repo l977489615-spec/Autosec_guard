@@ -1,0 +1,6 @@
+{
+  "error": "phase recon failed validation: 侦察结果无法解析为结构化 JSON: Expecting value: line 1 column 2 (char 1)",
+  "structured": {},
+  "findings": [],
+  "phase_records": []
+}
