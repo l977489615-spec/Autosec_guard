@@ -2,17 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { Bot, Shield, Network, Cpu, FileText, Play, Loader, CheckCircle, XCircle, Key, Sliders, Download, RotateCcw, AlertTriangle, ShieldCheck, Zap } from 'lucide-react';
 import { saveScanSession, submitPocManualVerdict } from '../services/api';
 import ScanLogs from './ScanLogs';
-import { PhaseRecord, PlannerStep, Severity, SupervisorAdjustment, SupervisorEvent, SupervisorMetrics } from '../types';
+import { PhaseRecord, PlannerStep, ScanSession, Severity, SupervisorAdjustment, SupervisorEvent, SupervisorMetrics } from '../types';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Environment, ContactShadows } from '@react-three/drei';
 import { CarModel } from './CarModel';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import AttackGraph from './AttackGraph';
-import { assessPhysicalImpact, buildAiConfigPayload, generateAttackGraph, generateMultiHopAttackGraph, generateStructuredReport, simulateRemediation, getBackendUrl, setBackendUrl } from '../services/api';
+import { assessPhysicalImpact, generateAttackGraph, generateMultiHopAttackGraph, generateStructuredReport, simulateRemediation, getBackendUrl, setBackendUrl } from '../services/api';
 import { AssessmentArtifacts } from '../types';
 import { findPocInCatalog } from '../services/pocCatalog';
 import { usePocCatalog } from '../hooks/usePocCatalog';
+import { markdownToSafeHtml, escapeHtml } from '../utils/security';
 
 interface AgentPhase {
   name: string;
@@ -71,6 +72,8 @@ interface AgentScanProps {
   currentUser?: any;
   onSessionComplete?: (session: any) => void;
   engineUrl?: string;
+  draft?: ScanSession['agentDraft'];
+  onDraftChange?: (draft: NonNullable<ScanSession['agentDraft']>) => void;
 }
 
 const diagnosePhaseFailure = ({
@@ -258,21 +261,22 @@ const detectLowResourceMode = () => {
   return (isLinux && isFirefox) || cpuCores <= 4 || deviceMemory <= 4;
 };
 
-const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComplete, engineUrl }) => {
-  const { pocs: pocCatalog } = usePocCatalog();
-  const [targetIp, setTargetIp] = useState('');
-  const [targetName, setTargetName] = useState('IVI System');
+const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComplete, engineUrl, draft, onDraftChange }) => {
+  const { pocs: pocCatalog } = usePocCatalog(token);
+  const [targetIp, setTargetIp] = useState(draft?.targetIp || '');
+  const [targetName, setTargetName] = useState(draft?.targetName || 'IVI System');
   const [isFullMode, setIsFullMode] = useState(true);
   const [showAdvanced, setShowAdvanced] = useState(true);
-  const [lowResourceMode, setLowResourceMode] = useState(() => detectLowResourceMode());
+  const [lowResourceMode, setLowResourceMode] = useState(() => draft?.lowResourceMode ?? detectLowResourceMode());
   const [webglFailed, setWebglFailed] = useState(false);
 
   // 可选参数 — 控制 Agent 选择哪类 PoC
-  const [canInterface, setCanInterface] = useState('');
-  const [bluetoothMac, setBluetoothMac] = useState('');
-  const [wifiInterface, setWifiInterface] = useState('');
-  const [rfFrequency, setRfFrequency] = useState('');
-  const [usbAdbSerial, setUsbAdbSerial] = useState('');
+  const [canInterface, setCanInterface] = useState(draft?.canInterface || '');
+  const [bluetoothMac, setBluetoothMac] = useState(draft?.bluetoothMac || '');
+  const [wifiInterface, setWifiInterface] = useState(draft?.wifiInterface || '');
+  const [rfFrequency, setRfFrequency] = useState(draft?.rfFrequency || '');
+  const [usbAdbSerial, setUsbAdbSerial] = useState(draft?.usbAdbSerial || '');
+  const [executionMode, setExecutionMode] = useState<'safe_only' | 'progressive_auto' | 'full_auto_lab'>(draft?.executionMode || 'progressive_auto');
 
   const [topology, setTopology] = useState<TopologyData | null>(null);
   const [adaptiveCtx, setAdaptiveCtx] = useState<AdaptiveContext | null>(null);
@@ -291,6 +295,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
   const [phaseRecords, setPhaseRecords] = useState<PhaseRecord[]>([]);
   const [structuredState, setStructuredState] = useState<Record<string, any>>({});
   const [findings, setFindings] = useState<any[]>([]);
+  const [enableReflectionReentry, setEnableReflectionReentry] = useState(draft?.enableReflectionReentry || false);
   const [manualReviewState, setManualReviewState] = useState<AgentManualReviewState>(null);
   const manualReviewResolverRef = React.useRef<((decision: AgentManualReviewDecision) => void) | null>(null);
   const resourceParamsRef = React.useRef({
@@ -329,6 +334,15 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
       payload.usbAdbSerial = usbSerial;
       payload.usb_adb_serial = usbSerial;
     }
+    payload.execution_mode = executionMode;
+    payload.enable_reflection_reentry = enableReflectionReentry ? 'true' : 'false';
+    payload.risk_ceiling =
+      executionMode === 'full_auto_lab'
+        ? 'DATALOSS'
+        : executionMode === 'progressive_auto'
+          ? 'RESTART'
+          : 'PROBE';
+    if (executionMode === 'full_auto_lab') payload.lab_policy = 'true';
     return payload;
   };
 
@@ -369,6 +383,8 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
         if (s.wifiInterface) setWifiInterface(s.wifiInterface);
         if (s.rfFrequency) setRfFrequency(s.rfFrequency);
         if (s.usbAdbSerial) setUsbAdbSerial(s.usbAdbSerial);
+        if (s.executionMode) setExecutionMode(s.executionMode);
+        if (typeof s.enableReflectionReentry === 'boolean') setEnableReflectionReentry(s.enableReflectionReentry);
         setActiveStep(-1);
         if (s.riskScore) setRiskScore(s.riskScore);
         if (s.results) setResults(compactForBrowserStorage(s.results));
@@ -387,7 +403,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
       const current: any = {
         targetIp, targetName, phases, finalReport,
         topology, adaptiveCtx, scanTime, activeStep,
-        canInterface, bluetoothMac, wifiInterface, rfFrequency, usbAdbSerial, lowResourceMode,
+        canInterface, bluetoothMac, wifiInterface, rfFrequency, usbAdbSerial, executionMode, enableReflectionReentry, lowResourceMode,
         riskScore, results, logs, assessment, phaseRecords, structuredState, findings,
         ...override,
       };
@@ -405,11 +421,74 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
     } catch { }
   };
 
+  const saveConfigState = (override: Record<string, unknown> = {}) => {
+    try {
+      const existingRaw = localStorage.getItem(STORAGE_KEY);
+      const existing = existingRaw ? JSON.parse(existingRaw) : {};
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        ...existing,
+        targetIp,
+        targetName,
+        canInterface,
+        bluetoothMac,
+        wifiInterface,
+        rfFrequency,
+        usbAdbSerial,
+        executionMode,
+        enableReflectionReentry,
+        lowResourceMode,
+        ...override,
+      }));
+    } catch { }
+  };
+
+  useEffect(() => {
+    saveConfigState();
+  }, [
+    targetIp,
+    targetName,
+    canInterface,
+    bluetoothMac,
+    wifiInterface,
+    rfFrequency,
+    usbAdbSerial,
+    executionMode,
+    enableReflectionReentry,
+    lowResourceMode,
+  ]);
+
+  useEffect(() => {
+    onDraftChange?.({
+      targetIp,
+      targetName,
+      canInterface,
+      bluetoothMac,
+      wifiInterface,
+      rfFrequency,
+      usbAdbSerial,
+      executionMode,
+      enableReflectionReentry,
+      lowResourceMode,
+    });
+  }, [
+    targetIp,
+    targetName,
+    canInterface,
+    bluetoothMac,
+    wifiInterface,
+    rfFrequency,
+    usbAdbSerial,
+    executionMode,
+    enableReflectionReentry,
+    lowResourceMode,
+    onDraftChange,
+  ]);
+
   const authHeaders = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${token}`,
   };
-  const aiConfig = buildAiConfigPayload(currentUser?.ai_config);
+  // AI 配置由服务端从加密存储加载，前端不再传输 api_key
 
 
   const fetchAdaptiveContext = async (ip: string, openPorts: number[] = []) => {
@@ -484,6 +563,8 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
     setBluetoothMac('');
     setWifiInterface('');
     setRfFrequency('');
+    setUsbAdbSerial('');
+    setExecutionMode('progressive_auto');
     setTopology(null);
     setAdaptiveCtx(null);
     setPhases(PHASES.map(p => ({ phase: p.name, status: 'idle', output: '' })));
@@ -633,7 +714,6 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
               target_ip: targetIp,
               target_name: targetName,
               resume_from: resumeFrom,
-              ai_config: aiConfig,
               ...buildAgentResourcePayload(),
               state: {
               logs: collectedLogs,
@@ -704,7 +784,6 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
               target_name: targetName,
               phase: PHASES[i].name,
               context: prevContext,
-              ai_config: aiConfig,
               ...buildAgentResourcePayload(),
               state: {
                 logs: collectedLogs,
@@ -717,7 +796,12 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
           const data = await r.json();
           const rawOutput = data.result || data.error || data.message || JSON.stringify(data);
           const diagnosed = diagnosePhaseOutput(String(rawOutput));
-          const phaseStatus = r.ok && !diagnosed.isError ? 'done' : 'error';
+          const backendPhaseRecord = Array.isArray(data.phase_records)
+            ? data.phase_records.find((record: any) => record.phase === PHASES[i].name)
+            : null;
+          const phaseStatus = r.ok && !diagnosed.isError
+            ? ((backendPhaseRecord?.status === 'skipped' ? 'skipped' : 'done') as PhaseResult['status'])
+            : 'error';
           const output = r.ok
             ? diagnosed.output
             : diagnosePhaseFailure({
@@ -825,66 +909,75 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
 	            }
 	          }
 
-	          if (PHASES[i].name === 'execute') {
-	            const executionItems = Array.isArray(data.structured_result?.items) ? data.structured_result.items : [];
-	            for (const item of executionItems) {
-	              if (!(item.requires_human_review || item.status === 'pending_manual_review')) continue;
-	              // Agent 模式：全量自动执行，无需人工审批弹窗，直接提交 inconclusive
-	              const firstBranch = Array.isArray(item.branch_results)
-	                ? item.branch_results.find((br: any) => br.requires_human_review) || item.branch_results[0]
-	                : {};
-	              const review = await submitPocManualVerdict({
-	                trace_id: firstBranch?.trace_id,
-	                session_id: `AGENT-${Date.now().toString().slice(-6)}`,
-	                poc_id: firstBranch?.poc_id || item.poc_name,
-	                poc_name: item.poc_name,
-	                target_ip: targetIp,
-	                bluetooth_mac: bluetoothMac,
-	                verdict: 'inconclusive' as AgentManualVerdict,
-	                operator_note: 'Auto-submitted by agent (non-interactive mode).',
-	                evidence_file: '',
-	              }, token, activeBackendUrl);
+          if (PHASES[i].name === 'execute') {
+            const executionItems = Array.isArray(data.structured_result?.items) ? data.structured_result.items : [];
+            for (const item of executionItems) {
+              if (!(item.requires_human_review || item.status === 'pending_manual_review')) continue;
+              // 弹出人工判定 UI，等待操作员确认（不自动伪造审计结论）
+              const decision = await requestAgentManualVerdict(item);
+              if (!decision) {
+                item.requires_human_review = true;
+                item.verification_status = 'pending_manual_review';
+                item.status = 'pending_manual_review';
+                collectedLogs.push({
+                  timestamp: new Date().toLocaleTimeString(),
+                  type: 'warning',
+                  message: `[Manual Review] ${item.poc_name}: 操作员跳过判定，保持 pending 状态`,
+                });
+                continue;
+              }
+              const review = await submitPocManualVerdict({
+                trace_id: item.trace_id || item.branch_results?.[0]?.trace_id,
+                session_id: `AGENT-${Date.now().toString().slice(-6)}`,
+                poc_id: item.poc_id || item.poc_name,
+                poc_name: item.poc_name,
+                target_ip: targetIp,
+                bluetooth_mac: bluetoothMac,
+                verdict: decision.verdict,
+                operator_note: decision.note || `Operator verdict: ${decision.verdict}`,
+                evidence_file: decision.evidenceFile || '',
+              }, token, activeBackendUrl);
 
-	              item.requires_human_review = false;
-	              item.manual_review = review.manual_review || {
-	                state: 'completed',
-	                verdict: 'inconclusive',
-	                operator_note: 'Auto-submitted by agent (non-interactive mode).',
-	              };
-	              item.verification_status = review.verification_status || 'auto_inconclusive';
-	              item.vulnerable = review.vulnerable;
-	              item.status = review.vulnerable === true
-	                ? 'vulnerable'
-	                : review.vulnerable === false
-	                  ? 'completed'
-	                  : 'auto_inconclusive';
-	              item.evidence = item.evidence || item.verification_status;
+              item.requires_human_review = false;
+              item.manual_review = review.manual_review || {
+                state: 'completed',
+                verdict: decision.verdict,
+                operator_note: decision.note,
+              };
+              item.verification_status = review.verification_status || decision.verdict;
+              item.vulnerable = review.vulnerable;
+              item.status = review.vulnerable === true
+                ? 'vulnerable'
+                : review.vulnerable === false
+                  ? 'completed'
+                  : 'inconclusive';
+              item.evidence = item.evidence || item.verification_status;
 
-	              collectedLogs.push({
-	                timestamp: new Date().toLocaleTimeString(),
-	                type: 'info',
-	                message: `[Auto Review] ${item.poc_name}: ${item.verification_status} (agent auto-submitted)`,
-	              });
+              collectedLogs.push({
+                timestamp: new Date().toLocaleTimeString(),
+                type: 'info',
+                message: `[Manual Review] ${item.poc_name}: ${decision.verdict} (operator confirmed)`,
+              });
 
-	              if (review.vulnerable === true && !collectedFindings.find(existing => existing.name === item.poc_name)) {
-	                const finding = {
-	                  id: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-	                  name: item.poc_name,
-	                  pocId: item.poc_name,
-	                  vulnerable: true,
-	                  severity: 'High',
-	                  domain: 'agent_manual_review',
-	                  description: decision.note || 'Operator confirmed exploit effect during Agent scan.',
-	                  details: decision.note || '',
-	                  source: 'agent_manual_review',
-	                  target_ip: targetIp,
-	                  detectedAt: new Date().toISOString(),
-	                  manualReview: item.manual_review,
-	                };
-	                collectedFindings.push(finding);
-	                collectedResults.push({ ...finding, timestamp: new Date().toISOString() });
-	              }
-	            }
+              if (review.vulnerable === true && !collectedFindings.find(existing => existing.name === item.poc_name)) {
+                const finding = {
+                  id: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                  name: item.poc_name,
+                  pocId: item.poc_name,
+                  vulnerable: true,
+                  severity: 'High',
+                  domain: 'agent_manual_review',
+                  description: decision.note || 'Operator confirmed exploit effect during Agent scan.',
+                  details: decision.note || '',
+                  source: 'agent_manual_review',
+                  target_ip: targetIp,
+                  detectedAt: new Date().toISOString(),
+                  manualReview: item.manual_review,
+                };
+                collectedFindings.push(finding);
+                collectedResults.push({ ...finding, timestamp: new Date().toISOString() });
+              }
+            }
 	            structuredPhases.execute = compactForBrowserStorage(data.structured_result);
 	            setStructuredState(compactForBrowserStorage({ ...structuredPhases }));
 	            setLogs(compactLogs(collectedLogs));
@@ -1048,7 +1141,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
       setStructuredState(compactForBrowserStorage(structuredPhases));
       setFindings(compactForBrowserStorage(collectedFindings));
       persistRunState({
-        nextActiveStep: 3,
+        nextActiveStep: PHASES.length - 1,
         nextAssessment: artifacts,
         nextLogs: collectedLogs,
         nextResults: collectedResults,
@@ -1070,18 +1163,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
   // ── PDF 导出 ──
   const exportToPdf = () => {
     const now = scanTime || new Date().toLocaleString('zh-CN', { hour12: false });
-    const reportHtml = finalReport
-      // markdown bold
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      // markdown headers
-      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-      .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-      .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-      // markdown list items
-      .replace(/^[-*] (.+)$/gm, '<li>$1</li>')
-      // line breaks
-      .replace(/\n\n/g, '</p><p>')
-      .replace(/\n/g, '<br/>');
+    const reportHtml = markdownToSafeHtml(finalReport);
 
     const html = `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -1111,8 +1193,8 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
     <div class="header">
       <h1>AutoSec Guard 智能网联汽车安全评估报告</h1>
       <div class="meta">
-        <span><span class="label">扫描目标：</span>${targetName}&#8203;(${targetIp})</span>
-        <span><span class="label">扫描时间：</span>${now}</span>
+        <span><span class="label">扫描目标：</span>${escapeHtml(targetName)}&#8203;(${escapeHtml(targetIp)})</span>
+        <span><span class="label">扫描时间：</span>${escapeHtml(now)}</span>
         <span><span class="label">报告类型：</span>Agent 自动化验证报告</span>
         <span><span class="label">工具版本：</span>AutoSec Guard v2.0 · Qwen-Max (千问)</span>
       </div>
@@ -1151,7 +1233,9 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
   const handleAutoDiscovery = async () => {
     try {
       const activeBackendUrl = resolveBackendUrl();
-      const resp = await fetch(`${activeBackendUrl}/api/auto_discovery`);
+      const resp = await fetch(`${activeBackendUrl}/api/auto_discovery`, {
+        headers: authHeaders,
+      });
       const data = await resp.json();
       if (data.status === 'success') {
         const { wifi, can, bluetooth_mac, target_ip } = data.interfaces;
@@ -1221,6 +1305,9 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
               </button>
               <button onClick={() => resolveAgentManualVerdict('needs_retest')} className="rounded-md border border-cyan-700 px-4 py-2 text-sm text-cyan-300 hover:bg-cyan-950/50">
                 标记复测
+              </button>
+              <button onClick={() => resolveAgentManualVerdict(null)} className="col-span-2 rounded-md border border-gray-600 px-4 py-2 text-sm text-gray-400 hover:border-gray-400 hover:text-white">
+                跳过（保持 pending，不提交判定）
               </button>
             </div>
           </div>
@@ -1359,7 +1446,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
           <span className="text-xs text-gray-500">{showAdvanced ? '▲ 收起' : '▼ 展开设定'}</span>
         </button>
         {showAdvanced && (
-          <div className="p-4 pt-2 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 bg-black/5 border-t border-cyan-900/20">
+          <div className="p-4 pt-2 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 bg-black/5 border-t border-cyan-900/20">
             <div>
               <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">蓝牙 MAC</label>
               <input
@@ -1409,6 +1496,44 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
                 onChange={e => setUsbAdbSerial(e.target.value.trim())}
                 className="w-full bg-black/40 border border-cyan-900/40 text-cyan-300 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-cyan-500"
               />
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Agent 执行模式</label>
+              <select
+                value={executionMode}
+                onChange={e => setExecutionMode(e.target.value as 'safe_only' | 'progressive_auto' | 'full_auto_lab')}
+                className="w-full bg-black/40 border border-cyan-900/40 text-cyan-300 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-cyan-500"
+              >
+                <option value="safe_only">保守自动</option>
+                <option value="progressive_auto">渐进自动</option>
+                <option value="full_auto_lab">实验室全自动</option>
+              </select>
+              <div className="mt-1 text-[10px] text-gray-500">
+                {executionMode === 'safe_only'
+                  ? '仅自动执行 Safe/Probe。'
+                  : executionMode === 'progressive_auto'
+                    ? '先安全验证，再自动升级到 Restart。'
+                    : '允许到 DataLoss，仅限实验环境。'}
+              </div>
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">反思-重入</label>
+              <button
+                type="button"
+                onClick={() => setEnableReflectionReentry(v => !v)}
+                className={`w-full rounded px-3 py-1.5 text-xs font-semibold transition-colors border ${
+                  enableReflectionReentry
+                    ? 'border-amber-500/70 bg-amber-950/30 text-amber-300'
+                    : 'border-cyan-900/40 bg-black/40 text-gray-300'
+                }`}
+              >
+                {enableReflectionReentry ? '已启用' : '未启用'}
+              </button>
+              <div className="mt-1 text-[10px] text-gray-500">
+                {enableReflectionReentry
+                  ? '启用 Reflector 审计与有限重入，执行完整 6/7 阶段闭环。'
+                  : '完成执行后直接生成报告，不进行反思与回跳。'}
+              </div>
             </div>
           </div>
         )}

@@ -1,6 +1,7 @@
 import os
 
 from poc_registry import get_poc_code, list_builtin_pocs
+from security_utils import safe_resolve_within
 
 
 SUPPORT_MODULES = {
@@ -8,6 +9,10 @@ SUPPORT_MODULES = {
     "poc_runtime_adapter.py",
     "advisory_audit_core.py",
     "active_validation_core.py",
+    "probe_utils.py",
+    "local_exp_stimulus.py",
+    "wireless/wireless_cve_audit.py",
+    "wireless_cve_audit.py",
     "canbus/can_bus_utils.py",
     "can_bus_utils.py",
 }
@@ -33,19 +38,36 @@ def resolve_poc_path(pocs_dir: str, poc_filename: str) -> tuple[str | None, str 
     if not poc_filename:
         return None, None
 
-    poc_path = os.path.join(pocs_dir, poc_filename)
-    if os.path.exists(poc_path):
-        return poc_path, os.path.relpath(poc_path, pocs_dir)
+    # 安全校验：只允许 .py 且必须解析到 pocs_dir 之内（防路径穿越）。
+    # 拒绝 ../、绝对路径、以及非 PoC 命名（如 __init__.py、支持模块）。
+    if not is_executable_poc_name(poc_filename):
+        # 仍可能是内建 PoC（不落盘），交由 builtin 分支判断
+        builtin_code, normalized = get_poc_code(poc_filename)
+        if builtin_code and normalized and is_executable_poc_name(normalized):
+            safe_builtin = safe_resolve_within(pocs_dir, normalized)
+            if safe_builtin:
+                return safe_builtin, normalized
+        return None, None
 
+    # 直接路径命中（经容器边界校验）
+    safe_path = safe_resolve_within(pocs_dir, poc_filename)
+    if safe_path and os.path.exists(safe_path):
+        return safe_path, os.path.relpath(safe_path, os.path.realpath(pocs_dir))
+
+    # 按 basename 在 pocs_dir 树内查找（basename 已去除任何目录成分，天然防穿越）
     basename = os.path.basename(poc_filename)
-    for dirpath, _, filenames in os.walk(pocs_dir):
+    real_base = os.path.realpath(pocs_dir)
+    for dirpath, _, filenames in os.walk(real_base):
         if basename in filenames:
-            poc_path = os.path.join(dirpath, basename)
-            return poc_path, os.path.relpath(poc_path, pocs_dir)
+            found = os.path.join(dirpath, basename)
+            return found, os.path.relpath(found, real_base)
 
+    # 内建（embedded）PoC：不落盘，返回逻辑路径
     builtin_code, normalized = get_poc_code(poc_filename)
-    if builtin_code and normalized:
-        return os.path.join(pocs_dir, normalized), normalized
+    if builtin_code and normalized and is_executable_poc_name(normalized):
+        safe_builtin = safe_resolve_within(pocs_dir, normalized)
+        if safe_builtin:
+            return safe_builtin, normalized
 
     return None, None
 

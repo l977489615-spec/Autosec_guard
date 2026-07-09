@@ -5,6 +5,6 @@ export const generateSecurityReport = async (
   session: ScanSession,
   token: string | null,
   aiSettings?: any
-): Promise<string> => {
+): Promise<{ success: boolean; report?: string; error?: string }> => {
   return generateSecurityReportViaBackend(session, token, aiSettings);
 };

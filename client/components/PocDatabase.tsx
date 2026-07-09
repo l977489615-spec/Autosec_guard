@@ -4,12 +4,12 @@ import { Search, ShieldAlert, Cpu, Radio, Activity, Globe, Terminal, Zap, Eye } 
 import PocDetailModal from './PocDetailModal';
 import { usePocCatalog } from '../hooks/usePocCatalog';
 
-const PocDatabase: React.FC = () => {
+const PocDatabase: React.FC<{ token?: string | null }> = ({ token }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCat, setFilterCat] = useState<string>('All');
   const [selectedPoc, setSelectedPoc] = useState<POC | null>(null);
   const [pocContents, setPocContents] = useState<Record<string, string>>({});
-  const { pocs, loading, error } = usePocCatalog();
+  const { pocs, loading, error } = usePocCatalog(token);
 
   useEffect(() => {
     const contentsMap: Record<string, string> = {};
@@ -74,7 +74,7 @@ const PocDatabase: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {loading && (
+        {loading && pocs.length === 0 && (
           <div className="col-span-full text-center py-20 text-gray-500">
             Loading PoC plugins from backend...
           </div>

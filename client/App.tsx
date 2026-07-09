@@ -10,7 +10,8 @@ import UserManagement from './components/UserManagement';
 import AgentScan from './components/AgentScan';
 import LocalRuntime from './components/LocalRuntime';
 import { ScanSession } from './types';
-import { fetchCurrentProfile, getBackendHealth, getBackendUrl } from './services/api';
+import { fetchCurrentProfile, getBackendHealth, getBackendUrl, setUnauthorizedHandler } from './services/api';
+import { sanitizeUserForStorage } from './utils/security';
 
 enum View {
   DASHBOARD = 'dashboard',
@@ -23,9 +24,101 @@ enum View {
 }
 
 type ScannerMode = 'SELECTION' | 'GLOBAL' | 'MANUAL' | 'AGENT';
+const APP_UI_STATE_STORAGE_KEY = 'autosec_app_ui_state';
+const SCANNER_SESSION_STORAGE_KEY = 'autosec_scanner_session_state';
+
+const buildDefaultScannerSession = (): ScanSession => ({
+  id: 'SESSION-INIT',
+  targetName: '',
+  connection: {
+    ip: '',
+    port: '5555',
+    bluetoothMac: '',
+    canInterface: 'PCAN_USBBUS1',
+    url: 'https://',
+    frequency: '',
+    interface: '',
+    usbAdbSerial: '',
+    usbMountPoint: '',
+  },
+  isConnected: false,
+  startTime: '',
+  status: 'idle',
+  mode: 'batch',
+  logs: [],
+  results: [],
+  riskScore: 0,
+  aiReport: null
+});
+
+const isValidView = (value: string | null): value is View => (
+  Boolean(value) && Object.values(View).includes(value as View)
+);
+
+const isValidScannerMode = (value: string | null): value is ScannerMode => (
+  value === 'SELECTION' || value === 'GLOBAL' || value === 'MANUAL' || value === 'AGENT'
+);
+
+const inferScannerModeFromSession = (session?: ScanSession | null): ScannerMode => {
+  if (!session) return 'SELECTION';
+  if (session.mode === 'agent') return 'AGENT';
+  if (session.mode === 'manual') return 'MANUAL';
+  if (session.mode === 'batch') return 'GLOBAL';
+  return 'SELECTION';
+};
+
+const readStoredUiState = (): { currentView?: View; scannerMode?: ScannerMode } => {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(APP_UI_STATE_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    const currentView = isValidView(parsed?.currentView) ? parsed.currentView : undefined;
+    const scannerMode = isValidScannerMode(parsed?.scannerMode) ? parsed.scannerMode : undefined;
+    return { currentView, scannerMode };
+  } catch {
+    return {};
+  }
+};
+
+const readStoredScannerSession = (): ScanSession | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(SCANNER_SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const fallback = buildDefaultScannerSession();
+    const restoredStatus = parsed?.status === 'completed' || parsed?.status === 'failed' ? parsed.status : 'idle';
+    return {
+      ...fallback,
+      ...parsed,
+      connection: {
+        ...fallback.connection,
+        ...(parsed?.connection || {}),
+      },
+      isConnected: restoredStatus === 'idle' ? false : Boolean(parsed?.isConnected),
+      status: restoredStatus,
+      logs: Array.isArray(parsed?.logs) ? parsed.logs : fallback.logs,
+      results: Array.isArray(parsed?.results) ? parsed.results : fallback.results,
+    } as ScanSession;
+  } catch {
+    return null;
+  }
+};
+
+const compactScannerSessionForStorage = (session: ScanSession): ScanSession => ({
+  ...session,
+  logs: Array.isArray(session.logs) ? session.logs.slice(-1000) : [],
+  results: Array.isArray(session.results) ? session.results : [],
+  aiReport: typeof session.aiReport === 'string' ? session.aiReport.slice(0, 20000) : session.aiReport,
+});
 
 const App: React.FC = () => {
-  const [currentView, setCurrentView] = useState<View>(View.DASHBOARD);
+  const storedUiState = readStoredUiState();
+  const storedScannerSession = readStoredScannerSession();
+  const initialScannerMode = storedUiState.scannerMode || inferScannerModeFromSession(storedScannerSession);
+  const initialView = storedUiState.currentView || (initialScannerMode !== 'SELECTION' ? View.SCANNER : View.DASHBOARD);
+  const [currentView, setCurrentView] = useState<View>(initialView);
 
   // 检查 JWT token 是否过期
   const isTokenValid = (t: string | null): boolean => {
@@ -38,6 +131,16 @@ const App: React.FC = () => {
     }
   };
 
+  const parseStoredUser = (raw: string | null): any => {
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      localStorage.removeItem('autosec_user');
+      return null;
+    }
+  };
+
   const storedToken = localStorage.getItem('autosec_token');
   const storedUser = localStorage.getItem('autosec_user');
 
@@ -46,20 +149,22 @@ const App: React.FC = () => {
     isTokenValid(storedToken) ? storedToken : null
   );
   const [user, setUser] = useState<any>(
-    isTokenValid(storedToken) && storedUser ? JSON.parse(storedUser) : null
+    isTokenValid(storedToken) ? parseStoredUser(storedUser) : null
   );
 
-  // token 无效时清除 localStorage
-  if (!isTokenValid(storedToken) && storedToken) {
-    localStorage.removeItem('autosec_token');
-    localStorage.removeItem('autosec_user');
-  }
+  // token 无效时清除 localStorage（在 effect 中执行，避免渲染期副作用）
+  useEffect(() => {
+    if (!isTokenValid(storedToken) && storedToken) {
+      localStorage.removeItem('autosec_token');
+      localStorage.removeItem('autosec_user');
+    }
+  }, []);
 
   // Lifted state for history so it persists
   const [scanHistory, setScanHistory] = useState<ScanSession[]>([]);
 
   // Persistent Scanner State
-  const [scannerMode, setScannerMode] = useState<ScannerMode>('SELECTION');
+  const [scannerMode, setScannerMode] = useState<ScannerMode>(initialScannerMode);
   const [engineUrl, setEngineUrl] = useState(getBackendUrl());
   const [engineStatus, setEngineStatus] = useState<'unknown' | 'online' | 'offline'>('unknown');
   const [globalBackendHealth, setGlobalBackendHealth] = useState<{
@@ -73,43 +178,26 @@ const App: React.FC = () => {
     url: getBackendUrl(),
     ok: false,
   });
-  const [scannerSession, setScannerSession] = useState<ScanSession>({
-    id: 'SESSION-INIT',
-    targetName: '',
-    connection: {
-      ip: '',
-      port: '5555',
-      bluetoothMac: '',
-      canInterface: 'PCAN_USBBUS1',
-      url: 'https://',
-      frequency: '',
-      interface: '',
-      usbAdbSerial: '',
-      usbMountPoint: '',
-    },
-    isConnected: false,
-    startTime: '',
-    status: 'idle',
-    mode: 'batch',
-    logs: [],
-    results: [],
-    riskScore: 0,
-    aiReport: null
-  });
+  const [scannerSession, setScannerSession] = useState<ScanSession>(storedScannerSession || buildDefaultScannerSession());
 
   const handleLogin = (newToken: string, userData: any) => {
+    const safeUser = sanitizeUserForStorage(userData);
     localStorage.setItem('autosec_token', newToken);
-    localStorage.setItem('autosec_user', JSON.stringify(userData));
+    localStorage.setItem('autosec_user', JSON.stringify(safeUser));
     setToken(newToken);
-    setUser(userData);
+    setUser(safeUser);
   };
 
   const handleLogout = () => {
     localStorage.removeItem('autosec_token');
     localStorage.removeItem('autosec_user');
+    localStorage.removeItem(APP_UI_STATE_STORAGE_KEY);
+    localStorage.removeItem(SCANNER_SESSION_STORAGE_KEY);
     setToken(null);
     setUser(null);
     setCurrentView(View.DASHBOARD);
+    setScannerMode('SELECTION');
+    setScannerSession(buildDefaultScannerSession());
   };
 
   // 全局 401 处理： token 过期或失效自动登出
@@ -123,7 +211,8 @@ const App: React.FC = () => {
 
   const handleResumeAgentSession = (session: ScanSession) => {
     const phaseRecords = session.phase_records || [];
-    const phases = ['recon', 'decision', 'weaponize', 'execute', 'assess'].map((phase) => {
+    const allPhases = ['recon', 'planner', 'decision', 'weaponize', 'execute', 'reflector', 'assess'];
+    const phases = allPhases.map((phase) => {
       const record = phaseRecords.find(item => item.phase === phase);
       return {
         phase,
@@ -181,6 +270,34 @@ const App: React.FC = () => {
   }, [engineUrl]);
 
   useEffect(() => {
+    setUnauthorizedHandler(handleUnauthorized);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(APP_UI_STATE_STORAGE_KEY, JSON.stringify({
+        currentView,
+        scannerMode,
+      }));
+    } catch {
+      // ignore storage failures
+    }
+  }, [currentView, scannerMode]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(
+        SCANNER_SESSION_STORAGE_KEY,
+        JSON.stringify(compactScannerSessionForStorage(scannerSession))
+      );
+    } catch {
+      // ignore storage failures
+    }
+  }, [scannerSession]);
+
+  useEffect(() => {
     let cancelled = false;
 
     const refreshProfile = async () => {
@@ -188,8 +305,9 @@ const App: React.FC = () => {
       try {
         const latestUser = await fetchCurrentProfile(token);
         if (cancelled || !latestUser) return;
-        setUser(latestUser);
-        localStorage.setItem('autosec_user', JSON.stringify(latestUser));
+        const safeUser = sanitizeUserForStorage(latestUser);
+        setUser(safeUser);
+        localStorage.setItem('autosec_user', JSON.stringify(safeUser));
       } catch (error: any) {
         if (cancelled) return;
         if (/401|403|Could not verify|Invalid token/i.test(String(error?.message || ''))) {
@@ -355,7 +473,7 @@ const App: React.FC = () => {
           </div>
 
           <div className="relative z-10 h-full">
-            {currentView === View.DASHBOARD && <Dashboard />}
+            {currentView === View.DASHBOARD && <Dashboard token={token} />}
             {currentView === View.SCANNER && (
               <Scanner
                 onAddToHistory={addToHistory}
@@ -371,7 +489,7 @@ const App: React.FC = () => {
                 currentUser={user}
               />
             )}
-            {currentView === View.DATABASE && <PocDatabase />}
+            {currentView === View.DATABASE && <PocDatabase token={token} />}
             {currentView === View.HISTORY && (
               <ScanHistory
                 localHistory={scanHistory}
@@ -395,8 +513,9 @@ const App: React.FC = () => {
                 currentUser={user}
                 token={token}
                 onUpdateSuccess={(newUser) => {
-                  setUser(newUser);
-                  localStorage.setItem('autosec_user', JSON.stringify(newUser));
+                  const safeUser = sanitizeUserForStorage(newUser);
+                  setUser(safeUser);
+                  localStorage.setItem('autosec_user', JSON.stringify(safeUser));
                 }}
               />
             )}

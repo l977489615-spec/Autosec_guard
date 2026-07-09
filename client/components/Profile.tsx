@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { User, Key, Save, AlertTriangle, CheckCircle, Activity, Eye, EyeOff } from 'lucide-react';
-import { defaultAiSettings, getBackendUrl } from '../services/api';
+import { defaultAiSettings, getBackendUrl, buildAiConfigPayload } from '../services/api';
+import { sanitizeUserForStorage } from '../utils/security';
 
 interface ProfileProps {
 	currentUser: any;
@@ -49,7 +50,7 @@ const Profile: React.FC<ProfileProps> = ({ currentUser, token, onUpdateSuccess }
 				body: JSON.stringify({
 					new_username: newUsername !== currentUser.username ? newUsername : undefined,
 					new_password: newPassword ? newPassword : undefined,
-					ai_config: aiSettings,
+					ai_config: buildAiConfigPayload(aiSettings, { includeApiKey: !!aiSettings.apiKey?.trim() }),
 				})
 			});
 
@@ -64,7 +65,7 @@ const Profile: React.FC<ProfileProps> = ({ currentUser, token, onUpdateSuccess }
 			setConfirmPassword('');
 
 			if (data.user) {
-				onUpdateSuccess(data.user);
+				onUpdateSuccess(sanitizeUserForStorage(data.user));
 			}
 
 		} catch (err: any) {
@@ -87,7 +88,7 @@ const Profile: React.FC<ProfileProps> = ({ currentUser, token, onUpdateSuccess }
 					'Content-Type': 'application/json',
 					'Authorization': `Bearer ${token}`
 				},
-				body: JSON.stringify({ ai_config: aiSettings })
+				body: JSON.stringify({ ai_config: buildAiConfigPayload(aiSettings, { includeApiKey: !!aiSettings.apiKey?.trim() }) })
 			});
 
 			const data = await res.json();
@@ -182,14 +183,26 @@ const Profile: React.FC<ProfileProps> = ({ currentUser, token, onUpdateSuccess }
 						</div>
 					</div>
 
-					<div className="pt-4 border-t border-cyber-700 space-y-4">
-						<label className="block text-xs font-mono text-gray-500">AI RUNTIME CONFIG (USER-SUPPLIED)</label>
-						<div className="text-xs text-gray-400">
-							模型配置按当前用户维度加密保存在后端，并在本次请求中透传给 AI 调用链。请仅填写你本人可授权使用的 Key。
+				<div className="pt-4 border-t border-cyber-700 space-y-4">
+					<label className="block text-xs font-mono text-gray-500">AI RUNTIME CONFIG (USER-SUPPLIED)</label>
+
+					{/* 安全说明卡片 */}
+					<div className="rounded-lg border border-amber-600/40 bg-amber-900/20 px-4 py-3 space-y-1">
+						<div className="flex items-center gap-2 text-amber-400 text-xs font-semibold font-mono">
+							<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+							API KEY 安全说明
 						</div>
-						<div className="text-[11px] text-gray-500">
-							推荐填写：Base URL 使用 `https://dashscope.aliyuncs.com/compatible-mode/v1`，Report model=`qwen-max`，Fast model=`qwen-plus`，Strong model=`qwen-max`。
-						</div>
+						<ul className="text-[11px] text-amber-200/80 space-y-0.5 list-disc list-inside leading-relaxed">
+							<li>API Key 使用 Fernet 对称加密存储在服务端数据库，前端永不回传或持久化明文</li>
+							<li>AI 报告与 Agent 扫描均由服务端从加密存储加载 Key，浏览器不传输密钥</li>
+							<li>请仅填写你本人有权使用的 Key；不要使用具有账单权限的主账号 Key</li>
+							<li>若服务器部署在公网，必须开启 TLS（参见 docs/nginx-tls.conf）</li>
+						</ul>
+					</div>
+
+					<div className="text-[11px] text-gray-500">
+						推荐：Base URL 填写 <code className="text-cyber-accent">https://dashscope.aliyuncs.com/compatible-mode/v1</code>，模型可选 <code className="text-cyber-accent">qwen-max</code> / <code className="text-cyber-accent">qwen-plus</code>。
+					</div>
 						<div className="space-y-3">
 							<input
 								type="text"
@@ -202,7 +215,7 @@ const Profile: React.FC<ProfileProps> = ({ currentUser, token, onUpdateSuccess }
 								<input
 									type={showApiKey ? 'text' : 'password'}
 									value={aiSettings.apiKey}
-									placeholder="API Key"
+									placeholder={aiSettings.apiKeyConfigured ? '已配置（输入新 Key 可替换）' : 'API Key'}
 									onChange={(e) => setAiSettings((prev) => ({ ...prev, apiKey: e.target.value }))}
 									className="w-full bg-cyber-900 border border-cyber-700 rounded-lg pl-4 pr-12 py-3 text-white focus:outline-none focus:border-cyber-accent transition-colors font-mono"
 								/>

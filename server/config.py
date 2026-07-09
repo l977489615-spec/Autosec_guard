@@ -101,12 +101,16 @@ def get_runtime_data_dir() -> Path:
 
 
 def get_config() -> AppConfig:
+    # AUTOSEC_HOST 默认 127.0.0.1（仅本机访问，最小暴露面）。
+    # 若需要跨网络访问（如在实验室局域网中共享），显式设置 AUTOSEC_HOST=0.0.0.0，
+    # 并同时启用 AUTOSEC_REQUIRE_AUTH=true 和配置 AUTOSEC_CORS_ORIGINS。
+    flask_host = os.environ.get('AUTOSEC_HOST', '127.0.0.1')
     return AppConfig(
         secret_key=os.environ.get('AUTOSEC_SECRET_KEY') or secrets.token_urlsafe(32),
         database_uri=_normalize_database_uri(os.environ.get('AUTOSEC_DB_URI')),
         autosec_api=os.environ.get('AUTOSEC_API', 'http://localhost:5002'),
         mcp_server=os.environ.get('MCP_SERVER', 'http://localhost:5003'),
-        flask_host=os.environ.get('AUTOSEC_HOST', '0.0.0.0'),
+        flask_host=flask_host,
         flask_port=int(os.environ.get('AUTOSEC_PORT', '5002')),
         flask_debug=_to_bool(os.environ.get('AUTOSEC_DEBUG'), default=False),
     )
@@ -120,6 +124,21 @@ def get_runtime_warnings(config: AppConfig) -> List[str]:
 
     if 'AUTOSEC_DB_URI' not in os.environ:
         warnings.append('AUTOSEC_DB_URI not set; using local SQLite database.')
+
+    # 网络暴露面警告
+    if config.flask_host == '0.0.0.0':
+        require_auth = os.environ.get('AUTOSEC_REQUIRE_AUTH', 'false').strip().lower()
+        cors_origins = os.environ.get('AUTOSEC_CORS_ORIGINS', '').strip()
+        if require_auth not in ('true', '1', 'yes'):
+            warnings.append(
+                'SECURITY WARNING: AUTOSEC_HOST=0.0.0.0 exposes the API to all network interfaces. '
+                'Set AUTOSEC_REQUIRE_AUTH=true or restrict to AUTOSEC_HOST=127.0.0.1 for local-only access.'
+            )
+        if not cors_origins:
+            warnings.append(
+                'SECURITY WARNING: AUTOSEC_CORS_ORIGINS not set; CORS allows all origins (*). '
+                'Set AUTOSEC_CORS_ORIGINS to specific allowed domains for network deployments.'
+            )
 
     warnings.append('Edge-local product mode: PoC execution and hardware capability probing run on this workstation.')
     warnings.append('AI features require per-user AI configuration from the browser; the server does not use a shared model API key.')

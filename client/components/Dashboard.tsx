@@ -4,8 +4,8 @@ import { Severity, Category } from '../types';
 import { Activity, Shield, AlertTriangle, Zap } from 'lucide-react';
 import { usePocCatalog } from '../hooks/usePocCatalog';
 
-const Dashboard: React.FC = () => {
-  const { pocs } = usePocCatalog();
+const Dashboard: React.FC<{ token?: string | null }> = ({ token }) => {
+  const { pocs, loading, error } = usePocCatalog(token);
   const totalPocs = pocs.length;
 
   const severityData = [
@@ -31,14 +31,14 @@ const Dashboard: React.FC = () => {
           <div className="p-3 bg-blue-500/20 rounded-full text-blue-400"><Shield size={24} /></div>
           <div>
             <p className="text-gray-400 text-sm uppercase">Total Modules</p>
-            <p className="text-2xl font-bold text-white">{totalPocs}</p>
+            <p className="text-2xl font-bold text-white">{loading && totalPocs === 0 ? '...' : totalPocs}</p>
           </div>
         </div>
         <div className="bg-cyber-800 border border-cyber-700 p-4 rounded-lg flex items-center gap-4">
           <div className="p-3 bg-red-500/20 rounded-full text-red-400"><AlertTriangle size={24} /></div>
           <div>
             <p className="text-gray-400 text-sm uppercase">Critical CVEs</p>
-            <p className="text-2xl font-bold text-white">{criticalCount}</p>
+            <p className="text-2xl font-bold text-white">{loading && totalPocs === 0 ? '...' : criticalCount}</p>
           </div>
         </div>
         <div className="bg-cyber-800 border border-cyber-700 p-4 rounded-lg flex items-center gap-4">
@@ -52,10 +52,16 @@ const Dashboard: React.FC = () => {
           <div className="p-3 bg-yellow-500/20 rounded-full text-yellow-400"><Zap size={24} /></div>
           <div>
             <p className="text-gray-400 text-sm uppercase">Active Scanners</p>
-            <p className="text-2xl font-bold text-white">{integratedPocs}</p>
+            <p className="text-2xl font-bold text-white">{loading && totalPocs === 0 ? '...' : integratedPocs}</p>
           </div>
         </div>
       </div>
+
+      {error && (
+        <div className="bg-red-950/20 border border-red-900/40 text-red-300 px-4 py-3 rounded-lg text-sm">
+          PoC catalog refresh failed. Dashboard is showing the most recent cached inventory snapshot.
+        </div>
+      )}
 
       {/* Summary Bar */}
       <div className="bg-cyber-800 border border-cyber-700 p-4 rounded-lg">

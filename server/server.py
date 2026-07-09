@@ -18,11 +18,13 @@ import ast
 import uuid
 import base64
 import hashlib
+import hmac
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from flask import Flask, request, jsonify, Response, send_from_directory
 from flask_cors import CORS, cross_origin
 from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 from functools import wraps
 from cryptography.fernet import Fernet, InvalidToken
 from config import get_config, get_runtime_data_dir, get_runtime_warnings
@@ -54,6 +56,23 @@ from poc_security import extract_poc_security_profile, should_require_disruptive
 from poc_execution_service import normalize_poc_params, resolve_target_label
 from auth_service import resolve_user_from_bearer
 from audit_exp_readiness import PROFESSIONAL_TIER_ORDER, audit_file
+from poc_naming import canonical_display_name
+from agent_execution_policy import (
+    allow_automatic_escalation,
+    default_risk_ceiling,
+    issue_signed_scope_token,
+    normalize_execution_mode,
+    normalize_risk_level,
+    preflight_profile,
+    risk_level_allows,
+    risk_level_from_profile,
+    verify_signed_scope_token,
+)
+from security_utils import (
+    is_safe_outbound_url,
+    is_private_or_lab_target,
+    parse_allowed_target_cidrs,
+)
 
 
 def _list_local_usb_adb_serials(timeout: int = 4) -> List[str]:
@@ -75,6 +94,15 @@ def _professional_policy_for_poc(poc_path: str, rel_path: str, profile: dict | N
     validation_tier = getattr(finding, "validation_tier", "PASSIVE") if finding else "PASSIVE"
     exp_capability = getattr(finding, "exp_capability", "none") if finding else "none"
     execution_safety = getattr(finding, "execution_safety", "safe") if finding else "safe"
+    domain = str(rel_path or "").replace("\\", "/").split("/", 1)[0] if rel_path else ""
+    preflight = preflight_profile(
+        profile=profile,
+        params=params,
+        domain=domain,
+        target_in_scope=not params.get("target_ip") or _target_in_scope(str(params.get("target_ip") or "")),
+        lab_policy=params.get("lab_policy") in (True, "true", "True", "1", 1),
+        allowed_domains=params.get("allow_domains") or [],
+    )
     requires_disruptive_approval = _should_require_disruptive_approval(profile, params)
     requires_post_execution_review = poc_requires_human_review(rel_path, profile)
     return {
@@ -89,6 +117,18 @@ def _professional_policy_for_poc(poc_path: str, rel_path: str, profile: dict | N
         "requires_disruptive_approval": bool(requires_disruptive_approval),
         "requires_post_execution_review": bool(requires_post_execution_review),
         "manual_confirmation_required": bool(requires_disruptive_approval or requires_post_execution_review),
+        "domain": domain,
+        "risk_level": preflight["risk_level"],
+        "preflight_signals": {
+            "required_params_present": preflight["required_params_present"],
+            "missing_required_params": preflight["missing_required_params"],
+            "target_in_scope": preflight["target_in_scope"],
+            "domain_authorized": preflight["domain_authorized"],
+        },
+        "preflight_ready": preflight["preflight_ready"],
+        "auto_escalation_requirements": preflight["auto_escalation_requirements"],
+        "eligible_for_progressive_auto": preflight["eligible_for_progressive_auto"],
+        "expected_observable": preflight["expected_observable"],
     }
 
 
@@ -121,7 +161,7 @@ os.makedirs(LOGS_DIR, exist_ok=True)
 log_file = os.path.join(LOGS_DIR, 'autosec.log')
 
 # Setup Rotating File Handler (Max 5MB per file, keep 3 backups)
-handler = RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=3)
+handler = RotatingFileHandler(log_file, maxBytes=20*1024*1024, backupCount=5)
 formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s')
 handler.setFormatter(formatter)
 
@@ -145,13 +185,64 @@ WEB_DIST_CANDIDATES = [
 ]
 
 app = Flask(__name__)
-CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"], "allow_headers": "*"}})  # Allow React Frontend to communicate
+
+# CORS：生产模式允许列表由 AUTOSEC_CORS_ORIGINS 环境变量控制（逗号分隔），
+# 未设置时回退 "*"（仅适用于本地边缘工作站场景）。
+_cors_origins_env = os.environ.get("AUTOSEC_CORS_ORIGINS", "")
+_cors_origins = [o.strip() for o in _cors_origins_env.split(",") if o.strip()] or "*"
+CORS(app, resources={r"/api/*": {
+    "origins": _cors_origins,
+    "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
+}})
 
 CONFIG = get_config()
 RUNTIME_WARNINGS = get_runtime_warnings(CONFIG)
 
 # Path to the Pocs directory
 POCS_DIR = str(SERVER_DIR / 'pocs')
+
+# ── 认证强制模式 ─────────────────────────────────────────────
+# AUTOSEC_REQUIRE_AUTH=true  → 所有执行端点强制 JWT 认证（多用户/网络部署推荐）
+# AUTOSEC_REQUIRE_AUTH=false → 本地边缘工作站模式，允许无 token 访问（默认）
+_REQUIRE_AUTH = os.environ.get("AUTOSEC_REQUIRE_AUTH", "false").strip().lower() in ("true", "1", "yes")
+
+# ── 并发 PoC 执行 Semaphore ──────────────────────────────────
+# AUTOSEC_MAX_CONCURRENT_POCS 控制同时执行的 PoC 数量上限（默认 5）。
+# 超出上限时，/api/run_poc 和 /api/run_poc_stream 返回 429。
+import threading as _threading_sem
+_MAX_CONCURRENT_POCS = int(os.environ.get("AUTOSEC_MAX_CONCURRENT_POCS", "5"))
+_POC_SEMAPHORE = _threading_sem.Semaphore(_MAX_CONCURRENT_POCS)
+
+# ── 任意脚本执行开关（最高危能力，默认关闭） ─────────────────
+_ENABLE_SCRIPT_EXECUTION = os.environ.get("AUTOSEC_ENABLE_SCRIPT_EXECUTION", "false").strip().lower() in ("true", "1", "yes")
+
+# ── 开放注册开关（默认关闭；首用户 bootstrap 除外） ──────────
+_ALLOW_OPEN_REGISTRATION = os.environ.get("AUTOSEC_ALLOW_OPEN_REGISTRATION", "false").strip().lower() in ("true", "1", "yes")
+# Bootstrap 模式：
+#   edge     = 空库时允许 Web「系统初始化」创建首管理员（默认，适合单机边缘）
+#   cli_only = 禁止 Web bootstrap，须 flask create-admin（企业推荐）
+_BOOTSTRAP_MODE = os.environ.get("AUTOSEC_BOOTSTRAP_MODE", "edge").strip().lower()
+if _BOOTSTRAP_MODE not in ("edge", "cli_only"):
+    _BOOTSTRAP_MODE = "edge"
+# 可选：首管理员创建需携带此 token（防抢注）；留空则不校验
+_BOOTSTRAP_TOKEN = os.environ.get("AUTOSEC_BOOTSTRAP_TOKEN", "").strip()
+_REGISTRATION_LOCK = _threading_sem.Lock()
+
+# ── 授权目标网段（Agent/PoC 只应攻击这些范围；空则仅允许私网/回环） ──
+_ALLOWED_TARGET_CIDRS = parse_allowed_target_cidrs(os.environ.get("AUTOSEC_ALLOWED_TARGET_CIDRS", ""))
+# 是否允许攻击公网目标（默认禁止，防止误扫或被利用为攻击跳板）
+_ALLOW_PUBLIC_TARGETS = os.environ.get("AUTOSEC_ALLOW_PUBLIC_TARGETS", "false").strip().lower() in ("true", "1", "yes")
+
+
+def _target_in_scope(target_ip: str) -> bool:
+    """判断扫描目标是否在授权范围内。公网目标需显式开启开关。
+    非 IP 字面量（如主机名）在允许公网时放行，否则拒绝。"""
+    if _ALLOW_PUBLIC_TARGETS:
+        return True
+    if is_private_or_lab_target(target_ip, _ALLOWED_TARGET_CIDRS):
+        return True
+    return False
 # ==========================================
 # Application Configuration
 # ==========================================
@@ -164,6 +255,80 @@ app.config['SQLALCHEMY_DATABASE_URI'] = CONFIG.database_uri
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
+migrate = Migrate(app, db)  # flask-migrate：支持 flask db upgrade 命令
+
+# ── 登录速率限制：内存缓存（边缘本地模式，无需 Redis） ──────────
+import threading as _threading
+import collections as _collections
+_LOGIN_FAIL_CACHE: dict = {}  # {key: fail_count}
+_LOGIN_FAIL_TIMESTAMPS: dict = {}  # {key: last_fail_time}
+
+def _rate_limit_cleanup():
+    """每 60 秒清理过期的失败计数。"""
+    while True:
+        _threading.Event().wait(60)
+        now = time.time()
+        expired = [k for k, t in _LOGIN_FAIL_TIMESTAMPS.items() if now - t > 60]
+        for k in expired:
+            _LOGIN_FAIL_CACHE.pop(k, None)
+            _LOGIN_FAIL_TIMESTAMPS.pop(k, None)
+
+_cleanup_thread = _threading.Thread(target=_rate_limit_cleanup, daemon=True)
+_cleanup_thread.start()
+
+# ── 全局错误处理器 ────────────────────────────────────────────
+@app.errorhandler(400)
+def bad_request(e):
+    return jsonify({"error": "Bad Request", "message": str(e)}), 400
+
+@app.errorhandler(401)
+def unauthorized(e):
+    return jsonify({"error": "Unauthorized", "message": str(e)}), 401
+
+@app.errorhandler(403)
+def forbidden(e):
+    return jsonify({"error": "Forbidden", "message": str(e)}), 403
+
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({"error": "Not Found", "message": str(e)}), 404
+
+@app.errorhandler(405)
+def method_not_allowed(e):
+    return jsonify({"error": "Method Not Allowed", "message": str(e)}), 405
+
+@app.after_request
+def _apply_security_headers(response):
+    """为所有响应添加基础安全响应头。"""
+    response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    response.headers.setdefault('X-Frame-Options', 'DENY')
+    response.headers.setdefault('Referrer-Policy', 'no-referrer')
+    response.headers.setdefault('X-XSS-Protection', '0')
+    # HSTS 仅在 HTTPS 场景由前置代理注入更合适；此处在启用 TLS 时补充。
+    if os.environ.get('AUTOSEC_BEHIND_TLS', 'false').strip().lower() in ('true', '1', 'yes'):
+        response.headers.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+    return response
+
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    """全局未处理异常：返回标准 JSON，不暴露 traceback；请求体中的 api_key 自动脱敏。"""
+    import traceback as _tb
+    # 构建脱敏后的请求摘要（移除 api_key 等敏感字段）
+    _REDACT_KEYS = {"api_key", "apiKey", "password", "token", "secret"}
+    try:
+        req_json = request.get_json(silent=True) or {}
+        req_summary = {k: ("***REDACTED***" if k in _REDACT_KEYS else v) for k, v in req_json.items() if not isinstance(v, (dict, list))}
+    except Exception:
+        req_summary = {}
+    logger.error(
+        f"Unhandled exception [{request.method} {request.path}] req={req_summary}: "
+        f"{type(e).__name__}: {e}\n{_tb.format_exc()}"
+    )
+    code = getattr(e, "code", 500)
+    if isinstance(code, int) and 400 <= code < 600:
+        return jsonify({"error": type(e).__name__, "message": str(e)}), code
+    return jsonify({"error": "Internal Server Error", "message": "An unexpected error occurred."}), 500
 
 def _extract_session_target_ip(session: dict) -> str:
     connection = session.get("connection") or {}
@@ -303,6 +468,20 @@ def _serialize_ai_config(payload: dict | None) -> dict:
     }
 
 
+def _mask_ai_config_for_client(payload: dict | None) -> dict:
+    """返回给前端的 AI 配置：apiKey 永不回传明文，仅告知是否已配置。"""
+    serialized = _serialize_ai_config(payload)
+    has_key = bool(serialized.get("apiKey"))
+    return {
+        "baseUrl": serialized["baseUrl"],
+        "apiKey": "",  # 不回传明文密钥
+        "apiKeyConfigured": has_key,
+        "reportModel": serialized["reportModel"],
+        "fastModel": serialized["fastModel"],
+        "strongModel": serialized["strongModel"],
+    }
+
+
 def _encrypt_ai_config(payload: dict | None) -> str:
     serialized = json.dumps(_serialize_ai_config(payload), ensure_ascii=False)
     return _ai_config_fernet().encrypt(serialized.encode('utf-8')).decode('utf-8')
@@ -351,6 +530,12 @@ def _validate_ai_config(payload: dict | None) -> tuple[dict, str | None]:
         return config, "AI API key is required."
     if not config["base_url"]:
         return config, "AI base_url is required."
+    # SSRF 防护：AI base_url 必须是安全的出站 URL（拒绝内网/回环/link-local/云 metadata）。
+    # 允许通过 AUTOSEC_ALLOW_PRIVATE_AI_URL=true 放行私网（本地自建模型网关场景）。
+    allow_private = os.environ.get("AUTOSEC_ALLOW_PRIVATE_AI_URL", "false").strip().lower() in ("true", "1", "yes")
+    safe, reason = is_safe_outbound_url(config["base_url"], allow_private=allow_private)
+    if not safe:
+        return config, f"AI base_url rejected for safety: {reason}. Set AUTOSEC_ALLOW_PRIVATE_AI_URL=true if using a local model gateway."
     return config, None
 
 
@@ -380,6 +565,54 @@ def _generate_unified_assessment_report(session: dict, ai_config: dict) -> str:
     except Exception as exc:
         logger.error(f"Unified assessment report generation failed: {exc}", exc_info=True)
         return "与模型接口通信时发生错误，请检查当前用户的 AI 配置、网络和 API Key。"
+
+
+# ==========================================
+# Database Startup Migration Helper
+# ==========================================
+
+def _startup_db_migrate() -> None:
+    """启动时执行数据库迁移。
+    
+    策略（按优先级）：
+    1. 若 migrations/ 目录已初始化且含 alembic_version 表 → 执行 flask db upgrade head
+    2. 否则 → 执行 db.create_all() 并提示操作员初始化 Alembic
+    
+    这样保证：
+    - 首次部署：自动建表
+    - 后续升级：通过 Alembic 迁移，不会丢失数据
+    """
+    from pathlib import Path as _Path
+    import subprocess as _sub
+
+    migrations_dir = _Path(__file__).parent / 'migrations'
+    has_migrations = (migrations_dir / 'env.py').exists()
+
+    if has_migrations:
+        # 尝试运行 Alembic 升级
+        try:
+            result = _sub.run(
+                ['flask', 'db', 'upgrade'],
+                capture_output=True, text=True,
+                cwd=str(_Path(__file__).parent),
+                timeout=30,
+            )
+            if result.returncode == 0:
+                logger.info("Database migrated via Alembic (flask db upgrade).")
+            else:
+                logger.warning(f"Alembic upgrade warning (falling back to create_all): {result.stderr.strip()}")
+                db.create_all()
+        except Exception as exc:
+            logger.warning(f"Alembic upgrade failed, falling back to create_all: {exc}")
+            db.create_all()
+    else:
+        # 首次部署或尚未初始化 Alembic：建表
+        db.create_all()
+        logger.info("Database schema created via db.create_all().")
+        logger.info(
+            "MIGRATION HINT: Run 'flask db init && flask db migrate -m init && flask db upgrade' "
+            "in the server/ directory to enable Alembic schema versioning for future upgrades."
+        )
 
 
 # ==========================================
@@ -542,6 +775,133 @@ def _extract_poc_security_profile(poc_path: str) -> dict:
 
 def _should_require_disruptive_approval(profile: dict, params: dict) -> bool:
     return should_require_disruptive_approval(profile, params)
+
+
+# ── 破坏性 PoC 审批令牌（服务端签发，防止客户端伪造 allow_disruptive 绕过） ──
+_APPROVAL_TOKEN_TTL_SECONDS = int(os.environ.get("AUTOSEC_APPROVAL_TTL_SECONDS", "300"))
+_USED_APPROVAL_TOKENS: set = set()  # 一次性令牌已用集合（进程内，重启清空）
+_BATCH_APPROVAL_TOKEN_TTL_SECONDS = int(os.environ.get("AUTOSEC_BATCH_APPROVAL_TTL_SECONDS", "1800"))
+
+
+def _issue_disruptive_approval_token(poc_filename: str, target: str) -> str:
+    """签发一次性破坏性执行审批令牌，绑定 poc+target，有 TTL。"""
+    issued_at = int(time.time())
+    payload = f"{poc_filename}|{target}|{issued_at}"
+    sig = hmac.new(
+        app.config['SECRET_KEY'].encode('utf-8'),
+        payload.encode('utf-8'),
+        hashlib.sha256,
+    ).hexdigest()
+    raw = f"{payload}|{sig}"
+    return base64.urlsafe_b64encode(raw.encode('utf-8')).decode('ascii')
+
+
+def _issue_batch_approval_token(
+    *,
+    target: str,
+    session_id: str,
+    risk_ceiling: str,
+    allowed_domains: list[str] | None = None,
+    execution_mode: str = "PROGRESSIVE_AUTO",
+    lab_policy: bool = False,
+) -> str:
+    payload = {
+        "target": target,
+        "session_id": session_id,
+        "risk_ceiling": normalize_risk_level(risk_ceiling),
+        "allowed_domains": sorted({str(item).strip().lower() for item in (allowed_domains or []) if str(item).strip()}),
+        "execution_mode": normalize_execution_mode(execution_mode),
+        "lab_policy": bool(lab_policy),
+        "issued_at": int(time.time()),
+    }
+    return issue_signed_scope_token(app.config['SECRET_KEY'], payload)
+
+
+def _verify_batch_approval_token(
+    token: str,
+    *,
+    target: str,
+    session_id: str,
+    risk_level: str,
+    domain: str,
+) -> tuple[bool, dict, str]:
+    ok, payload, reason = verify_signed_scope_token(
+        app.config['SECRET_KEY'],
+        token,
+        ttl_seconds=_BATCH_APPROVAL_TOKEN_TTL_SECONDS,
+        expected_pairs={"target": target, "session_id": session_id},
+    )
+    if not ok:
+        return False, payload, reason
+    if not risk_level_allows(payload.get("risk_ceiling"), risk_level):
+        return False, payload, "risk-ceiling-blocked"
+    allowed_domains = {str(item).strip().lower() for item in (payload.get("allowed_domains") or []) if str(item).strip()}
+    if allowed_domains and str(domain or "").strip().lower() not in allowed_domains:
+        return False, payload, "domain-not-authorized"
+    return True, payload, "ok"
+
+
+def _issue_single_use_disruptive_token_from_batch(
+    *,
+    batch_token: str,
+    poc_filename: str,
+    target: str,
+    session_id: str,
+    risk_level: str,
+    domain: str,
+) -> tuple[str, dict, str]:
+    ok, payload, reason = _verify_batch_approval_token(
+        batch_token,
+        target=target,
+        session_id=session_id,
+        risk_level=risk_level,
+        domain=domain,
+    )
+    if not ok:
+        return "", payload, reason
+    return _issue_disruptive_approval_token(poc_filename, target), payload, "ok"
+
+
+def _verify_disruptive_approval_token(token: str, poc_filename: str, target: str) -> bool:
+    """校验破坏性执行审批令牌：签名有效、poc+target 匹配、未过期。"""
+    if not token:
+        return False
+    try:
+        raw = base64.urlsafe_b64decode(token.encode('ascii')).decode('utf-8')
+        tok_poc, tok_target, tok_ts, tok_sig = raw.rsplit('|', 3)
+    except Exception:
+        return False
+    if tok_poc != poc_filename or tok_target != target:
+        return False
+    try:
+        issued_at = int(tok_ts)
+    except ValueError:
+        return False
+    if time.time() - issued_at > _APPROVAL_TOKEN_TTL_SECONDS:
+        return False
+    # 一次性约束：同一 token 不可重放
+    if token in _USED_APPROVAL_TOKENS:
+        return False
+    expected_payload = f"{tok_poc}|{tok_target}|{tok_ts}"
+    expected_sig = hmac.new(
+        app.config['SECRET_KEY'].encode('utf-8'),
+        expected_payload.encode('utf-8'),
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(expected_sig, tok_sig)
+
+
+def _disruptive_execution_authorized(params: dict, poc_filename: str, target: str) -> bool:
+    """
+    判断一次破坏性执行是否已获授权。
+    授权途径（服务端可信）：params 中携带有效的 approval_token。
+    仅凭客户端 allow_disruptive 标志【不】构成授权。
+    """
+    token = str(params.get("approval_token") or "")
+    if _verify_disruptive_approval_token(token, poc_filename, target):
+        _USED_APPROVAL_TOKENS.add(token)  # 标记为已用，防止重放
+        return True
+    return False
 
 
 def _build_execution_artifact_payload(**kwargs) -> dict:
@@ -770,9 +1130,10 @@ def token_required(f):
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
             current_user = User.query.filter_by(id=data['user_id']).first()
             if not current_user:
-                return jsonify({'message': 'Token corresponds to a non-existent user!'}), 401
-        except Exception as e:
-            return jsonify({'message': 'Token is invalid!', 'error': str(e)}), 401
+                return jsonify({'message': 'Authentication failed.'}), 401
+        except Exception:
+            # 不向客户端泄露 JWT 解码细节（过期/签名/格式差异）
+            return jsonify({'message': 'Authentication failed.'}), 401
 
         return f(current_user, *args, **kwargs)
     return decorated
@@ -790,64 +1151,216 @@ def admin_required(f):
     return decorated
 
 
+def execution_auth_optional(f):
+    """
+    执行端点认证装饰器：
+    - AUTOSEC_REQUIRE_AUTH=true  → 强制 JWT，未认证返回 401
+    - AUTOSEC_REQUIRE_AUTH=false → 本地模式，token 可选（current_user 可为 None）
+    函数签名必须接受 current_user 作为第一个参数。
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if request.method == 'OPTIONS':
+            return '', 200
+        auth_header = request.headers.get('Authorization', '')
+        current_user = None
+        if auth_header.startswith('Bearer '):
+            try:
+                tok = auth_header.split(' ', 1)[1]
+                data = jwt.decode(tok, app.config['SECRET_KEY'], algorithms=['HS256'])
+                current_user = User.query.filter_by(id=data['user_id']).first()
+            except Exception:
+                if _REQUIRE_AUTH:
+                    return jsonify({'message': 'Token is invalid!'}), 401
+        elif _REQUIRE_AUTH:
+            return jsonify({'message': 'Authentication required. Set AUTOSEC_REQUIRE_AUTH=false for local edge mode.'}), 401
+        return f(current_user, *args, **kwargs)
+    return decorated
+
+
 # ==========================================
-# Auth Endpoints
+# Auth Helpers & Endpoints
 # ==========================================
+
+def _auth_status_payload() -> dict:
+    """返回当前认证/注册策略状态，供前端与运维判断。"""
+    user_count = User.query.count()
+    bootstrap_required = user_count == 0
+    web_bootstrap_allowed = bootstrap_required and _BOOTSTRAP_MODE == "edge"
+    open_registration = _ALLOW_OPEN_REGISTRATION and not bootstrap_required
+    registration_allowed = web_bootstrap_allowed or open_registration
+    return {
+        "user_count": user_count,
+        "bootstrap_required": bootstrap_required,
+        "bootstrap_mode": _BOOTSTRAP_MODE,
+        "web_bootstrap_allowed": web_bootstrap_allowed,
+        "open_registration": open_registration,
+        "registration_allowed": registration_allowed,
+        "bootstrap_token_required": bool(_BOOTSTRAP_TOKEN) and web_bootstrap_allowed,
+    }
+
+
+def _log_bootstrap_security_warnings() -> None:
+    """启动时输出 bootstrap 相关安全提示。"""
+    status = _auth_status_payload()
+    if not status["bootstrap_required"]:
+        return
+    if _BOOTSTRAP_MODE == "cli_only":
+        logger.warning(
+            "SECURITY: No users in database. Web bootstrap is disabled (AUTOSEC_BOOTSTRAP_MODE=cli_only). "
+            "Create the first administrator with: flask create-admin --username <name>"
+        )
+        return
+    logger.warning(
+        "SECURITY: System bootstrap pending — the first successful web initialization will create an administrator account."
+    )
+    if CONFIG.flask_host == "0.0.0.0":
+        logger.warning(
+            "SECURITY: Bootstrap is reachable on all network interfaces (AUTOSEC_HOST=0.0.0.0). "
+            "Set AUTOSEC_BOOTSTRAP_TOKEN or AUTOSEC_HOST=127.0.0.1 before exposing the service."
+        )
+    if not _BOOTSTRAP_TOKEN:
+        logger.warning(
+            "SECURITY: AUTOSEC_BOOTSTRAP_TOKEN is not set. Anyone who can reach /api/register first may become admin."
+        )
+
+
+@app.route('/api/auth/status', methods=['GET'])
+def auth_status():
+    """公开端点：返回注册/bootstrap 策略，供登录页渲染正确 UI。"""
+    return jsonify(_auth_status_payload())
+
 
 @app.route('/api/register', methods=['POST'])
 def register():
-    data = request.json
-    username = data.get('username')
-    password = data.get('password')
+    data = request.json or {}
+    username = str(data.get('username') or '').strip()
+    password = str(data.get('password') or '')
 
     if not username or not password:
         return jsonify({"message": "Username and password are required!"}), 400
 
-    if User.query.filter_by(username=username).first():
-        return jsonify({"message": "Username already exists!"}), 400
+    # 基本强度校验
+    if len(username) < 3 or len(username) > 64:
+        return jsonify({"message": "Username must be 3-64 characters."}), 400
+    if len(password) < 8:
+        return jsonify({"message": "Password must be at least 8 characters."}), 400
 
-    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-    
-    # First user gets admin privileges automatically
-    role = 'admin' if User.query.count() == 0 else 'user'
-    
-    new_user = User(username=username, password_hash=hashed_password, role=role)
-    db.session.add(new_user)
-    db.session.commit()
+    # Bootstrap / 开放注册策略（见 AUTOSEC_BOOTSTRAP_MODE、AUTOSEC_ALLOW_OPEN_REGISTRATION）
+    with _REGISTRATION_LOCK:
+        status = _auth_status_payload()
+        is_bootstrap = status["bootstrap_required"]
+
+        if is_bootstrap and _BOOTSTRAP_MODE == "cli_only":
+            return jsonify({
+                "message": (
+                    "Web bootstrap is disabled. Create the first administrator on the server with: "
+                    "flask create-admin --username <name>"
+                ),
+                "bootstrap_mode": "cli_only",
+            }), 403
+
+        if is_bootstrap and _BOOTSTRAP_TOKEN:
+            supplied = str(data.get("bootstrap_token") or data.get("bootstrapToken") or "").strip()
+            if not hmac.compare_digest(supplied, _BOOTSTRAP_TOKEN):
+                return jsonify({"message": "Invalid or missing bootstrap token."}), 403
+
+        if not status["registration_allowed"]:
+            return jsonify({
+                "message": "Open registration is disabled. Ask an administrator to create your account, "
+                           "or set AUTOSEC_ALLOW_OPEN_REGISTRATION=true.",
+            }), 403
+
+        if User.query.filter_by(username=username).first():
+            return jsonify({"message": "Username already exists!"}), 400
+
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        role = 'admin' if is_bootstrap else 'user'
+
+        new_user = User(username=username, password_hash=hashed_password, role=role)
+        db.session.add(new_user)
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            return jsonify({"message": "Registration failed. Please try a different username."}), 400
+
+        if is_bootstrap:
+            try:
+                audit = AuditLog(
+                    user_id=new_user.id,
+                    action='bootstrap_admin_created',
+                    target=username,
+                    details_json=json.dumps({
+                        "username": username,
+                        "bootstrap_mode": _BOOTSTRAP_MODE,
+                        "ip": request.remote_addr,
+                    }, ensure_ascii=False),
+                    ip_address=request.remote_addr,
+                )
+                db.session.add(audit)
+                db.session.commit()
+            except Exception as audit_exc:
+                db.session.rollback()
+                logger.error(f"Failed to record bootstrap audit log: {audit_exc}")
+            logger.warning(
+                "BOOTSTRAP COMPLETE: Administrator '%s' created via web initialization from %s",
+                username, request.remote_addr,
+            )
+
     logger.info(f"New user registered: {username} (Role: {role})")
-
-    return jsonify({"message": "User created successfully!", "role": role}), 201
+    return jsonify({
+        "message": "User created successfully!" if not is_bootstrap else "System initialized. Administrator account created.",
+        "role": role,
+        "bootstrap_completed": is_bootstrap,
+    }), 201
 
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.json
     if not data or not data.get('username') or not data.get('password'):
-        return jsonify({"message": "Could not verify", "WWWW-Authenticate": "Basic auth='Login required'"}), 401
+        return jsonify({"message": "Could not verify"}), 401
+
+    # ── 简单速率限制：同一 IP 最多 10 次/分钟失败尝试 ────────
+    _remote = request.remote_addr or "unknown"
+    _rate_key = f"login_fail:{_remote}"
+    _fail_count = _LOGIN_FAIL_CACHE.get(_rate_key, 0)
+    if _fail_count >= 10:
+        logger.warning(f"Login rate limit exceeded for IP: {_remote}")
+        return jsonify({"message": "Too many failed attempts. Please wait 60 seconds."}), 429
 
     user = User.query.filter_by(username=data.get('username')).first()
-    if not user:
-        return jsonify({"message": "User not found!"}), 404
 
-    if bcrypt.checkpw(data.get('password').encode('utf-8'), user.password_hash.encode('utf-8')):
+    # 防用户名枚举：无论用户是否存在，都执行一次 bcrypt 比对（恒定时间行为），
+    # 且失败响应统一为 401 "Invalid username or password."。
+    password_bytes = data.get('password').encode('utf-8')
+    if user and bcrypt.checkpw(password_bytes, user.password_hash.encode('utf-8')):
+        _LOGIN_FAIL_CACHE.pop(_rate_key, None)  # 登录成功，清除失败计数
         token = jwt.encode({
             'user_id': user.id,
             'role': user.role,
             'exp': _get_utc_now() + datetime.timedelta(hours=24)
         }, app.config['SECRET_KEY'], algorithm="HS256")
-        
+
         logger.info(f"User logged in: {user.username}")
         user_payload = user.to_dict()
-        user_payload["ai_config"] = _load_user_ai_config(user.id)
+        user_payload["ai_config"] = _mask_ai_config_for_client(_load_user_ai_config(user.id))
         return jsonify({'token': token, 'user': user_payload})
 
-    return jsonify({"message": "Invalid password!"}), 401
+    if not user:
+        # 执行一次伪比对，抹平存在/不存在用户的响应时间差异
+        bcrypt.checkpw(password_bytes, bcrypt.hashpw(b"timing_equalizer", bcrypt.gensalt()))
+
+    _LOGIN_FAIL_CACHE[_rate_key] = _fail_count + 1
+    _LOGIN_FAIL_TIMESTAMPS[_rate_key] = time.time()
+    return jsonify({"message": "Invalid username or password."}), 401
 
 @app.route('/api/profile', methods=['GET', 'PUT'])
 @token_required
 def profile(current_user):
     if request.method == 'GET':
         user_payload = current_user.to_dict()
-        user_payload["ai_config"] = _load_user_ai_config(current_user.id)
+        user_payload["ai_config"] = _mask_ai_config_for_client(_load_user_ai_config(current_user.id))
         return jsonify({"user": user_payload})
         
     if request.method == 'PUT':
@@ -867,11 +1380,19 @@ def profile(current_user):
             updates_made = True
             
         if new_password:
+            if len(new_password) < 8:
+                return jsonify({"message": "Password must be at least 8 characters long."}), 400
             hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
             current_user.password_hash = hashed_password
             updates_made = True
 
         if isinstance(ai_config, dict):
+            # 前端不回传 apiKey 明文时，保留已存储的密钥
+            incoming_key = str(ai_config.get("api_key") or ai_config.get("apiKey") or "").strip()
+            if not incoming_key:
+                existing = _load_user_ai_config(current_user.id)
+                if existing.get("apiKey"):
+                    ai_config = {**ai_config, "apiKey": existing["apiKey"]}
             _save_user_ai_config(current_user.id, ai_config)
             updates_made = True
             
@@ -879,7 +1400,7 @@ def profile(current_user):
             db.session.commit()
             logger.info(f"User {current_user.id} updated their profile.")
             user_payload = current_user.to_dict()
-            user_payload["ai_config"] = _load_user_ai_config(current_user.id)
+            user_payload["ai_config"] = _mask_ai_config_for_client(_load_user_ai_config(current_user.id))
             return jsonify({"message": "Profile updated successfully!", "user": user_payload}), 200
             
         return jsonify({"message": "No changes requested."}), 200
@@ -908,6 +1429,9 @@ def admin_create_user(current_user):
 
     if not username or not password:
         return jsonify({"message": "Username and password are required!"}), 400
+
+    if len(password) < 8:
+        return jsonify({"message": "Password must be at least 8 characters long."}), 400
 
     if User.query.filter_by(username=username).first():
         return jsonify({"message": "Username already exists!"}), 400
@@ -1023,18 +1547,12 @@ def serve_frontend(path: str):
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    """Check if the execution engine is online."""
+    """Check if the execution engine is online. 仅返回存活状态，不泄露内部路径/配置。"""
     return jsonify({
         "status": "online",
-        "system": sys.platform,
         "product": "AutoSec Guard Edge Workstation",
         "product_mode": "edge-local",
-        "pocs_dir": POCS_DIR,
-        "data_dir": str(RUNTIME_DATA_DIR),
-        "web_dist": str(_web_dist_dir() or ""),
-        "database": app.config['SQLALCHEMY_DATABASE_URI'].split(':', 1)[0],
         "ai_reports_enabled": True,
-        "warnings": RUNTIME_WARNINGS,
     })
 
 
@@ -1267,8 +1785,8 @@ def structured_report(current_user):
     return jsonify(report)
 
 @app.route('/api/auto_discovery', methods=['GET'])
-@cross_origin()
-def auto_discovery():
+@execution_auth_optional
+def auto_discovery(current_user):
     """Hackathon: Zero-Config Discovery of local interfaces and possible targets."""
     interfaces = {
         "wifi": "wlan0mon",
@@ -1334,7 +1852,8 @@ def auto_discovery():
     })
 
 @app.route('/api/list_pocs', methods=['GET'])
-def list_pocs():
+@execution_auth_optional
+def list_pocs(current_user):
     """List all available PoC plugin files in pocs/ directory tree with metadata."""
     pocs = []
     for rel_path in list_available_poc_names(POCS_DIR):
@@ -1383,6 +1902,12 @@ def list_pocs():
 
         if 'is_disruptive' not in poc_info:
              poc_info['is_disruptive'] = False
+        poc_info['poc_name'] = canonical_display_name(
+            category_dir,
+            poc_info.get('meta_poc_name'),
+            poc_info.get('meta_cve_id'),
+            normalized,
+        )
         profile = _extract_poc_security_profile(filepath)
         poc_info.update(_professional_policy_for_poc(filepath, normalized, profile, {}))
         poc_info.update(classify_poc_execution_mode(POCS_DIR, filepath, profile, normalized))
@@ -1412,13 +1937,21 @@ def get_poc_registry(current_user):
         return jsonify({"message": str(exc)}), 500
 
 @app.route('/api/fingerprint', methods=['POST'])
-def fingerprint_os():
+@execution_auth_optional
+def fingerprint_os(current_user):
     """Detects target OS by quickly scanning signature ports (8000 for Qconn, 5555 for ADB)"""
     data = request.json
     target_ip = data.get('ip')
     
     if not target_ip or target_ip == 'N/A':
         return jsonify({"os": "unknown", "details": "No generic IP provided"})
+
+    if not _target_in_scope(target_ip):
+        return jsonify({
+            "os": "unknown",
+            "details": "Target IP is outside authorized scan scope.",
+            "error": "Target IP is outside authorized scan scope. Configure AUTOSEC_ALLOWED_TARGET_CIDRS or enable AUTOSEC_ALLOW_PUBLIC_TARGETS.",
+        }), 403
         
     os_detected = "linux" # Default fallback for generalized car logic
     details = "Defaulting to generic Linux/Unknown"
@@ -1452,15 +1985,10 @@ def fingerprint_os():
     })
 
 @app.route('/api/run_poc', methods=['POST'])
-def run_poc():
+@execution_auth_optional
+def run_poc(current_user):
     """Run a specific PoC plugin by filename with given parameters."""
-    # Optional authorization to link scan to a user
-    current_user = resolve_user_from_bearer(
-        request.headers.get('Authorization'),
-        app.config['SECRET_KEY'],
-        User,
-    )
-
+    # current_user is already resolved by @execution_auth_optional decorator
     data = request.json
     poc_filename = data.get('filename')
     params = normalize_poc_params(data.get('params', {}))
@@ -1468,6 +1996,15 @@ def run_poc():
 
     if not poc_filename:
         return jsonify({"error": "No PoC filename provided"}), 400
+
+    # 目标范围校验：防止系统被用作攻击第三方网络的跳板
+    target_ip = str(params.get("target_ip") or "").strip()
+    if target_ip and not _target_in_scope(target_ip):
+        return jsonify({
+            "success": False,
+            "error": "Target IP is outside authorized scan scope.",
+            "trace_id": data.get("trace_id") or data.get("session_id") or "",
+        }), 403
 
     poc_path, normalized_filename, poc_code = resolve_poc_source(POCS_DIR, poc_filename)
     if not poc_path:
@@ -1482,6 +2019,20 @@ def run_poc():
         target = resolve_target_label(params)
         security_profile = _extract_poc_security_profile(poc_path)
         professional_policy = _professional_policy_for_poc(poc_path, poc_filename, security_profile, params)
+        batch_scope = {}
+        batch_reason = ""
+        if professional_policy["requires_disruptive_approval"] and not params.get("approval_token") and params.get("batch_approval_token"):
+            derived_token, batch_scope, batch_reason = _issue_single_use_disruptive_token_from_batch(
+                batch_token=str(params.get("batch_approval_token") or ""),
+                poc_filename=poc_filename,
+                target=target,
+                session_id=str(session_id or trace_id or "manual"),
+                risk_level=professional_policy.get("risk_level") or "SAFE",
+                domain=professional_policy.get("domain") or "",
+            )
+            if derived_token:
+                params = dict(params)
+                params["approval_token"] = derived_token
         if not _tier_allowed_by_policy(professional_policy.get("validation_tier"), params):
             return jsonify({
                 "success": False,
@@ -1493,8 +2044,8 @@ def run_poc():
             }), 403
         requires_approval = professional_policy["requires_disruptive_approval"]
 
-        # 记录所有高危/强干扰执行
-        if requires_approval:
+        # 破坏性执行必须持有服务端签发的有效审批令牌；客户端 allow_disruptive 标志不再单独放行。
+        if requires_approval and not _disruptive_execution_authorized(params, poc_filename, target):
             user_id = current_user.id if current_user else None
             audit = AuditLog(
                 user_id=user_id,
@@ -1502,7 +2053,7 @@ def run_poc():
                 target=target,
                 details_json=json.dumps({
                     "poc": poc_filename,
-                    "params": params,
+                    "params": {k: v for k, v in params.items() if k not in ("approval_token",)},
                     "security_profile": security_profile,
                     "trace_id": trace_id,
                     "reason": "approval_required",
@@ -1516,6 +2067,11 @@ def run_poc():
                 "error": "High-risk PoC execution requires explicit approval.",
                 "requires_approval": True,
                 "requires_disruptive_approval": True,
+                "approval_token": _issue_disruptive_approval_token(poc_filename, target),
+                "approval_ttl_seconds": _APPROVAL_TOKEN_TTL_SECONDS,
+                "batch_approval_ttl_seconds": _BATCH_APPROVAL_TOKEN_TTL_SECONDS,
+                "batch_authorization_scope": batch_scope or None,
+                "batch_authorization_error": batch_reason or "",
                 "trace_id": trace_id,
                 "security_profile": security_profile,
                 "professional_policy": professional_policy,
@@ -1524,6 +2080,13 @@ def run_poc():
         logger.error(f"Failed to record audit log: {e}")
 
     start_time = time.time()
+
+    if not _POC_SEMAPHORE.acquire(blocking=False):
+        return jsonify({
+            "success": False,
+            "error": f"Server is busy: maximum {_MAX_CONCURRENT_POCS} concurrent PoC executions reached. Retry later.",
+            "trace_id": trace_id,
+        }), 429
 
     try:
         worker = get_poc_worker(data.get("worker_mode"))
@@ -1612,17 +2175,20 @@ def run_poc():
 
     except Exception as e:
         elapsed = round(time.time() - start_time, 2)
+        logger.error(f"run_poc failed for {poc_filename}: {e}\n{traceback.format_exc()}")
         return jsonify({
             "success": False, 
             "logs": [], 
-            "errors": [str(e), traceback.format_exc()],
+            "errors": ["PoC execution failed. See server logs for details."],
             "vulnerable": False,
             "elapsed_seconds": elapsed
         })
+    finally:
+        _POC_SEMAPHORE.release()
 
 @app.route('/api/run_poc_stream', methods=['POST', 'OPTIONS'])
-@cross_origin()
-def run_poc_stream():
+@execution_auth_optional
+def run_poc_stream(current_user):
     """SSE streaming endpoint: 实时逐行推送 PoC 执行日志到前端 System Console"""
     if request.method == 'OPTIONS':
         return '', 200
@@ -1641,13 +2207,8 @@ def run_poc_stream():
     poc_filename = normalized_filename
 
     trace_id = data.get("trace_id") or data.get("session_id") or uuid.uuid4().hex
-    auth_header = request.headers.get('Authorization')
     remote_addr = request.remote_addr
-    current_user_for_stream = resolve_user_from_bearer(
-        auth_header,
-        app.config['SECRET_KEY'],
-        User,
-    ) if auth_header else None
+    current_user_for_stream = current_user  # resolved by @execution_auth_optional decorator
     security_profile = _extract_poc_security_profile(poc_path)
     professional_policy = _professional_policy_for_poc(poc_path, poc_filename, security_profile, params)
     if not _tier_allowed_by_policy(professional_policy.get("validation_tier"), params):
@@ -1659,15 +2220,30 @@ def run_poc_stream():
             "security_profile": security_profile,
             "professional_policy": professional_policy,
         }), 403
-    if professional_policy["requires_disruptive_approval"]:
+    _stream_target = resolve_target_label(params)
+    batch_scope = {}
+    batch_reason = ""
+    if professional_policy["requires_disruptive_approval"] and not params.get("approval_token") and params.get("batch_approval_token"):
+        derived_token, batch_scope, batch_reason = _issue_single_use_disruptive_token_from_batch(
+            batch_token=str(params.get("batch_approval_token") or ""),
+            poc_filename=poc_filename,
+            target=_stream_target,
+            session_id=str(session_id or trace_id or "manual"),
+            risk_level=professional_policy.get("risk_level") or "SAFE",
+            domain=professional_policy.get("domain") or "",
+        )
+        if derived_token:
+            params = dict(params)
+            params["approval_token"] = derived_token
+    if professional_policy["requires_disruptive_approval"] and not _disruptive_execution_authorized(params, poc_filename, _stream_target):
         try:
             audit = AuditLog(
                 user_id=None,
                 action='run_disruptive_poc',
-                target=resolve_target_label(params),
+                target=_stream_target,
                 details_json=json.dumps({
                     "poc": poc_filename,
-                    "params": params,
+                    "params": {k: v for k, v in params.items() if k not in ("approval_token",)},
                     "security_profile": security_profile,
                     "trace_id": trace_id,
                     "mode": "stream",
@@ -1684,6 +2260,11 @@ def run_poc_stream():
             "error": "High-risk PoC execution requires explicit approval.",
             "requires_approval": True,
             "requires_disruptive_approval": True,
+            "approval_token": _issue_disruptive_approval_token(poc_filename, _stream_target),
+            "approval_ttl_seconds": _APPROVAL_TOKEN_TTL_SECONDS,
+            "batch_approval_ttl_seconds": _BATCH_APPROVAL_TOKEN_TTL_SECONDS,
+            "batch_authorization_scope": batch_scope or None,
+            "batch_authorization_error": batch_reason or "",
             "trace_id": trace_id,
             "security_profile": security_profile,
             "professional_policy": professional_policy,
@@ -1711,7 +2292,20 @@ def run_poc_stream():
     except Exception as e:
         logger.error(f"Failed to record stream audit log: {e}")
 
+    if not _POC_SEMAPHORE.acquire(blocking=False):
+        def _busy_gen():
+            yield f"data: {json.dumps({'type': 'result', 'success': False, 'errors': [f'Server is busy: max {_MAX_CONCURRENT_POCS} concurrent PoC executions reached. Retry later.']})}\n\n"
+        return app.response_class(_busy_gen(), mimetype='text/event-stream', headers={
+            'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no',
+        })
+
     def generate():
+        try:
+            yield from _inner_generate()
+        finally:
+            _POC_SEMAPHORE.release()
+
+    def _inner_generate():
         worker = get_poc_worker(data.get("worker_mode"))
         plan = worker.prepare(
             poc_path,
@@ -1801,28 +2395,28 @@ def run_poc_stream():
                     status_msg = "ERROR"
                 logger.info(f"PoC Stream [{poc_filename}]: {status_msg} (Elapsed: {result['elapsed_seconds']}s)")
                 yield f"data: {json.dumps(result)}\n\n" + (" " * 1024) + "\n\n"
+        except GeneratorExit:
+            # 客户端主动断开连接：终止后台 PoC 子进程防止资源泄漏
+            logger.warning(f"SSE client disconnected mid-stream for PoC [{poc_filename}], trace_id={trace_id}. Cleaning up worker.")
+            try:
+                worker.cancel(plan)
+            except Exception as cancel_exc:
+                logger.debug(f"Worker cancel error (non-fatal): {cancel_exc}")
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'result', 'success': False, 'errors': [str(e)]})}\n\n"
+            logger.error(f"SSE stream error for PoC [{poc_filename}]: {e}\n{traceback.format_exc()}")
+            yield f"data: {json.dumps({'type': 'result', 'success': False, 'errors': ['PoC execution failed. See server logs for details.']})}\n\n"
 
+    # 不硬编码 Access-Control-Allow-Origin: *；由全局 flask-cors 依据 AUTOSEC_CORS_ORIGINS 处理跨域。
     return app.response_class(generate(), mimetype='text/event-stream', headers={
         'Cache-Control': 'no-cache',
         'X-Accel-Buffering': 'no',
-        'Access-Control-Allow-Origin': '*',
     })
 
 
 @app.route('/api/poc_manual_verdict', methods=['POST', 'OPTIONS'])
-@cross_origin()
-def poc_manual_verdict():
+@token_required
+def poc_manual_verdict(current_user):
     """Record an operator verdict for PoCs whose physical impact cannot be auto-verified."""
-    if request.method == 'OPTIONS':
-        return jsonify({}), 200
-
-    current_user = resolve_user_from_bearer(
-        request.headers.get('Authorization'),
-        app.config['SECRET_KEY'],
-        User,
-    )
     data = request.json or {}
     verdict = str(data.get("verdict") or "").strip()
     valid_verdicts = {
@@ -1905,17 +2499,9 @@ def poc_manual_verdict():
 
 
 @app.route('/api/poc_manual_verdict_batch', methods=['POST', 'OPTIONS'])
-@cross_origin()
-def poc_manual_verdict_batch():
+@token_required
+def poc_manual_verdict_batch(current_user):
     """Record one operator verdict for multiple PoCs in the same scan session."""
-    if request.method == 'OPTIONS':
-        return jsonify({}), 200
-
-    current_user = resolve_user_from_bearer(
-        request.headers.get('Authorization'),
-        app.config['SECRET_KEY'],
-        User,
-    )
     data = request.json or {}
     items = data.get("items") or []
     if not isinstance(items, list) or not items:
@@ -1984,17 +2570,9 @@ def poc_manual_verdict_batch():
 
 
 @app.route('/api/scan_approval_policy', methods=['POST', 'OPTIONS'])
-@cross_origin()
-def scan_approval_policy():
+@token_required
+def scan_approval_policy(current_user):
     """Record an operator-approved scan policy for auditability."""
-    if request.method == 'OPTIONS':
-        return jsonify({}), 200
-
-    current_user = resolve_user_from_bearer(
-        request.headers.get('Authorization'),
-        app.config['SECRET_KEY'],
-        User,
-    )
     data = request.json or {}
     policy = {
         "session_id": str(data.get("session_id") or "manual"),
@@ -2210,11 +2788,17 @@ def delete_history_item(current_user, history_id):
         
     session_id = history.session_id
     try:
-        # Delete related supervisor snapshots if session_id exists
+        # 删除关联快照/artifacts：按 session_id + owner 过滤，防止 session_id 碰撞导致误删他人数据。
+        # admin 可跨用户删除该 session 的全部关联数据。
         if session_id:
-            SupervisorMetricSnapshot.query.filter_by(session_id=session_id).delete()
-            ExecutionArtifact.query.filter_by(session_id=session_id).delete()
-            
+            snap_q = SupervisorMetricSnapshot.query.filter_by(session_id=session_id)
+            art_q = ExecutionArtifact.query.filter_by(session_id=session_id)
+            if current_user.role != 'admin':
+                snap_q = snap_q.filter_by(user_id=current_user.id)
+                art_q = art_q.filter_by(user_id=current_user.id)
+            snap_q.delete()
+            art_q.delete()
+
         db.session.delete(history)
         db.session.commit()
         logger.info(f"User {current_user.username} deleted history record {history_id} (Session: {session_id})")
@@ -2246,9 +2830,14 @@ def delete_history_batch(current_user):
             
             session_id = history.session_id
             if session_id:
-                SupervisorMetricSnapshot.query.filter_by(session_id=session_id).delete()
-                ExecutionArtifact.query.filter_by(session_id=session_id).delete()
-                
+                snap_q = SupervisorMetricSnapshot.query.filter_by(session_id=session_id)
+                art_q = ExecutionArtifact.query.filter_by(session_id=session_id)
+                if current_user.role != 'admin':
+                    snap_q = snap_q.filter_by(user_id=current_user.id)
+                    art_q = art_q.filter_by(user_id=current_user.id)
+                snap_q.delete()
+                art_q.delete()
+
             db.session.delete(history)
             deleted_count += 1
             
@@ -2418,8 +3007,25 @@ def run_evaluation_suite(current_user):
         return jsonify({"message": str(exc)}), 500
 
 @app.route('/api/execute', methods=['POST'])
-def execute_script():
-    """Receives a Python script string, executes it locally, and returns stdout/stderr."""
+@token_required
+def execute_script(current_user):
+    """Receives a Python script string, executes it locally, and returns stdout/stderr.
+
+    安全约束（第一性原理：任意代码执行是最高危能力，必须默认关闭并强认证）：
+      - 始终要求已认证用户（@token_required）
+      - 默认禁用；仅当 AUTOSEC_ENABLE_SCRIPT_EXECUTION=true 时开放
+      - 开放时仍要求 admin 角色
+    """
+    if not _ENABLE_SCRIPT_EXECUTION:
+        logger.warning(f"Blocked /api/execute (disabled) from user={current_user.username}")
+        return jsonify({
+            "error": "Arbitrary script execution is disabled. "
+                     "Set AUTOSEC_ENABLE_SCRIPT_EXECUTION=true and use an admin account to enable it."
+        }), 403
+    if current_user.role != 'admin':
+        logger.warning(f"Blocked /api/execute (non-admin) from user={current_user.username}")
+        return jsonify({"error": "Admin privileges required for arbitrary script execution."}), 403
+
     data = request.json
     script_content = data.get('script')
     
@@ -2427,7 +3033,7 @@ def execute_script():
         logger.warning("Received execute_script request with no script content.")
         return jsonify({"error": "No script content provided"}), 400
 
-    logger.info(f"Received interactive execution request (Script size: {len(script_content)} bytes)")
+    logger.info(f"Interactive execution request by admin={current_user.username} (Script size: {len(script_content)} bytes)")
     start_time = time.time()
 
     # Create a temporary file to run the script
@@ -2491,7 +3097,7 @@ def execute_script():
         return jsonify({
             "success": False, 
             "logs": [], 
-            "errors": [str(e)],
+            "errors": ["Execution failed. See server logs for details."],
             "vulnerable": False,
             "elapsed_seconds": elapsed
         })
@@ -2666,8 +3272,28 @@ def agent_scan(current_user):
         or ''
     ).strip()
     usb_mount_point = str(data.get('usb_mount_point') or data.get('usbMountPoint') or '').strip()
-    # Agent 模式默认全量自动审批：所有高风险/破坏性 PoC 直接执行，无需人工审批
-    approve_high_risk_batch = True
+    # 兼容旧开关：approve_high_risk_batch=true 映射到渐进自动模式。
+    approve_high_risk_batch = str(
+        data.get('approve_high_risk_batch') or data.get('approveHighRiskBatch') or ''
+    ).strip().lower() in ("true", "1", "yes")
+    execution_mode = normalize_execution_mode(
+        data.get("execution_mode") or data.get("executionMode") or "",
+        approve_high_risk_batch=approve_high_risk_batch,
+    )
+    enable_reflection_reentry = str(
+        data.get("enable_reflection_reentry") or data.get("enableReflectionReentry") or ""
+    ).strip().lower() in ("true", "1", "yes")
+    risk_ceiling = normalize_risk_level(
+        data.get("risk_ceiling") or data.get("riskCeiling") or default_risk_ceiling(execution_mode)
+    )
+    lab_policy = str(data.get("lab_policy") or data.get("labPolicy") or "").strip().lower() in ("true", "1", "yes")
+    allow_domains_raw = data.get("allow_domains") or data.get("allowDomains") or []
+    if isinstance(allow_domains_raw, str):
+        allow_domains = [item.strip() for item in allow_domains_raw.split(",") if item.strip()]
+    elif isinstance(allow_domains_raw, list):
+        allow_domains = [str(item).strip() for item in allow_domains_raw if str(item).strip()]
+    else:
+        allow_domains = []
     from adb_usb_utils import local_usb_adb_attached, resolve_usb_adb_serial, usb_adb_block_reason
 
     local_usb_adb_serials = _list_local_usb_adb_serials()
@@ -2687,6 +3313,16 @@ def agent_scan(current_user):
     if not target_ip:
         return jsonify({"error": "target_ip is required"}), 400
 
+    # 目标范围校验：默认仅允许私网/实验室网段；公网目标需显式开启 AUTOSEC_ALLOW_PUBLIC_TARGETS。
+    if not _target_in_scope(target_ip):
+        logger.warning(f"Agent scan blocked: target {target_ip} out of authorized scope (user={current_user.username})")
+        return jsonify({
+            "error": f"Target {target_ip} is outside the authorized scope. "
+                     f"Only private/lab networks are allowed by default. "
+                     f"Set AUTOSEC_ALLOW_PUBLIC_TARGETS=true or add the range to AUTOSEC_ALLOWED_TARGET_CIDRS to authorize it.",
+            "error_code": "TARGET_OUT_OF_SCOPE",
+        }), 403
+
     normalized_ai_config, ai_error = _validate_ai_config(ai_config)
     if ai_error:
         return jsonify({"error": ai_error, "error_code": "MODEL_API_KEY_MISSING"}), 400
@@ -2697,6 +3333,18 @@ def agent_scan(current_user):
         return jsonify({"error": message, "error_code": code}), status
 
     try:
+        target_label = resolve_target_label({"target_ip": target_ip})
+        session_scope_id = str(data.get("session_id") or data.get("trace_id") or f"agent-{uuid.uuid4().hex}")
+        batch_approval_token = str(data.get("batch_approval_token") or data.get("batchApprovalToken") or "").strip()
+        if not batch_approval_token and execution_mode != "SAFE_ONLY":
+            batch_approval_token = _issue_batch_approval_token(
+                target=target_label,
+                session_id=session_scope_id,
+                risk_ceiling=risk_ceiling,
+                allowed_domains=allow_domains,
+                execution_mode=execution_mode,
+                lab_policy=lab_policy,
+            )
         from agent_orchestrator import AgentOrchestrator
         orch = AgentOrchestrator(
             target_ip=target_ip,
@@ -2710,6 +3358,12 @@ def agent_scan(current_user):
             expected_usb_serial=expected_usb_serial,
             usb_mount_point=usb_mount_point,
             approve_high_risk_batch=approve_high_risk_batch,
+            execution_mode=execution_mode,
+            risk_ceiling=risk_ceiling,
+            enable_reflection_reentry=enable_reflection_reentry,
+            batch_approval_token=batch_approval_token,
+            allow_domains=allow_domains,
+            lab_policy=lab_policy,
         )
 
         if resume_from:
@@ -2726,6 +3380,9 @@ def agent_scan(current_user):
             return jsonify({
                 "phase": phase,
                 "target_ip": target_ip,
+                "execution_mode": execution_mode,
+                "risk_ceiling": risk_ceiling,
+                "enable_reflection_reentry": enable_reflection_reentry,
                 "result": res_data["result"],
                 "structured_result": res_data.get("structured_result", {}),
                 "logs": res_data.get("logs", []),
@@ -2757,6 +3414,49 @@ def agent_scan(current_user):
         return _error_payload(message, "AGENT_SCAN_FAILED")
 
 
+import click
+
+
+@app.cli.command("create-admin")
+@click.option("--username", required=True, help="Administrator username (3-64 characters)")
+@click.option("--password", prompt=True, hide_input=True, confirmation_prompt=True, help="Administrator password (min 8 characters)")
+def create_admin_cli(username: str, password: str):
+    """Create an administrator account via CLI (enterprise bootstrap; bypasses web registration)."""
+    username = username.strip()
+    if len(username) < 3 or len(username) > 64:
+        raise click.ClickException("Username must be 3-64 characters.")
+    if len(password) < 8:
+        raise click.ClickException("Password must be at least 8 characters.")
+
+    with app.app_context():
+        if User.query.filter_by(username=username).first():
+            raise click.ClickException(f"Username already exists: {username}")
+
+        is_bootstrap = User.query.count() == 0
+        hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        user = User(username=username, password_hash=hashed, role="admin")
+        db.session.add(user)
+        db.session.commit()
+
+        if is_bootstrap:
+            audit = AuditLog(
+                user_id=user.id,
+                action="bootstrap_admin_created",
+                target=username,
+                details_json=json.dumps({
+                    "username": username,
+                    "bootstrap_mode": "cli_only",
+                    "via": "flask_create_admin",
+                }, ensure_ascii=False),
+                ip_address="cli",
+            )
+            db.session.add(audit)
+            db.session.commit()
+            click.echo(f"Bootstrap complete: administrator '{username}' created.")
+        else:
+            click.echo(f"Administrator '{username}' created.")
+
+
 if __name__ == '__main__':
     if len(sys.argv) >= 4 and sys.argv[1] == '--run-sandbox':
         sys.argv = [sys.argv[0], sys.argv[2], sys.argv[3]]
@@ -2769,8 +3469,8 @@ if __name__ == '__main__':
         logger.warning(warning)
 
     with app.app_context():
-        db.create_all()
-        logger.info("Database schema checked.")
+        _startup_db_migrate()
+        _log_bootstrap_security_warnings()
 
     # ── 初始化自适应上下文引擎（Patent-1: Adaptive Context for IVI Lab）──
     try:
@@ -2793,7 +3493,7 @@ if __name__ == '__main__':
     logger.info(f"Available PoC files: {poc_count} across {len(categories)} categories: {', '.join(sorted(categories))}")
     logger.info("New endpoints: /api/topology, /api/physical-state, /api/agent-scan")
 
-    # Bind to 0.0.0.0 to allow access if frontend is on a different device
+    # 监听地址由 AUTOSEC_HOST 控制（默认 127.0.0.1；局域网共享时设为 0.0.0.0 并开启认证）
     # Disable flask default click logger to favor our custom logger
     log = logging.getLogger('werkzeug')
     log.setLevel(logging.ERROR)

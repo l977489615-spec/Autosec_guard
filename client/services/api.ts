@@ -20,6 +20,7 @@ const DEFAULT_BACKEND_URL = inferDefaultBackendUrl();
 export interface UserAiSettings {
   baseUrl: string;
   apiKey: string;
+  apiKeyConfigured?: boolean;
   reportModel: string;
   fastModel: string;
   strongModel: string;
@@ -33,18 +34,23 @@ export const defaultAiSettings = (): UserAiSettings => ({
   strongModel: 'qwen-max',
 });
 
-export const buildAiConfigPayload = (settings?: Partial<UserAiSettings> | null) => {
+export const buildAiConfigPayload = (settings?: Partial<UserAiSettings> | null, options?: { includeApiKey?: boolean }) => {
   const resolved = {
     ...defaultAiSettings(),
     ...(settings || {}),
   };
-  return {
+  const includeKey = options?.includeApiKey ?? false;
+  const payload: Record<string, string> = {
     base_url: resolved.baseUrl.trim(),
-    api_key: resolved.apiKey.trim(),
     report_model: resolved.reportModel.trim(),
     fast_model: resolved.fastModel.trim(),
     strong_model: resolved.strongModel.trim(),
   };
+  // 默认不向服务端发送 api_key；服务端从加密存储加载
+  if (includeKey && resolved.apiKey.trim()) {
+    payload.api_key = resolved.apiKey.trim();
+  }
+  return payload;
 };
 
 const resolveInitialBackendUrl = () => {
@@ -71,6 +77,24 @@ const resolveInitialBackendUrl = () => {
 // Default to localhost, but mutable via UI configuration
 let backendUrl = resolveInitialBackendUrl();
 
+// 全局 401 回调：由 App.tsx 注册，所有 API 调用遇 401 时触发登出
+let _onUnauthorized: (() => void) | null = null;
+export const setUnauthorizedHandler = (handler: () => void) => {
+  _onUnauthorized = handler;
+};
+
+const handleResponseAuth = (res: Response) => {
+  if (res.status === 401 && _onUnauthorized) {
+    _onUnauthorized();
+  }
+};
+
+const buildAuthHeaders = (token?: string | null, extra?: Record<string, string>): Record<string, string> => {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(extra || {}) };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  return headers;
+};
+
 export const setBackendUrl = (url: string) => {
   backendUrl = normalizeBackendUrl(url);
   if (typeof window !== 'undefined') {
@@ -79,6 +103,25 @@ export const setBackendUrl = (url: string) => {
 };
 
 export const getBackendUrl = () => backendUrl;
+
+export interface AuthStatus {
+  user_count: number;
+  bootstrap_required: boolean;
+  bootstrap_mode: 'edge' | 'cli_only' | string;
+  web_bootstrap_allowed: boolean;
+  open_registration: boolean;
+  registration_allowed: boolean;
+  bootstrap_token_required: boolean;
+}
+
+export const getAuthStatus = async (backendOverride?: string | null): Promise<AuthStatus> => {
+  const base = getRequestBackendUrl(backendOverride);
+  const res = await fetch(`${base}/api/auth/status`, { method: 'GET', mode: 'cors' });
+  if (!res.ok) {
+    throw new Error(`Server returned ${res.status}`);
+  }
+  return await res.json();
+};
 
 const getRequestBackendUrl = (override?: string | null) => {
   if (override && override.trim()) {
@@ -387,12 +430,14 @@ export const recordScanApprovalPolicy = async (
   }
 };
 
-export const listPocs = async (): Promise<{ pocs: any[], total: number, error?: string }> => {
+export const listPocs = async (token?: string | null): Promise<{ pocs: any[], total: number, error?: string }> => {
   try {
     const res = await fetch(`${backendUrl}/api/list_pocs`, {
       method: 'GET',
+      headers: buildAuthHeaders(token),
       mode: 'cors'
     });
+    handleResponseAuth(res);
     if (!res.ok) throw new Error(`Server returned ${res.status}`);
     return await res.json();
   } catch (error: any) {
@@ -400,14 +445,15 @@ export const listPocs = async (): Promise<{ pocs: any[], total: number, error?: 
   }
 };
 
-export const fingerprintOS = async (ip: string): Promise<{ os: string; details: string; error?: string }> => {
+export const fingerprintOS = async (ip: string, token?: string | null): Promise<{ os: string; details: string; error?: string }> => {
   try {
     const res = await fetch(`${backendUrl}/api/fingerprint`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: buildAuthHeaders(token),
       body: JSON.stringify({ ip }),
       mode: 'cors'
     });
+    handleResponseAuth(res);
     if (!res.ok) {
       throw new Error(`Server returned ${res.status}`);
     }
@@ -418,21 +464,23 @@ export const fingerprintOS = async (ip: string): Promise<{ os: string; details: 
   }
 };
 
-export const saveScanSession = async (session: any, token: string | null) => {
+export const saveScanSession = async (session: any, token: string | null): Promise<{ success: boolean; error?: string }> => {
   try {
     const res = await fetch(`${backendUrl}/api/save_session`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
+      headers: buildAuthHeaders(token),
       body: JSON.stringify(session),
       mode: 'cors'
     });
-    return await res.json();
-  } catch (error) {
+    handleResponseAuth(res);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return { success: false, error: data.message || data.error || `Server returned ${res.status}` };
+    }
+    return { success: true };
+  } catch (error: any) {
     console.error('Failed to save session:', error);
-    return { error: 'Connection failed' };
+    return { success: false, error: error?.message || 'Connection failed' };
   }
 };
 
@@ -452,31 +500,24 @@ export const fetchCurrentProfile = async (token: string) => {
   return data.user;
 };
 
-export const generateSecurityReport = async (session: any, token: string | null, aiSettings?: Partial<UserAiSettings> | null) => {
+export const generateSecurityReport = async (session: any, token: string | null, aiSettings?: Partial<UserAiSettings> | null): Promise<{ success: boolean; report?: string; error?: string }> => {
   try {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-
     const res = await fetch(`${backendUrl}/api/report/generate`, {
       method: 'POST',
-      headers,
+      headers: buildAuthHeaders(token),
+      // 不传 api_key：服务端从用户加密存储加载
       body: JSON.stringify({ session, ai_config: buildAiConfigPayload(aiSettings) }),
       mode: 'cors',
     });
-
+    handleResponseAuth(res);
     const data = await res.json();
     if (!res.ok) {
-      throw new Error(data.message || `Server returned ${res.status}`);
+      return { success: false, error: data.message || `Server returned ${res.status}` };
     }
-
-    return data.report as string;
+    return { success: true, report: data.report as string };
   } catch (error: any) {
     console.error('Failed to generate AI report:', error);
-    return 'AI 报告生成失败，请检查后端服务状态和当前用户的 AI 配置。';
+    return { success: false, error: error?.message || 'AI 报告生成失败，请检查后端服务状态和当前用户的 AI 配置。' };
   }
 };
 

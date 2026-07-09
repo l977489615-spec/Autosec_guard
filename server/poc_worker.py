@@ -3,6 +3,7 @@ import base64
 import errno
 import ipaddress
 import json
+import logging
 import os
 try:
     import resource
@@ -18,6 +19,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
 from poc_security import should_require_disruptive_approval
+
+logger = logging.getLogger(__name__)
 
 
 SERVER_DIR = Path(__file__).resolve().parent
@@ -87,7 +90,8 @@ def _allowed_hosts_from_env() -> set[str]:
 
 def _is_allowed_destination(host: Any, allowed_hosts: set[str]) -> bool:
     if not allowed_hosts:
-        return True
+        # 未指定目标 IP 时拒绝所有出站连接，防止 PoC 被用作扫描/攻击跳板
+        return False
 
     host = str(host).strip()
     if not host:
@@ -387,6 +391,8 @@ class PocWorkerPlan:
     env: dict
     poc_code: Optional[str] = None
     timeout_seconds: int = 60
+    # 运行时由 iter_stream 填充，供 cancel() 使用
+    _proc: Optional[subprocess.Popen] = None
 
 
 class LocalSandboxPocWorker:
@@ -522,6 +528,7 @@ class LocalSandboxPocWorker:
             env=env_override,
             start_new_session=True,
         )
+        plan._proc = proc  # 供 cancel() 调用
 
         result_chunks: list[str] = []
         collecting_result = False
@@ -569,15 +576,31 @@ class LocalSandboxPocWorker:
                 "worker_mode": plan.worker_mode,
             }
         except Exception as exc:
+            logger.error(f"PoC stream error [{plan.poc_filename}]: {exc}")
             yield {
                 "type": "result",
                 "success": False,
-                "errors": [str(exc), traceback.format_exc()],
+                "errors": [str(exc)],
                 "trace_id": plan.trace_id,
                 "security_profile": plan.security_profile,
                 "sandbox_profile": plan.sandbox_profile,
                 "worker_mode": plan.worker_mode,
             }
+
+
+    def cancel(self, plan: "PocWorkerPlan") -> None:
+        """终止关联的 PoC 子进程（客户端断连时调用）。"""
+        proc = getattr(plan, "_proc", None)
+        if proc is None or proc.poll() is not None:
+            return
+        try:
+            import signal, os as _os
+            _os.killpg(_os.getpgid(proc.pid), signal.SIGTERM)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
 
 
 def get_poc_worker(mode: Optional[str] = None):

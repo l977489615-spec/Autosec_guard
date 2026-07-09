@@ -95,10 +95,20 @@ def extract_poc_security_profile(poc_path: str, source_text: str | None = None) 
     return profile
 
 
-def should_require_disruptive_approval(profile: Dict[str, Any], params: Dict[str, Any]) -> bool:
-    if params.get("allow_disruptive") in (True, "true", "True", "1", 1):
-        return False
+def is_disruptive_by_nature(profile: Dict[str, Any]) -> bool:
+    """仅根据 PoC 自身元数据判断其是否具破坏性。不看任何客户端标志。"""
     destructive_level = str(profile.get("destructive_level") or "").lower()
     if profile.get("is_disruptive"):
         return True
     return destructive_level in {"disruptive", "restart", "dataloss", "brick"}
+
+
+def should_require_disruptive_approval(profile: Dict[str, Any], params: Dict[str, Any]) -> bool:
+    """
+    是否需要破坏性审批。
+
+    安全原则（第一性原理）：客户端提供的 `allow_disruptive` 标志【不能】单独作为审批依据，
+    否则任何人直接带该标志即可绕过审批。真正的放行必须由服务端签发的 `approval_token` 决定，
+    该校验在 server.py 层完成。本函数只回答“此 PoC 本质是否需要审批”。
+    """
+    return is_disruptive_by_nature(profile)

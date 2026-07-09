@@ -78,10 +78,46 @@ const titleFromFilename = (filename?: string | null): string => {
   return name || 'Unnamed PoC';
 };
 
+const looksCanonicalName = (value?: string | null): boolean => (
+  (() => {
+    const text = String(value || '').trim();
+    if (!/(Active Validation|Reconnaissance)$/i.test(text)) return false;
+    if (text.includes('_') || text.length > 96) return false;
+    return !/[:()→]|\b(via|trigger(?:s|ed)?|overwrite(?:s|n)?|parsing|syscall|accepted|processed|reassembled|during|without|malformed|page\s+cache|timing\s+side\s+channel|anti\s+clogging|xfrm|rxkad|byte\s+by\s+byte)\b/i.test(text);
+  })()
+);
+
+const canonicalTitleFromFilename = (filename?: string | null): string => {
+  const stem = basename(filename)
+    .replace(/\.py$/i, '')
+    .replace(/^\d+[a-z]?_/i, '')
+    .replace(/_(Active_Validation|Reconnaissance)$/i, '')
+    .replace(/^CVE_(\d{4})_(\d{4,7})/i, 'CVE-$1-$2')
+    .replace(/^CWE_(\d+)/i, 'CWE-$1')
+    .replace(/_/g, ' ')
+    .trim();
+  if (!stem) return 'Unnamed PoC';
+  if (/ (Active Validation|Reconnaissance)$/i.test(stem)) return stem;
+  if (/Reconnaissance$/i.test(filename || '')) return `${stem} Reconnaissance`;
+  return `${stem} Active Validation`;
+};
+
+const deriveCatalogName = (item: any, filename: string): string => {
+  const explicit = item.poc_name || item.meta_poc_name;
+  if (looksCanonicalName(explicit)) {
+    return String(explicit).trim();
+  }
+  const byFilename = canonicalTitleFromFilename(filename);
+  if (/^(CVE|CWE)-/i.test(byFilename) || /Active Validation$|Reconnaissance$/i.test(byFilename)) {
+    return byFilename;
+  }
+  return explicit || titleFromFilename(filename);
+};
+
 export const backendPocToCatalogPoc = (item: any): POC => {
   const filename = item.filename || '';
   const displayId = item.display_id || item.meta_display_id || basename(filename).replace(/\.py$/i, '');
-  const name = item.poc_name || item.meta_poc_name || titleFromFilename(filename);
+  const name = deriveCatalogName(item, filename);
   const category = categoryFromBackend(item);
   const severity = normalizeSeverity(item.severity || item.meta_severity);
   const protocol = item.protocol || item.meta_protocol || category;
@@ -137,8 +173,14 @@ export const backendPocToCatalogPoc = (item: any): POC => {
   };
 };
 
-export const fetchPocCatalog = async (): Promise<{ pocs: POC[]; total: number; error?: string }> => {
-  const data = await listPocs();
+export const normalizeCachedCatalogPoc = (poc: POC): POC => ({
+  ...poc,
+  name: looksCanonicalName(poc.name) ? poc.name : canonicalTitleFromFilename(poc.pocFile),
+  description: `${looksCanonicalName(poc.name) ? poc.name : canonicalTitleFromFilename(poc.pocFile)} (${poc.category})`,
+});
+
+export const fetchPocCatalog = async (token?: string | null): Promise<{ pocs: POC[]; total: number; error?: string }> => {
+  const data = await listPocs(token);
   return {
     pocs: (data.pocs || []).map(backendPocToCatalogPoc),
     total: data.total || data.pocs?.length || 0,

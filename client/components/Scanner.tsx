@@ -11,6 +11,7 @@ import AgentScan from './AgentScan';
 import { AgentScanErrorBoundary } from './AgentScanErrorBoundary';
 import { findPocInCatalog } from '../services/pocCatalog';
 import { usePocCatalog } from '../hooks/usePocCatalog';
+import { markdownToSafeHtml, escapeHtml } from '../utils/security';
 
 type ScannerMode = 'SELECTION' | 'GLOBAL' | 'MANUAL' | 'AGENT';
 
@@ -143,7 +144,9 @@ const Scanner: React.FC<ScannerProps> = ({
 }) => {
   const [isAnalysing, setIsAnalysing] = useState(false);
   const [selectedResultPoc, setSelectedResultPoc] = useState<POC | null>(null);
-  const { pocs: pocCatalog, refresh: refreshPocCatalog } = usePocCatalog();
+  const { pocs: pocCatalog, refresh: refreshPocCatalog } = usePocCatalog(token);
+  const [sessionSaveStatus, setSessionSaveStatus] = useState<'idle' | 'saved' | 'failed'>('idle');
+  const [aiReportError, setAiReportError] = useState<string | null>(null);
 
   // Contents of PoC scripts fetched from backend
   const [pocContents, setPocContents] = useState<Record<string, string>>({});
@@ -424,7 +427,7 @@ const Scanner: React.FC<ScannerProps> = ({
     let detectedOS = 'unknown';
     if (session.connection.ip) {
       addLog(`Fingerprinting target OS at ${session.connection.ip}...`, 'info');
-      const fp = await fingerprintOS(session.connection.ip);
+      const fp = await fingerprintOS(session.connection.ip, token);
       detectedOS = fp.os;
       addLog(`[OS Target] Detected: ${fp.os.toUpperCase()} (${fp.details})`, 'info');
     }
@@ -523,66 +526,73 @@ const Scanner: React.FC<ScannerProps> = ({
         params.poc_id = poc.id;
         params.poc_name = poc.name;
 
-        const body = JSON.stringify({ filename: poc.pocFile, params, stream: true, session_id: newSessionId });
+        // 破坏性执行：服务端会以 403 + approval_token 应答；用户已确认后透明携带令牌重试一次。
+        const runOnce = (extraParams: Record<string, any>, allowRetry: boolean) => {
+          const runParams = { ...params, ...extraParams };
+          const body = JSON.stringify({ filename: poc.pocFile, params: runParams, stream: true, session_id: newSessionId });
 
-        fetch(`${engineUrl}/api/run_poc_stream`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
-          body,
-        }).then(async (response) => {
-          if (!response.ok) {
-            let message = `Server returned ${response.status}`;
-            try {
-              const data = await response.json();
-              message = data.message || data.error || message;
-            } catch {
+          fetch(`${engineUrl}/api/run_poc_stream`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+            body,
+          }).then(async (response) => {
+            if (!response.ok) {
+              let data: any = null;
+              let message = `Server returned ${response.status}`;
               try {
-                const text = await response.text();
-                if (text.trim()) {
-                  message = text.trim();
-                }
+                data = await response.json();
+                message = data.message || data.error || message;
               } catch {
-                // Ignore secondary parse failures.
-              }
-            }
-            resolve({ success: false, logs: [], errors: [message], vulnerable: false });
-            return;
-          }
-          if (!response.body) {
-            // Fallback to non-streaming when the server does not provide an SSE body.
-            const fallback = await runPocPlugin(poc.pocFile, params, token, engineUrl);
-            resolve(fallback);
-            return;
-          }
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = '';
-          let finalResult: any = null;
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
                 try {
-                  const payload = JSON.parse(line.slice(6));
-                  if (payload.type === 'log') {
-                    addLog(`  ┃ ${payload.message}`, 'terminal');
-                  } else if (payload.type === 'result') {
-                    finalResult = payload;
-                  }
-                } catch { }
+                  const text = await response.text();
+                  if (text.trim()) message = text.trim();
+                } catch { /* ignore */ }
+              }
+              // 已获批但服务端要求令牌：携带令牌重试一次
+              if (allowRetry && response.status === 403 && data?.approval_token && executionParams.allow_disruptive) {
+                addLog(`${progress} ⇢ ${poc.name} → Presenting server approval token...`, 'info');
+                runOnce({ approval_token: data.approval_token }, false);
+                return;
+              }
+              resolve({ success: false, logs: [], errors: [message], vulnerable: false });
+              return;
+            }
+            if (!response.body) {
+              const fallback = await runPocPlugin(poc.pocFile, runParams, token, engineUrl);
+              resolve(fallback);
+              return;
+            }
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let finalResult: any = null;
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+              buffer = lines.pop() || '';
+              for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                  try {
+                    const payload = JSON.parse(line.slice(6));
+                    if (payload.type === 'log') {
+                      addLog(`  ┃ ${payload.message}`, 'terminal');
+                    } else if (payload.type === 'result') {
+                      finalResult = payload;
+                    }
+                  } catch { }
+                }
               }
             }
-          }
-          resolve(finalResult || { success: false, logs: [], errors: ['No result received'] });
-        }).catch(() => {
-          // Fallback to non-streaming on network error
-          runPocPlugin(poc.pocFile, params, token, engineUrl).then(resolve);
-        });
+            resolve(finalResult || { success: false, logs: [], errors: ['No result received'] });
+          }).catch(() => {
+            runPocPlugin(poc.pocFile, runParams, token, engineUrl).then(resolve);
+          });
+        };
+
+        runOnce({}, true);
       });
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
@@ -691,9 +701,10 @@ const Scanner: React.FC<ScannerProps> = ({
       };
 
       // Push to history asynchronously to avoid blocking state render
-      setTimeout(() => {
+      setTimeout(async () => {
         onAddToHistory(finalSession);
-        saveScanSession(finalSession, token);
+        const result = await saveScanSession(finalSession, token);
+        setSessionSaveStatus(result.success ? 'saved' : 'failed');
       }, 0);
 
       return finalSession;
@@ -702,11 +713,18 @@ const Scanner: React.FC<ScannerProps> = ({
 
   const handleAiAnalysis = async () => {
     setIsAnalysing(true);
-    const report = await generateSecurityReport(session, token, currentUser?.ai_config);
+    setAiReportError(null);
+    const result = await generateSecurityReport(session, token, currentUser?.ai_config);
+    if (!result.success || !result.report) {
+      setAiReportError(result.error || 'AI 报告生成失败');
+      setIsAnalysing(false);
+      return;
+    }
     setSession(prev => {
-      const updated = { ...prev, aiReport: report };
-      // Sync to DB when report is generated
-      saveScanSession(updated, token);
+      const updated = { ...prev, aiReport: result.report };
+      saveScanSession(updated, token).then((saveResult) => {
+        setSessionSaveStatus(saveResult.success ? 'saved' : 'failed');
+      });
       return updated;
     });
     setIsAnalysing(false);
@@ -719,14 +737,7 @@ const Scanner: React.FC<ScannerProps> = ({
     const targetInfo = session.targetName || session.connection.ip || 'Unknown Target';
 
     // Parse Markdown manually like AgentScan to ensure clean print styles
-    const reportHtml = session.aiReport
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-      .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-      .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-      .replace(/^[-*] (.+)$/gm, '<li>$1</li>')
-      .replace(/\n\n/g, '</p><p>')
-      .replace(/\n/g, '<br/>');
+    const reportHtml = markdownToSafeHtml(session.aiReport);
 
     const html = `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -756,8 +767,8 @@ const Scanner: React.FC<ScannerProps> = ({
     <div class="header">
       <h1>AutoSec Guard 智能网联汽车安全评估报告</h1>
       <div class="meta">
-        <span><span class="label">扫描目标：</span>${targetInfo}</span>
-        <span><span class="label">扫描时间：</span>${now}</span>
+        <span><span class="label">扫描目标：</span>${escapeHtml(targetInfo)}</span>
+        <span><span class="label">扫描时间：</span>${escapeHtml(now)}</span>
         <span><span class="label">报告类型：</span>常规扫描引擎报告</span>
         <span><span class="label">工具版本：</span>AutoSec Guard v2.0 · Qwen-Max (千问)</span>
       </div>
@@ -1043,7 +1054,14 @@ const Scanner: React.FC<ScannerProps> = ({
         {mode === 'AGENT' && token && (
           <div className="h-full flex flex-col min-h-0">
             <AgentScanErrorBoundary>
-              <AgentScan token={token} currentUser={currentUser} onSessionComplete={onAddToHistory} engineUrl={engineUrl} />
+              <AgentScan
+                token={token}
+                currentUser={currentUser}
+                onSessionComplete={onAddToHistory}
+                engineUrl={engineUrl}
+                draft={session.agentDraft}
+                onDraftChange={(draft) => setSession((prev) => ({ ...prev, agentDraft: draft }))}
+              />
             </AgentScanErrorBoundary>
           </div>
         )}

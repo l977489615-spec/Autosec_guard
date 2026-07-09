@@ -7,6 +7,7 @@ import { getBackendUrl } from '../services/api';
 import AttackGraph from './AttackGraph';
 import { findPocInCatalog } from '../services/pocCatalog';
 import { usePocCatalog } from '../hooks/usePocCatalog';
+import { markdownToSafeHtml, escapeHtml } from '../utils/security';
 
 interface ScanHistoryProps {
     localHistory?: ScanSession[];
@@ -20,7 +21,7 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
 
     const [selectedSession, setSelectedSession] = useState<ScanSession | null>(null);
     const [selectedResultPoc, setSelectedResultPoc] = useState<POC | null>(null);
-    const { pocs: pocCatalog } = usePocCatalog();
+    const { pocs: pocCatalog } = usePocCatalog(token);
     const [dbHistory, setDbHistory] = useState<ScanSession[]>([]);
     const [supervisorSnapshots, setSupervisorSnapshots] = useState<any[]>([]);
     const [sessionArtifacts, setSessionArtifacts] = useState<ExecutionArtifactRecord[]>([]);
@@ -256,14 +257,7 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
         const targetInfo = session.targetName || session.connection.ip || 'Unknown Target';
 
         // Basic Markdown to HTML conversion for report
-        const reportHtml = session.aiReport
-            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-            .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-            .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-            .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-            .replace(/^[-*] (.+)$/gm, '<li>$1</li>')
-            .replace(/\n\n/g, '</p><p>')
-            .replace(/\n/g, '<br/>');
+        const reportHtml = markdownToSafeHtml(session.aiReport);
 
         const html = `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -293,8 +287,8 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
     <div class="header">
       <h1>AutoSec Guard 智能网联汽车安全评估报告</h1>
       <div class="meta">
-        <span><span class="label">扫描目标：</span>${targetInfo}</span>
-        <span><span class="label">扫描时间：</span>${now}</span>
+        <span><span class="label">扫描目标：</span>${escapeHtml(targetInfo)}</span>
+        <span><span class="label">扫描时间：</span>${escapeHtml(now)}</span>
         <span><span class="label">报告类型：</span>历史记录导出</span>
         <span><span class="label">工具版本：</span>AutoSec Guard v2.0 · Archive</span>
       </div>
