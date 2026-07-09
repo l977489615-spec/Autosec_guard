@@ -1,0 +1,26 @@
+[
+  {
+    "项目": "平台后端",
+    "配置": "Python 3.10-3.13，Flask/Flask-CORS，PoC API 服务默认 127.0.0.1:5002，支持 macOS/Linux/Windows"
+  },
+  {
+    "项目": "平台前端",
+    "配置": "Vite + React + TypeScript，浏览器访问控制台，支持扫描任务、Agent 任务和证据查看"
+  },
+  {
+    "项目": "PoC 执行环境",
+    "配置": "sandbox_runner.py 子进程隔离；CPU/内存/输出/文件句柄限制；SANDBOX_ALLOWED_HOSTS 目标白名单"
+  },
+  {
+    "项目": "车端/边缘能力",
+    "配置": "ADB、网络扫描、可选蓝牙/Wi-Fi/USB/PCAN 能力登记；缺少参数时自动跳过不适用 PoC"
+  },
+  {
+    "项目": "实验目标",
+    "配置": "MOCK-LOCAL(None, 127.0.0.1)"
+  },
+  {
+    "项目": "模型配置",
+    "配置": ""
+  }
+]

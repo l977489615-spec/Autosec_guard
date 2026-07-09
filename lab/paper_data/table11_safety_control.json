@@ -1,0 +1,38 @@
+[
+  {
+    "PoC 风险等级": "Medium",
+    "PoC 数量": 66,
+    "需授权数量": 0,
+    "未授权拦截数量": 0,
+    "授权执行数量": 0,
+    "审计记录完整率": "N/A",
+    "data_source": "poc_metadata+scan_audit"
+  },
+  {
+    "PoC 风险等级": "High",
+    "PoC 数量": 5,
+    "需授权数量": 2,
+    "未授权拦截数量": 2,
+    "授权执行数量": 0,
+    "审计记录完整率": "N/A",
+    "data_source": "poc_metadata+scan_audit"
+  },
+  {
+    "PoC 风险等级": "Critical",
+    "PoC 数量": 1,
+    "需授权数量": 0,
+    "未授权拦截数量": 0,
+    "授权执行数量": 0,
+    "审计记录完整率": "N/A",
+    "data_source": "poc_metadata+scan_audit"
+  },
+  {
+    "PoC 风险等级": "合计",
+    "PoC 数量": 72,
+    "需授权数量": 2,
+    "未授权拦截数量": 2,
+    "授权执行数量": 0,
+    "审计记录完整率": "N/A",
+    "data_source": "poc_metadata+scan_audit"
+  }
+]

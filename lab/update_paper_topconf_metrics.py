@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""Align v3_0610 paper metrics with finalized naming (Chinese first, English on first mention)."""
+"""Align v4_0612 paper metrics with finalized naming (Chinese first, English on first mention)."""
 
 from __future__ import annotations
 
 import json
 import re
 import sys
+import zipfile
 from pathlib import Path
 
 from docx import Document
+from docx.oxml.ns import qn
 
 from paper_metric_names import (
     EVIDENCE_COMPLETENESS,
@@ -18,6 +20,10 @@ from paper_metric_names import (
     JSON_LATENCY_KEY,
     JSON_RECALL_KEY,
     JSON_SUBTASK_KEY,
+    L5_COMPLETE_ARCHIVE_PROSE,
+    L5_COMPLETE_ARCHIVE_SHORT,
+    PAPER_EVIDENCE_COMPLETENESS_LOCATIONS,
+    PAPER_TABLE_CLOSED_LOOP,
     MEAN_E2E_RUNTIME,
     MEAN_E2E_RUNTIME_FIRST,
     MISS_RATE,
@@ -27,17 +33,19 @@ from paper_metric_names import (
     SUBTASK_COMPLETION,
     SUBTASK_COMPLETION_FIRST,
 )
-from l3_evidence_rates import scan_evidence_by_category
-from paper_table_rows import ablation_latency_minutes, load_json
+from l3_evidence_rates import (
+    ablation_evidence_rates,
+    model_evidence_rates,
+    scan_evidence_by_category,
+)
+from paper_metric_language import normalize_metric_language
+from paper_table_rows import load_json
 from update_paper_v3_0610_data_only import (
     AUTHOR,
     DATE_ISO,
     SOURCE,
-    _ablation_evidence_rates,
-    _model_evidence_rates,
     enable_track_revisions,
     fill_table_tracked,
-    normalize_docx,
     pct_only,
     set_cell_tracked,
     set_paragraph_tracked,
@@ -46,13 +54,64 @@ from update_paper_v3_0610_data_only import (
 
 ROOT = Path(__file__).resolve().parents[1]
 
+REVISION_XML_PARTS = (
+    "word/document.xml",
+    "word/footnotes.xml",
+    "word/endnotes.xml",
+    "word/comments.xml",
+)
+
+
+def transform_word_text_nodes(xml: str, transform) -> str:
+    def repl(match: re.Match[str]) -> str:
+        open_tag, inner, close_tag = match.group(1), match.group(2), match.group(3)
+        new_inner = transform(inner)
+        if new_inner == inner:
+            return match.group(0)
+        if not open_tag.endswith("/>"):
+            if new_inner.startswith(" ") or new_inner.endswith(" "):
+                open_tag = re.sub(r"\s*/>\s*$", ">", open_tag)
+                if 'xml:space="preserve"' not in open_tag:
+                    open_tag = open_tag.replace("<w:t", '<w:t xml:space="preserve"', 1)
+        return f"{open_tag}{new_inner}{close_tag}"
+
+    for tag in ("w:t", "w:delText"):
+        xml = re.sub(
+            rf"(<{tag}[^>]*>)([^<]*)(</{tag}>)",
+            repl,
+            xml,
+        )
+    return xml
+
+
+def prepare_docx_for_edit(source: Path, output: Path) -> None:
+    with zipfile.ZipFile(source) as zin, zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as zout:
+        for info in zin.infolist():
+            data = zin.read(info.filename)
+            name = info.filename.replace("\\", "/")
+            if name in REVISION_XML_PARTS:
+                xml = transform_word_text_nodes(
+                    data.decode("utf-8"),
+                    normalize_metric_language,
+                )
+                data = xml.encode("utf-8")
+            zout.writestr(name, data)
+
+
+def paragraph_visible_text(paragraph) -> str:
+    texts: list[str] = []
+    for node in paragraph._element.iter():
+        if node.tag == qn("w:t"):
+            texts.append(node.text or "")
+    return "".join(texts)
+
 
 def build_table_rows() -> dict[str, list[list[str]]]:
     table6_total = next(row for row in load_json("table6_total_by_category.json") if row.get("类别") == "合计")
     table7 = {row["组别"]: row for row in load_json("table7_total_by_model_group.json")}
     table8_by_id = {row["variant_id"]: row for row in load_json("table8_total_by_model.json")}
-    model_evidence = _model_evidence_rates()
-    ablation_evidence = _ablation_evidence_rates()
+    model_evidence = model_evidence_rates()
+    ablation_evidence = ablation_evidence_rates()
 
     poc_table = [
         ["指标", "数值", "计算口径"],
@@ -68,7 +127,7 @@ def build_table_rows() -> dict[str, list[list[str]]]:
         [
             f"Agent 层{EVIDENCE_COMPLETENESS}",
             model_evidence.get("ZHIPU", "-"),
-            "L3：执行留痕 + 结构化结果 + 可复核实质材料（响应摘录/日志/制品）",
+            L5_COMPLETE_ARCHIVE_SHORT,
         ],
     ]
 
@@ -86,21 +145,20 @@ def build_table_rows() -> dict[str, list[list[str]]]:
         EVIDENCE_COMPLETENESS,
         MEAN_E2E_RUNTIME,
     ]]
-    latency = {
-        "A": ablation_latency_minutes("A") or "1.04 min",
-        "B": "-",
-        "C": "-",
-        "D": str(table8_by_id["ZHIPU"][JSON_LATENCY_KEY]),
-    }
     for group in ("A", "B", "C", "D"):
         row = table7[group]
+        latency_value = str(row.get(JSON_LATENCY_KEY) or "").strip()
+        if not latency_value and group == "D":
+            latency_value = str(table8_by_id["ZHIPU"][JSON_LATENCY_KEY])
+        if not latency_value:
+            latency_value = "-"
         ablation_rows.append([
             ablation_labels[group],
             pct_only(row[JSON_RECALL_KEY]),
             pct_only(row[JSON_SUBTASK_KEY]),
             pct_only(row["漏报率（Miss Rate）"]),
             ablation_evidence[group],
-            latency[group],
+            latency_value,
         ])
 
     strategy_rows = [
@@ -168,11 +226,11 @@ def metric_definition_paragraphs() -> dict[int, str]:
             f"计算公式为：{MISS_RATE} = 1 − {RECALL_GT} = 漏报数 / |GT| × 100%。"
         ),
         178: (
-            f"{EVIDENCE_COMPLETENESS_FIRST} 为本文补充指标，衡量 Agent 执行层已执行 PoC 的证据完整程度（表 7/8/10），"
-            f"计算公式为：{EVIDENCE_COMPLETENESS} = 达到 L3 完整归档要求的 PoC 数 / 已执行 PoC 数 × 100%。"
-            f"L3 要求：（1）非空执行日志或等价留痕；（2）结构化执行结果；"
-            f"（3）具备可复核实质材料（响应摘录、日志正文、制品路径或已结论人工复核）。"
-            f"Global 基准扫描层的 poc_run 归档完整率单独在表 6 报告，不与 Agent 层混算。"
+            f"{EVIDENCE_COMPLETENESS_FIRST} 为本文补充指标，衡量 Agent 执行层已执行 PoC 的证据完整程度"
+            f"（见{PAPER_EVIDENCE_COMPLETENESS_LOCATIONS}），"
+            f"计算公式为：{EVIDENCE_COMPLETENESS} = 达到 L5 完整归档要求的 PoC 数 / 已执行 PoC 数 × 100%。"
+            f"{L5_COMPLETE_ARCHIVE_PROSE}"
+            f"Global 基准扫描层的 poc_run 归档完整率单独在{PAPER_TABLE_CLOSED_LOOP}报告，不与 Agent 层混算。"
         ),
         179: (
             f"{MEAN_E2E_RUNTIME_FIRST} 衡量自动化验证闭环的净执行效率："
@@ -182,43 +240,20 @@ def metric_definition_paragraphs() -> dict[int, str]:
         180: (
             f"主文报告 EDVV（智谱 GLM-5）结果为：{RECALL_GT} {recall}、"
             f"{SUBTASK_COMPLETION} {subtask}、{MISS_RATE} {miss}；"
-            f"Global 扫描层 poc_run 归档通常满足 L3 要求。"
+            f"Global 扫描层 poc_run 归档通常满足 L3；Agent 执行层（{PAPER_EVIDENCE_COMPLETENESS_LOCATIONS}）采用 L5 口径。"
         ),
     }
 
 
-LEGACY_REPLACEMENTS_AFTER_DEFINITION = [
-    ("Recall@GT", RECALL_GT),
-    ("基准阳性召回率（Recall@GT）", RECALL_GT),
-    ("漏洞检出率", RECALL_GT),
-    ("任务推进率（Progress Rate）", SUBTASK_COMPLETION),
-    ("任务推进率", SUBTASK_COMPLETION),
-    ("任务完成率", SUBTASK_COMPLETION),
-    ("执行覆盖率", SUBTASK_COMPLETION),
-    ("Coverage（覆盖率）", SUBTASK_COMPLETION),
-    ("可审计证据率（Auditable Evidence Rate）", EVIDENCE_COMPLETENESS),
-    ("可审计证据率", EVIDENCE_COMPLETENESS),
-    ("有效证据率", EVIDENCE_COMPLETENESS),
-    ("平均时延（Avg. Latency）", MEAN_E2E_RUNTIME),
-    ("平均验证耗时", MEAN_E2E_RUNTIME),
-    ("平均时延", MEAN_E2E_RUNTIME),
-    ("Avg. Latency", MEAN_E2E_RUNTIME),
-    ("宏平均成功率（Macro Success Rate）", ""),
-    ("Macro Success Rate", ""),
-    ("宏平均成功率", ""),
-]
+def rewrite_paragraph_text(text: str) -> str:
+    new = text
+    if "实验采用" in new and "项指标进行评价" in new:
+        new = rewrite_opening_metrics_sentence(new)
+    return normalize_metric_language(new)
 
 
-def replace_legacy_metric_terms(text: str, *, definitions_seen: bool) -> str:
-    if not definitions_seen:
-        return text
-    result = text
-    for old, new in LEGACY_REPLACEMENTS_AFTER_DEFINITION:
-        if old and new:
-            result = result.replace(old, new)
-        elif old:
-            result = re.sub(rf"\s*{re.escape(old)}\s*", " ", result)
-    return re.sub(r"\s{2,}", " ", result).strip()
+def rewrite_table_cell_text(text: str) -> str:
+    return normalize_metric_language(text)
 
 
 def rewrite_opening_metrics_sentence(text: str) -> str:
@@ -229,73 +264,118 @@ def rewrite_opening_metrics_sentence(text: str) -> str:
         f"{RECALL_GT_FIRST}定义为 Hits@GT / |GT|；"
         f"{SUBTASK_COMPLETION_FIRST}定义为已完成子任务项数 / |T|；"
         f"{MISS_RATE_FIRST}定义为 1 − {RECALL_GT}；"
-        f"{EVIDENCE_COMPLETENESS_FIRST}定义为 L3 完整归档 PoC 数 / 已执行 PoC 数；"
+        f"{EVIDENCE_COMPLETENESS_FIRST}定义为 L5 完整归档 PoC 数 / 已执行 PoC 数；"
         f"{MEAN_E2E_RUNTIME_FIRST}为三目标净墙钟时间算术平均。"
     )
+
+
+def sync_definition_paragraphs(doc: Document) -> None:
+    for index, new_text in metric_definition_paragraphs().items():
+        if index < len(doc.paragraphs):
+            set_paragraph_tracked(doc.paragraphs[index], new_text)
+    for paragraph in doc.paragraphs:
+        old = paragraph_visible_text(paragraph)
+        if "全文采用统一的四类核心指标" in old or "全文采用统一的四项核心指标" in old:
+            set_paragraph_tracked(
+                paragraph,
+                "全文从漏洞发现、验证推进、漏报控制、证据质量与执行效率五个维度评价 EDVV 性能，"
+                "核心指标定义如下：",
+                old_text=old,
+            )
+
+
+def update_paper_docx(source: Path) -> None:
+    if not source.is_file():
+        raise SystemExit(f"未找到论文: {source}")
+
+    norm = source.with_suffix(".norm.docx")
+    prepare_docx_for_edit(source, norm)
+    enable_track_revisions(norm)
+    doc = Document(norm)
+
+    sync_definition_paragraphs(doc)
+
+    for paragraph in doc.paragraphs:
+        old = paragraph_visible_text(paragraph)
+        if not old.strip():
+            continue
+        new = rewrite_paragraph_text(old)
+        if new != old:
+            set_paragraph_tracked(paragraph, new, old_text=old)
+
+    if len(doc.tables) >= 6:
+        table_rows = build_table_rows()
+        fill_table_tracked(doc.tables[2], table_rows["poc"])
+        fill_table_tracked(doc.tables[3], table_rows["ablation"])
+        fill_table_tracked(doc.tables[4], table_rows["strategy"])
+        fill_table_tracked(doc.tables[5], table_rows["model"])
+
+    for table_index, table in enumerate(doc.tables):
+        if table_index in {2, 3, 4, 5}:
+            continue
+        for row in table.rows:
+            for cell in row.cells:
+                old = cell.text
+                if not old.strip():
+                    continue
+                new = rewrite_table_cell_text(old)
+                if new != old:
+                    set_cell_tracked(cell, new)
+
+    doc.save(norm)
+    norm.replace(source)
+
+
+def verify_paper_docx(source: Path) -> None:
+    with zipfile.ZipFile(source) as package:
+        visible = package.read("word/document.xml").decode("utf-8")
+        visible = re.sub(r"<w:del[^>]*>.*?</w:del>", "", visible, flags=re.S)
+        plain = "".join(re.findall(r"<w:t[^>]*>(.*?)</w:t>", visible, re.S))
+    for token in (
+        RECALL_GT_FIRST,
+        SUBTASK_COMPLETION_FIRST,
+        MISS_RATE_FIRST,
+        EVIDENCE_COMPLETENESS_FIRST,
+        MEAN_E2E_RUNTIME_FIRST,
+    ):
+        assert token.split("（", 1)[0] in plain or token in plain, f"{source.name}: 缺少 {token}"
+    assert SUBTASK_COMPLETION in plain, source.name
+    for banned in (
+        "任务推进率",
+        "可审计证据率",
+        "宏平均成功率",
+        "漏洞检出率",
+        "有效证据率",
+        "平均时延",
+        "执行覆盖率",
+        "四项核心指标",
+        "四类核心指标",
+    ):
+        assert banned not in plain, f"{source.name}: 仍含旧指标名 {banned}"
+    for banned_table in (
+        "表7",
+        "表 7",
+        "表8",
+        "表 8",
+        "表9",
+        "表 9",
+        "表10",
+        "表 10",
+        "7/8/10",
+        "表 7/8",
+    ):
+        assert banned_table not in plain, f"{source.name}: 仍含工作簿表号 {banned_table}，应使用论文表3–6/图4"
+    assert not re.search(r"(?<!Hits@)Recall@GT", plain), f"{source.name}: 仍含 Recall@GT"
 
 
 def main() -> int:
     if not SOURCE.is_file():
         raise SystemExit(f"未找到论文: {SOURCE}")
 
-    norm = SOURCE.with_suffix(".norm.docx")
-    normalize_docx(SOURCE, norm)
-    enable_track_revisions(norm)
-    doc = Document(norm)
-
-    for index, new_text in metric_definition_paragraphs().items():
-        if index >= len(doc.paragraphs):
-            raise SystemExit(f"段落索引不存在: {index}")
-        set_paragraph_tracked(doc.paragraphs[index], new_text)
-
-    definition_section_done = False
-    for paragraph in doc.paragraphs:
-        old = paragraph.text
-        if not old.strip():
-            continue
-        if "核心指标定义如下" in old:
-            definition_section_done = True
-        new = old
-        if "实验采用" in old and "项指标进行评价" in old:
-            new = rewrite_opening_metrics_sentence(old)
-        elif definition_section_done:
-            new = replace_legacy_metric_terms(old, definitions_seen=True)
-        if new != old:
-            set_paragraph_tracked(paragraph, new, old_text=old)
-
-    table_rows = build_table_rows()
-    fill_table_tracked(doc.tables[2], table_rows["poc"])
-    fill_table_tracked(doc.tables[3], table_rows["ablation"])
-    fill_table_tracked(doc.tables[4], table_rows["strategy"])
-    fill_table_tracked(doc.tables[5], table_rows["model"])
-
-    l3_def = (
-        "L3 完整归档：执行留痕 + 结构化结果；风险判定须含响应摘录、制品或已结论人工复核"
-    )
-    if len(doc.tables) > 2 and len(doc.tables[2].rows) > 5:
-        set_cell_tracked(doc.tables[2].rows[5].cells[2], l3_def)
-
-    doc.save(norm)
-    norm.replace(SOURCE)
-
-    with __import__("zipfile").ZipFile(SOURCE) as package:
-        visible = package.read("word/document.xml").decode("utf-8")
-        visible = re.sub(r"<w:del[^>]*>.*?</w:del>", "", visible, flags=re.S)
-        plain = "".join(re.findall(r"<w:t[^>]*>(.*?)</w:t>", visible, re.S))
-        for token in (
-            RECALL_GT_FIRST,
-            SUBTASK_COMPLETION_FIRST,
-            MISS_RATE_FIRST,
-            EVIDENCE_COMPLETENESS_FIRST,
-            MEAN_E2E_RUNTIME_FIRST,
-        ):
-            assert token.split("（", 1)[0] in plain or token in plain, token
-        assert SUBTASK_COMPLETION in plain
-        assert "任务推进率" not in plain
-        assert "可审计证据率" not in plain
-        assert "宏平均成功率" not in plain
-
+    update_paper_docx(SOURCE)
+    verify_paper_docx(SOURCE)
     print(json.dumps({"updated": str(SOURCE), "five_metrics": FIVE_METRICS_CN}, ensure_ascii=False, indent=2))
+
     return 0
 
 

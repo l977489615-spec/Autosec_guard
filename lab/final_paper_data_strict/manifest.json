@@ -1,0 +1,26 @@
+{
+  "recovered_from": [
+    "/Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/lab/原始数据统计表（新）.xlsx",
+    "/Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/lab/论文内表格（新）.xlsx"
+  ],
+  "tables": {
+    "paper_key_metrics": 7,
+    "primary_recall_summary": 4,
+    "table6_total_by_category": 9,
+    "table7_total_by_model_group": 4,
+    "table8_total_by_model": 4,
+    "global_summary_by_target": 4,
+    "model_summary_all_targets": 4,
+    "best_model_by_target": 3,
+    "table6_all_targets": 27,
+    "table7_all_targets": 24,
+    "table8_all_targets": 12,
+    "table9_all_targets": 18,
+    "table10_reflection_summary": 6,
+    "table10_all_targets": 18,
+    "table11_safety_control": 5,
+    "raw_global_agent_comparison": 12,
+    "table10_platform_comparison": 4,
+    "table10_pentestgpt_three_targets": 1
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "target_id": "IVI-01",
+  "description": "IVI-01 ground truth（由冻结工作簿重建）",
+  "positive_pocs": [
+    "network/01_USB_ADB_Debug.py",
+    "network/14_SOMEIP_Service_Discovery.py",
+    "new/poc123_sqlite_plaintext.py",
+    "new/poc125_sensitive_file_storage.py",
+    "new/poc13_installask.py",
+    "new/poc31_sharedprefs_anyr.py",
+    "new/poc6_selinux.py",
+    "new/poc7_stackchk.py",
+    "reconnaissance/01_ICMP_Host_Discovery.py",
+    "reconnaissance/02_TCP_Port_Scan.py",
+    "reconnaissance/03_mDNS_Service_Discovery.py",
+    "reconnaissance/07_TBox_Port_Scan.py"
+  ],
+  "negative_pocs": [],
+  "notes": "由 基准扫描_Agent原始对比 中 ZHIPU 行的 finding_overlap + gt_positive_count 推断；REAL-CAR 末 4 项为 baseline 补全，需人工复核。",
+  "scan_confirmed_count": 18,
+  "reconstructed": true
+}

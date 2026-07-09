@@ -1,0 +1,262 @@
+[
+  {
+    "target_id": "IVI-01",
+    "poc_file": "network/01_USB_ADB_Debug.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "IVI-01",
+    "poc_file": "network/02_ADB_Debug_Port.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "IVI-01",
+    "poc_file": "network/03_SSH_Service.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "IVI-01",
+    "poc_file": "network/04_SSH_Weak_Creds.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "IVI-01",
+    "poc_file": "network/05_SSH_Hardcoded_Creds.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "IVI-01",
+    "poc_file": "network/08_FTP_Anonymous.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "IVI-01",
+    "poc_file": "network/09_MQTT_Unauth.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "IVI-01",
+    "poc_file": "network/11_RTSP_Log_Leak.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "IVI-01",
+    "poc_file": "network/13_HTTPS_No_Cert_Pin.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "IVI-01",
+    "poc_file": "network/14_SOMEIP_Service_Discovery.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "IVI-01",
+    "poc_file": "new/poc10_http.py",
+    "category": "new",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "IVI-01",
+    "poc_file": "new/poc123_sqlite_plaintext.py",
+    "category": "new",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "IVI-01",
+    "poc_file": "new/poc125_sensitive_file_storage.py",
+    "category": "new",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "IVI-01",
+    "poc_file": "new/poc13_installask.py",
+    "category": "new",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "IVI-01",
+    "poc_file": "new/poc21_libavformat_export.py",
+    "category": "new",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "IVI-01",
+    "poc_file": "new/poc22_libavformat_export2.py",
+    "category": "new",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "IVI-01",
+    "poc_file": "new/poc31_sharedprefs_anyr.py",
+    "category": "new",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "IVI-01",
+    "poc_file": "new/poc43_bluetooth.py",
+    "category": "new",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "IVI-01",
+    "poc_file": "new/poc6_selinux.py",
+    "category": "new",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "IVI-01",
+    "poc_file": "new/poc7_stackchk.py",
+    "category": "new",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "IVI-01",
+    "poc_file": "reconnaissance/01_ICMP_Host_Discovery.py",
+    "category": "reconnaissance",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "IVI-01",
+    "poc_file": "reconnaissance/02_TCP_Port_Scan.py",
+    "category": "reconnaissance",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "IVI-01",
+    "poc_file": "reconnaissance/03_mDNS_Service_Discovery.py",
+    "category": "reconnaissance",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "IVI-01",
+    "poc_file": "reconnaissance/06_BT_SDP_Enum.py",
+    "category": "reconnaissance",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "IVI-01",
+    "poc_file": "reconnaissance/07_TBox_Port_Scan.py",
+    "category": "reconnaissance",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "IVI-01",
+    "poc_file": "reconnaissance/08_HTTP_Service_Enum.py",
+    "category": "reconnaissance",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  }
+]

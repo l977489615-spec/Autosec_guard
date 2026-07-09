@@ -1,0 +1,64 @@
+{
+  "target_id": "MOCK-LOCAL",
+  "schema_version": 1,
+  "recovered_from": "/Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/lab/原始数据统计表（新）.xlsx",
+  "note": "路径来自冻结工作簿；原始 Agent 报告 JSON 需从备份或重跑实验恢复。",
+  "agent_run_files": [
+    "agent_runs/AGENT-DEEPSEEK_20260604_031140.json",
+    "agent_runs/AGENT-GPT_20260604_012123.json",
+    "agent_runs/AGENT-QWEN-MAX_20260603_021129.json",
+    "agent_runs/AGENT-ZHIPU_20260604_034605.json"
+  ],
+  "variants": [
+    {
+      "variant_id": "DEEPSEEK",
+      "path": "agent_runs/AGENT-DEEPSEEK_20260604_031140.json",
+      "source_report_file": "lab/evidence/MOCK-LOCAL/agent_runs/AGENT-DEEPSEEK_20260604_031140.json",
+      "exists_on_disk": false
+    },
+    {
+      "variant_id": "GPT",
+      "path": "agent_runs/AGENT-GPT_20260604_012123.json",
+      "source_report_file": "lab/evidence/MOCK-LOCAL/agent_runs/AGENT-GPT_20260604_012123.json",
+      "exists_on_disk": false
+    },
+    {
+      "variant_id": "QWEN-MAX",
+      "path": "agent_runs/AGENT-QWEN-MAX_20260603_021129.json",
+      "source_report_file": "lab/evidence/MOCK-LOCAL/agent_runs/AGENT-QWEN-MAX_20260603_021129.json",
+      "exists_on_disk": false
+    },
+    {
+      "variant_id": "ZHIPU",
+      "path": "agent_runs/AGENT-ZHIPU_20260604_034605.json",
+      "source_report_file": "lab/evidence/MOCK-LOCAL/agent_runs/AGENT-ZHIPU_20260604_034605.json",
+      "exists_on_disk": false
+    }
+  ],
+  "missing_reports": [
+    {
+      "variant_id": "DEEPSEEK",
+      "path": "agent_runs/AGENT-DEEPSEEK_20260604_031140.json",
+      "source_report_file": "lab/evidence/MOCK-LOCAL/agent_runs/AGENT-DEEPSEEK_20260604_031140.json",
+      "exists_on_disk": false
+    },
+    {
+      "variant_id": "GPT",
+      "path": "agent_runs/AGENT-GPT_20260604_012123.json",
+      "source_report_file": "lab/evidence/MOCK-LOCAL/agent_runs/AGENT-GPT_20260604_012123.json",
+      "exists_on_disk": false
+    },
+    {
+      "variant_id": "QWEN-MAX",
+      "path": "agent_runs/AGENT-QWEN-MAX_20260603_021129.json",
+      "source_report_file": "lab/evidence/MOCK-LOCAL/agent_runs/AGENT-QWEN-MAX_20260603_021129.json",
+      "exists_on_disk": false
+    },
+    {
+      "variant_id": "ZHIPU",
+      "path": "agent_runs/AGENT-ZHIPU_20260604_034605.json",
+      "source_report_file": "lab/evidence/MOCK-LOCAL/agent_runs/AGENT-ZHIPU_20260604_034605.json",
+      "exists_on_disk": false
+    }
+  ]
+}

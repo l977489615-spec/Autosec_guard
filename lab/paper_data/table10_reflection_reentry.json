@@ -1,0 +1,32 @@
+[
+  {
+    "指标": "首次执行失败步骤数",
+    "数值": 0,
+    "data_source": "agent_report"
+  },
+  {
+    "指标": "触发反思次数",
+    "数值": 0,
+    "data_source": "agent_report"
+  },
+  {
+    "指标": "定向重跑次数",
+    "数值": 0,
+    "data_source": "agent_report"
+  },
+  {
+    "指标": "补充侦察/补证问题数",
+    "数值": 0,
+    "data_source": "agent_report"
+  },
+  {
+    "指标": "补证成功数量",
+    "数值": 0,
+    "data_source": "comparison.json"
+  },
+  {
+    "指标": "最终任务完成率",
+    "数值": "0.0%",
+    "data_source": "comparison.json"
+  }
+]

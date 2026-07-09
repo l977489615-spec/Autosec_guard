@@ -1,0 +1,37 @@
+[
+  {
+    "机制模块": "PoC 元数据检索与端口映射",
+    "本项目实现": "Decision Agent 基于 poc_coverage、开放端口、required_params 和 profile 选择可执行 PoC",
+    "实测指标": "待实测：缺少可追溯 agent report",
+    "作用说明": "降低模型编造脚本名或选择不适用 PoC 的概率",
+    "data_source": "insufficient_measured_data"
+  },
+  {
+    "机制模块": "侦察优先与 Global 种子",
+    "本项目实现": "执行链路强制 reconnaissance 类 PoC 优先，并将 Global 阳性结果作为复验线索",
+    "实测指标": "待实测：缺少可追溯 agent report",
+    "作用说明": "先确认攻击面，再进入定向验证，避免直接执行无上下文 PoC",
+    "data_source": "insufficient_measured_data"
+  },
+  {
+    "机制模块": "baseline replay 定向复验",
+    "本项目实现": "将 Global/ground truth 阳性 PoC 追加到 Agent 攻击计划中进行复验",
+    "实测指标": "待实测：缺少可追溯 agent report",
+    "作用说明": "保证论文主指标可按同一客观基准计算，而不是只看模型自选脚本",
+    "data_source": "insufficient_measured_data"
+  },
+  {
+    "机制模块": "Supervisor 安全门控",
+    "本项目实现": "执行前检查 high_risk、required_params、策略分支和人工审批状态",
+    "实测指标": "待实测：缺少可追溯 agent report",
+    "作用说明": "保证高风险 PoC 可控执行，并留下审计记录",
+    "data_source": "insufficient_measured_data"
+  },
+  {
+    "机制模块": "Reflector 反思重入",
+    "本项目实现": "Reflector 对执行结果进行补证审计，必要时回跳到决策或执行阶段",
+    "实测指标": "待实测：缺少可追溯 agent report",
+    "作用说明": "在证据不足或路径失败时进行局部修正，而不是重新全量扫描",
+    "data_source": "insufficient_measured_data"
+  }
+]

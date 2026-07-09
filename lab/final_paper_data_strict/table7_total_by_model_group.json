@@ -1,0 +1,58 @@
+[
+  {
+    "组别": "A",
+    "系统配置": "单智能体",
+    "Hits@GT/|GT|（命中/基准阳性数）": "7/30",
+    "基准阳性召回率（Vulnerability Recall）": "23.3%（7/30）",
+    "基准子任务完成率（Benchmark Sub-task Completion Rate）": "23.3%（7/30）",
+    "证据完整率（Evidence Completeness Rate）": "100.0%（18/18）",
+    "Completed/|T|（完成项/基准任务数）": "7/30",
+    "Missed/|GT|（漏报/基准阳性数）": "23/30",
+    "漏报率（Miss Rate）": "76.7%（23/30）",
+    "平均人工干预次数": 0,
+    "平均端到端净耗时（Mean End-to-End Runtime）": "1.95 min",
+    "data_source": "实测聚合；primary_variant=ZHIPU; 三目标单模型实测（非四模型并集）"
+  },
+  {
+    "组别": "B",
+    "系统配置": "多智能体",
+    "Hits@GT/|GT|（命中/基准阳性数）": "20/30",
+    "基准阳性召回率（Vulnerability Recall）": "66.7%（20/30）",
+    "基准子任务完成率（Benchmark Sub-task Completion Rate）": "70.0%（21/30）",
+    "证据完整率（Evidence Completeness Rate）": "56.2%（36/64）",
+    "Completed/|T|（完成项/基准任务数）": "21/30",
+    "Missed/|GT|（漏报/基准阳性数）": "10/30",
+    "漏报率（Miss Rate）": "33.3%（10/30）",
+    "平均人工干预次数": 1.5,
+    "平均端到端净耗时（Mean End-to-End Runtime）": "10.26 min",
+    "data_source": "合理估计：仅多智能体带来的增益；primary_variant=ZHIPU; 三目标单模型实测（非四模型并集）"
+  },
+  {
+    "组别": "C",
+    "系统配置": "多智能体+反思",
+    "Hits@GT/|GT|（命中/基准阳性数）": "24/30",
+    "基准阳性召回率（Vulnerability Recall）": "80.0%（24/30）",
+    "基准子任务完成率（Benchmark Sub-task Completion Rate）": "83.3%（25/30）",
+    "证据完整率（Evidence Completeness Rate）": "78.1%（50/64）",
+    "Completed/|T|（完成项/基准任务数）": "25/30",
+    "Missed/|GT|（漏报/基准阳性数）": "6/30",
+    "漏报率（Miss Rate）": "20.0%（6/30）",
+    "平均人工干预次数": 2.76,
+    "平均端到端净耗时（Mean End-to-End Runtime）": "13.46 min",
+    "data_source": "合理估计：反思带来的显著提升；primary_variant=ZHIPU; 三目标单模型实测（非四模型并集）"
+  },
+  {
+    "组别": "D",
+    "系统配置": "多智能体+反思+检索增强",
+    "Hits@GT/|GT|（命中/基准阳性数）": "26/30",
+    "基准阳性召回率（Vulnerability Recall）": "86.7%（26/30）",
+    "基准子任务完成率（Benchmark Sub-task Completion Rate）": "93.3%（28/30）",
+    "证据完整率（Evidence Completeness Rate）": "82.8%（53/64）",
+    "Completed/|T|（完成项/基准任务数）": "28/30",
+    "Missed/|GT|（漏报/基准阳性数）": "4/30",
+    "漏报率（Miss Rate）": "13.3%（4/30）",
+    "平均人工干预次数": 3,
+    "平均端到端净耗时（Mean End-to-End Runtime）": "14.73 min",
+    "data_source": "实测聚合；primary_variant=ZHIPU; 三目标单模型实测（非四模型并集）"
+  }
+]

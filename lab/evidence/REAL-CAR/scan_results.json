@@ -1,0 +1,292 @@
+[
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "application/01_AirPlay_AirBorne_UAF.py",
+    "category": "application",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "application/11_RTSP_CarPlay_DoS.py",
+    "category": "application",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "application/12_UPnP_AVTransport_Media_Inject.py",
+    "category": "application",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "canbus/03_CAN_DoS_Flood.py",
+    "category": "canbus",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "canbus/04_CAN_Replay_Attack.py",
+    "category": "canbus",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "canbus/10_UDS_ECU_Reset_Unauth.py",
+    "category": "canbus",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "network/01_USB_ADB_Debug.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "network/02_ADB_Debug_Port.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "network/03_SSH_Service.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "network/04_SSH_Weak_Creds.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "network/05_SSH_Hardcoded_Creds.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "network/06_Telnet_Service.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "network/08_FTP_Anonymous.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "network/09_MQTT_Unauth.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "network/11_RTSP_Log_Leak.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "network/13_HTTPS_No_Cert_Pin.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "network/14_SOMEIP_Service_Discovery.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "new/poc135_doip_routing_activation_probe.py",
+    "category": "new",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "new/poc21_libavformat_export.py",
+    "category": "new",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "new/poc22_libavformat_export2.py",
+    "category": "new",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "reconnaissance/01_ICMP_Host_Discovery.py",
+    "category": "reconnaissance",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "reconnaissance/02_TCP_Port_Scan.py",
+    "category": "reconnaissance",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "reconnaissance/03_mDNS_Service_Discovery.py",
+    "category": "reconnaissance",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "reconnaissance/04_UPnP_SSDP_Discovery.py",
+    "category": "reconnaissance",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "reconnaissance/05_SNMP_Info_Leak.py",
+    "category": "reconnaissance",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "reconnaissance/06_BT_SDP_Enum.py",
+    "category": "reconnaissance",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "reconnaissance/07_TBox_Port_Scan.py",
+    "category": "reconnaissance",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "reconnaissance/08_HTTP_Service_Enum.py",
+    "category": "reconnaissance",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "REAL-CAR",
+    "poc_file": "wireless/01_QNX_Qnet_File_Read.py",
+    "category": "wireless",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  }
+]

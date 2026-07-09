@@ -34,7 +34,7 @@ from update_paper_v3_0610_data_only import pct_only
 ROOT = Path(__file__).resolve().parents[1]
 PAPER_DOCX = Path(
     "/Users/queen/Desktop/ICV_POC_research/论文/"
-    "面向智能网联汽车的证据驱动多智能体协同漏洞验证方法研究_6.9_1_贡献与章节结构修订版_v3_0610.docx"
+    "面向智能网联汽车的证据驱动多智能体协同漏洞验证方法研究指标修订版_v4_0612.docx"
 )
 WORKBOOK = Path("/Users/queen/Desktop/ICV_POC_research/论文/论文内表格（新）.xlsx")
 
@@ -132,9 +132,20 @@ def audit_docx_prose(issues: list[str], plain: str) -> None:
         "漏洞检出率",
         "有效证据率",
         "平均时延",
+        "执行覆盖率",
+        "四项核心指标",
+        "四类核心指标",
         "97.7%",
         "95.8%",
         "53.3%（16/30）",
+        "表7",
+        "表 7",
+        "表8",
+        "表 8",
+        "表10",
+        "表 10",
+        "7/8/10",
+        "表 7/8",
     ]
     for token in banned:
         if token in plain:
@@ -142,15 +153,16 @@ def audit_docx_prose(issues: list[str], plain: str) -> None:
 
     if "DeepSeek v4 pro与智谱GLM-5的基准子任务完成率均达到93.3%" in plain:
         issues.append("§6.5 模型适配段仍将 DeepSeek 子任务完成率误写为 93.3%")
+    if re.search(r"(?<!Hits@)Recall@GT", plain):
+        issues.append("正文仍含旧指标名 Recall@GT")
 
     if "实验采用基准阳性召回率、基准子任务完成率、证据完整率和平均端到端净耗时五项指标评价" in plain:
         issues.append("中文摘要五项指标枚举缺少漏报率")
 
-    if (
-        "Miss Rate, Evidence Completeness Rate, and Mean End-to-End Runtime. EDVV achieves"
-        in plain
-    ):
+    if "Miss Rate, Evidence Completeness Rate, and Mean End-to-End Runtime" not in plain:
         issues.append("英文摘要五项指标枚举缺少 Miss Rate")
+    if "a 13.3% Miss Rate" not in plain:
+        issues.append("英文摘要缺少漏报率 13.3%")
 
     if "已完成验证项数/基准阳性PoC数" in plain:
         issues.append("§6.3 子任务完成率公式分母表述错误")

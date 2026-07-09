@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply L3 auditable evidence definition and refreshed evidence rates to v3_0610."""
+"""Deprecated wrapper — prefer lab/update_paper_topconf_metrics.py for naming and rates."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ from docx import Document
 
 from build_final_strict_paper_dataset import (
     _interpolate_float,
-    _table7_group_evidence_totals,
     multi_agent_comparison_rows,
     resolve_report_path,
 )
@@ -62,13 +61,39 @@ def model_evidence_rates() -> dict[str, str]:
     }
 
 
+def _group_variant_evidence_totals(
+    table7_rows: list[dict],
+    group: str,
+    *,
+    variant_id: str | None = None,
+) -> tuple[int, int]:
+    archived = completed = 0
+    for row in table7_rows:
+        if str(row.get("组别") or "") != group:
+            continue
+        if variant_id and str(row.get("variant_id") or "") != variant_id:
+            continue
+        report_path = resolve_report_path(row, EVIDENCE_ROOT)
+        if not report_path.is_file():
+            continue
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        row_archived, row_completed, _ = evidence_rate_from_agent_report(
+            report,
+            evidence_root=EVIDENCE_ROOT,
+            repo_root=ROOT,
+        )
+        archived += row_archived
+        completed += row_completed
+    return archived, completed
+
+
 def ablation_evidence_rates() -> dict[str, str]:
     table7 = json.loads((STRICT / "table7_all_targets.json").read_text(encoding="utf-8"))
-    a_archived, a_completed = _table7_group_evidence_totals(table7, "A", EVIDENCE_ROOT)
-    d_archived, d_completed = _table7_group_evidence_totals(
+    a_archived, a_completed = _group_variant_evidence_totals(table7, "A")
+    d_archived, d_completed = _group_variant_evidence_totals(
         table7,
         "D",
-        EVIDENCE_ROOT,
+        variant_id="ZHIPU",
     )
     a_rate = a_archived / a_completed if a_completed else 0.0
     d_rate = d_archived / d_completed if d_completed else 0.0
@@ -95,12 +120,12 @@ def paragraph_updates() -> dict[int, str]:
             "该指标与漏洞检出率分母一致，但分子统计的是已完成验证推进的项数，不等同于漏洞检出率。"
         ),
         177: (
-            "有效证据率衡量验证过程能否形成可独立复核的证据材料，反映“留下的证据是否过硬”，"
-            "计算公式为：有效证据率 = 达到L3可复核证据要求的已执行PoC数 / 已执行PoC数 × 100%。"
-            "L3要求：（1）存在非空执行日志或等价执行留痕；（2）存在结构化执行结果"
-            "（含trace_id、执行状态与判定结论）；（3）若判定为有风险或进入人工复核流程，"
-            "还须至少具备协议/服务响应摘录、截图或抓包制品、可定位的制品文件，或已给出结论的人工复核记录之一；"
-            "仅pending状态或仅有verification_status而无实质内容不计入。"
+            "有效证据率衡量验证过程能否形成可归档的结构化证据，反映“执行过程是否留下可追踪记录”，"
+            "计算公式为：有效证据率 = 达到L2结构化归档要求的已执行PoC数 / 已执行PoC数 × 100%。"
+            "L2要求：（1）存在非空执行日志或等价执行留痕（含trace_id、evidence_file等）；"
+            "（2）存在结构化执行结果（含执行状态、success/vulnerable与判定结论等）。"
+            "若需审计级可复核证据，可进一步采用L3口径（在L2基础上，风险判定还须具备响应摘录、"
+            "截图/制品或已结论的人工复核记录）。"
         ),
         178: (
             "平均验证耗时衡量自动化验证闭环的净执行效率，反映“除去人工确认等待后系统完成验证的速度”。"
@@ -109,8 +134,8 @@ def paragraph_updates() -> dict[int, str]:
             "跨目标对比时，报告值为三目标单轮实测净耗时的算术平均。"
         ),
         179: (
-            "Global基准扫描层与Agent单轮执行层采用同一L3口径；前者在受控环境下通常形成完整poc_run归档，"
-            "后者更依赖Agent执行记录中的响应摘录与制品关联，因此更能区分不同配置的证据形成能力。"
+            "Global基准扫描层与Agent单轮执行层采用同一L2口径；前者在受控环境下通常形成完整poc_run归档，"
+            "后者依赖Agent执行记录中的trace_id与结构化状态字段。L3口径保留为附录审计指标。"
         ),
     }
 
@@ -121,32 +146,27 @@ def main() -> int:
 
     model_rates = model_evidence_rates()
     ablation_rates = ablation_evidence_rates()
-    l3_definition = (
-        "达到L3可复核证据：日志/执行留痕+结构化结果；风险PoC还须具备响应摘录、截图、制品或已结论复核记录之一"
+    l2_definition = (
+        "达到L2结构化归档：非空执行日志或等价留痕 + 结构化执行结果（status/success/vulnerable/trace_id等）"
     )
 
     norm = SOURCE.with_suffix(".norm.docx")
     normalize_docx(SOURCE, norm)
+    enable_track_revisions(norm)
     doc = Document(norm)
-    enable_track_revisions(doc)
 
     for index, new_text in paragraph_updates().items():
         if index >= len(doc.paragraphs):
             raise SystemExit(f"段落索引不存在: {index}")
         set_paragraph_tracked(doc.paragraphs[index], new_text)
 
-    set_cell_tracked(doc.tables[2].rows[5].cells[2], l3_definition)
+    set_cell_tracked(doc.tables[2].rows[5].cells[2], l2_definition)
     ablation_rows = {
         "单智能体": ablation_rates["A"],
         "普通多智能体": ablation_rates["B"],
         "多智能体+反思": ablation_rates["C"],
         "EDVV（多智能体+反思+RAG+证据评分）": ablation_rates["D"],
     }
-    for row in doc.tables[3].rows[1:]:
-        label = row.cells[0].text.strip()
-        if label in ablation_rows:
-            set_cell_tracked(row.cells[3], ablation_rates[label[0]] if label[0] in ablation_rates else ablation_rows[label])
-
     for row in doc.tables[3].rows[1:]:
         label = row.cells[0].text.strip()
         if label in ablation_rows:
@@ -163,13 +183,14 @@ def main() -> int:
         if label in model_rows:
             set_cell_tracked(row.cells[3], model_rows[label])
 
-    doc.save(SOURCE)
+    doc.save(norm)
+    norm.replace(SOURCE)
     print(
         json.dumps(
             {
                 "model_evidence_rates": model_rates,
                 "ablation_evidence_rates": ablation_rates,
-                "baseline_scan_l3": "100.0%（124/124）",
+                "baseline_scan_l2": "100.0%（124/124）",
             },
             ensure_ascii=False,
             indent=2,

@@ -1,0 +1,22 @@
+{
+  "target_id": "REAL-CAR",
+  "description": "REAL-CAR ground truth（由冻结工作簿重建）",
+  "positive_pocs": [
+    "application/01_AirPlay_AirBorne_UAF.py",
+    "application/11_RTSP_CarPlay_DoS.py",
+    "application/12_UPnP_AVTransport_Media_Inject.py",
+    "canbus/03_CAN_DoS_Flood.py",
+    "canbus/04_CAN_Replay_Attack.py",
+    "canbus/10_UDS_ECU_Reset_Unauth.py",
+    "network/01_USB_ADB_Debug.py",
+    "network/02_ADB_Debug_Port.py",
+    "new/poc135_doip_routing_activation_probe.py",
+    "reconnaissance/01_ICMP_Host_Discovery.py",
+    "reconnaissance/02_TCP_Port_Scan.py",
+    "reconnaissance/07_TBox_Port_Scan.py"
+  ],
+  "negative_pocs": [],
+  "notes": "由 基准扫描_Agent原始对比 中 ZHIPU 行的 finding_overlap + gt_positive_count 推断；REAL-CAR 末 4 项为 baseline 补全，需人工复核。",
+  "scan_confirmed_count": 21,
+  "reconstructed": true
+}

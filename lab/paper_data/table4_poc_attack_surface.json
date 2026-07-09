@@ -1,0 +1,58 @@
+[
+  {
+    "攻击面类别": "侦察类",
+    "典型检测项": "端口扫描、服务识别、拓扑识别",
+    "PoC 数量": 8,
+    "是否依赖本地硬件": "否",
+    "data_source": "poc_coverage.json"
+  },
+  {
+    "攻击面类别": "网络服务类",
+    "典型检测项": "ADB、Telnet、SSH、FTP、HTTP 后台",
+    "PoC 数量": 14,
+    "是否依赖本地硬件": "部分",
+    "data_source": "poc_coverage.json"
+  },
+  {
+    "攻击面类别": "应用安全类",
+    "典型检测项": "WebView、组件导出、明文通信、数据存储",
+    "PoC 数量": 10,
+    "是否依赖本地硬件": "ADB/样本",
+    "data_source": "poc_coverage.json"
+  },
+  {
+    "攻击面类别": "系统配置类",
+    "典型检测项": "SELinux、ASLR、dm-verity、文件权限",
+    "PoC 数量": 0,
+    "是否依赖本地硬件": "ADB",
+    "data_source": "poc_coverage.json"
+  },
+  {
+    "攻击面类别": "第三方组件类",
+    "典型检测项": "OpenSSL、libpng、libavformat、libupnp",
+    "PoC 数量": 0,
+    "是否依赖本地硬件": "ADB/文件",
+    "data_source": "poc_coverage.json"
+  },
+  {
+    "攻击面类别": "车内协议类",
+    "典型检测项": "CAN 重放、模糊测试、UDS 注入、异常帧",
+    "PoC 数量": 10,
+    "是否依赖本地硬件": "是",
+    "data_source": "poc_coverage.json"
+  },
+  {
+    "攻击面类别": "无线与外设类",
+    "典型检测项": "蓝牙、Wi-Fi、USB、SDR",
+    "PoC 数量": 29,
+    "是否依赖本地硬件": "是",
+    "data_source": "poc_coverage.json"
+  },
+  {
+    "攻击面类别": "高级攻击类",
+    "典型检测项": "OTA、RF、GPS、V2X、固件更新",
+    "PoC 数量": 1,
+    "是否依赖本地硬件": "部分",
+    "data_source": "poc_coverage.json"
+  }
+]

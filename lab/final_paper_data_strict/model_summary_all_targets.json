@@ -1,0 +1,42 @@
+[
+  {
+    "data_source": "strict_selected_agent_reports",
+    "variant_id": "DEEPSEEK",
+    "平均Total Tokens": 161416,
+    "平均任务耗时": "32.52 min",
+    "平均整体任务成功率": "86.5%",
+    "平均有效证据率": "100.0%",
+    "模型": "DeepSeek v4 pro",
+    "目标数量": 3
+  },
+  {
+    "data_source": "strict_selected_agent_reports",
+    "variant_id": "ZHIPU",
+    "平均Total Tokens": 89418,
+    "平均任务耗时": "14.73 min",
+    "平均整体任务成功率": "86.5%",
+    "平均有效证据率": "93.3%",
+    "模型": "智谱 GLM-5",
+    "目标数量": 3
+  },
+  {
+    "data_source": "strict_selected_agent_reports",
+    "variant_id": "QWEN-MAX",
+    "平均Total Tokens": 51585.3,
+    "平均任务耗时": "8.18 min",
+    "平均整体任务成功率": "84.1%",
+    "平均有效证据率": "100.0%",
+    "模型": "千问 qwen-max（质量）",
+    "目标数量": 3
+  },
+  {
+    "data_source": "strict_selected_agent_reports",
+    "variant_id": "GPT",
+    "平均Total Tokens": 73820,
+    "平均任务耗时": "5.22 min",
+    "平均整体任务成功率": "83.7%",
+    "平均有效证据率": "97.6%",
+    "模型": "OpenAI GPT-5.4-mini",
+    "目标数量": 3
+  }
+]

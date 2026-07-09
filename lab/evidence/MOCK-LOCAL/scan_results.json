@@ -1,0 +1,222 @@
+[
+  {
+    "target_id": "MOCK-LOCAL",
+    "poc_file": "network/02_ADB_Debug_Port.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "MOCK-LOCAL",
+    "poc_file": "network/03_SSH_Service.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "MOCK-LOCAL",
+    "poc_file": "network/04_SSH_Weak_Creds.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "MOCK-LOCAL",
+    "poc_file": "network/05_SSH_Hardcoded_Creds.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "MOCK-LOCAL",
+    "poc_file": "network/06_Telnet_Service.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "MOCK-LOCAL",
+    "poc_file": "network/07_Telnet_Weak_Creds.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "MOCK-LOCAL",
+    "poc_file": "network/08_FTP_Anonymous.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "MOCK-LOCAL",
+    "poc_file": "network/09_MQTT_Unauth.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "MOCK-LOCAL",
+    "poc_file": "network/10_DBus_Anon_Auth.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "MOCK-LOCAL",
+    "poc_file": "network/11_RTSP_Log_Leak.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "MOCK-LOCAL",
+    "poc_file": "network/13_HTTPS_No_Cert_Pin.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "MOCK-LOCAL",
+    "poc_file": "network/14_SOMEIP_Service_Discovery.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "MOCK-LOCAL",
+    "poc_file": "network/15_Dynamic_Unknown_Service_Probe.py",
+    "category": "network",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "MOCK-LOCAL",
+    "poc_file": "new/poc134_doip_entity_status_probe.py",
+    "category": "new",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "MOCK-LOCAL",
+    "poc_file": "new/poc135_doip_routing_activation_probe.py",
+    "category": "new",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "MOCK-LOCAL",
+    "poc_file": "reconnaissance/01_ICMP_Host_Discovery.py",
+    "category": "reconnaissance",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "MOCK-LOCAL",
+    "poc_file": "reconnaissance/02_TCP_Port_Scan.py",
+    "category": "reconnaissance",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "MOCK-LOCAL",
+    "poc_file": "reconnaissance/03_mDNS_Service_Discovery.py",
+    "category": "reconnaissance",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "MOCK-LOCAL",
+    "poc_file": "reconnaissance/04_UPnP_SSDP_Discovery.py",
+    "category": "reconnaissance",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "MOCK-LOCAL",
+    "poc_file": "reconnaissance/05_SNMP_Info_Leak.py",
+    "category": "reconnaissance",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "MOCK-LOCAL",
+    "poc_file": "reconnaissance/07_TBox_Port_Scan.py",
+    "category": "reconnaissance",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  },
+  {
+    "target_id": "MOCK-LOCAL",
+    "poc_file": "reconnaissance/08_HTTP_Service_Enum.py",
+    "category": "reconnaissance",
+    "status": "completed",
+    "elapsed_seconds": 0.0,
+    "vulnerable": true,
+    "evidence": "reconstructed from frozen workbook baseline_overlap_pocs",
+    "reconstructed": true
+  }
+]

@@ -1,0 +1,24 @@
+{
+  "target_id": "MOCK-LOCAL",
+  "description": "Mock 环境 ground truth。Global 扫描完成后核对并保存为 MOCK-LOCAL.json",
+  "positive_pocs": [
+    "reconnaissance/01_ICMP_Host_Discovery.py",
+    "reconnaissance/02_TCP_Port_Scan.py",
+    "reconnaissance/07_TBox_Port_Scan.py",
+    "reconnaissance/08_HTTP_Service_Enum.py",
+    "reconnaissance/03_mDNS_Service_Discovery.py",
+    "reconnaissance/04_UPnP_SSDP_Discovery.py",
+    "reconnaissance/05_SNMP_Info_Leak.py",
+    "network/02_ADB_Debug_Port.py",
+    "network/06_Telnet_Service.py",
+    "network/07_Telnet_Weak_Creds.py",
+    "network/03_SSH_Service.py",
+    "network/08_FTP_Anonymous.py",
+    "network/09_MQTT_Unauth.py",
+    "network/11_RTSP_Log_Leak.py",
+    "network/10_DBus_Anon_Auth.py",
+    "network/14_SOMEIP_Service_Discovery.py"
+  ],
+  "negative_pocs": [],
+  "notes": "以 mock_vehicle_services.py 启动后 Global 扫描实际结果为准，上列为预期可检出项"
+}

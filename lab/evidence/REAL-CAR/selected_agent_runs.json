@@ -1,0 +1,64 @@
+{
+  "target_id": "REAL-CAR",
+  "schema_version": 1,
+  "recovered_from": "/Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/lab/原始数据统计表（新）.xlsx",
+  "note": "路径来自冻结工作簿；原始 Agent 报告 JSON 需从备份或重跑实验恢复。",
+  "agent_run_files": [
+    "agent_runs/AGENT-DEEPSEEK_20260603_214709.json",
+    "agent_runs/AGENT-GPT_20260603_235956.json",
+    "agent_runs/AGENT-QWEN-MAX_20260603_212149.json",
+    "agent_runs/AGENT-ZHIPU_20260607_225808.json"
+  ],
+  "variants": [
+    {
+      "variant_id": "DEEPSEEK",
+      "path": "agent_runs/AGENT-DEEPSEEK_20260603_214709.json",
+      "source_report_file": "lab/evidence/REAL-CAR/agent_runs/AGENT-DEEPSEEK_20260603_214709.json",
+      "exists_on_disk": false
+    },
+    {
+      "variant_id": "GPT",
+      "path": "agent_runs/AGENT-GPT_20260603_235956.json",
+      "source_report_file": "lab/evidence/REAL-CAR/agent_runs/AGENT-GPT_20260603_235956.json",
+      "exists_on_disk": false
+    },
+    {
+      "variant_id": "QWEN-MAX",
+      "path": "agent_runs/AGENT-QWEN-MAX_20260603_212149.json",
+      "source_report_file": "lab/evidence/REAL-CAR/agent_runs/AGENT-QWEN-MAX_20260603_212149.json",
+      "exists_on_disk": false
+    },
+    {
+      "variant_id": "ZHIPU",
+      "path": "agent_runs/AGENT-ZHIPU_20260607_225808.json",
+      "source_report_file": "lab/evidence/REAL-CAR/agent_runs/AGENT-ZHIPU_20260607_225808.json",
+      "exists_on_disk": false
+    }
+  ],
+  "missing_reports": [
+    {
+      "variant_id": "DEEPSEEK",
+      "path": "agent_runs/AGENT-DEEPSEEK_20260603_214709.json",
+      "source_report_file": "lab/evidence/REAL-CAR/agent_runs/AGENT-DEEPSEEK_20260603_214709.json",
+      "exists_on_disk": false
+    },
+    {
+      "variant_id": "GPT",
+      "path": "agent_runs/AGENT-GPT_20260603_235956.json",
+      "source_report_file": "lab/evidence/REAL-CAR/agent_runs/AGENT-GPT_20260603_235956.json",
+      "exists_on_disk": false
+    },
+    {
+      "variant_id": "QWEN-MAX",
+      "path": "agent_runs/AGENT-QWEN-MAX_20260603_212149.json",
+      "source_report_file": "lab/evidence/REAL-CAR/agent_runs/AGENT-QWEN-MAX_20260603_212149.json",
+      "exists_on_disk": false
+    },
+    {
+      "variant_id": "ZHIPU",
+      "path": "agent_runs/AGENT-ZHIPU_20260607_225808.json",
+      "source_report_file": "lab/evidence/REAL-CAR/agent_runs/AGENT-ZHIPU_20260607_225808.json",
+      "exists_on_disk": false
+    }
+  ]
+}

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import zipfile
 from pathlib import Path
@@ -383,7 +384,7 @@ def main() -> None:
 
     if not BACKUP.is_file():
         shutil.copy2(SOURCE, BACKUP)
-    else:
+    elif "86.7%（26/30）" not in SOURCE.read_bytes().decode("utf-8", errors="ignore"):
         shutil.copy2(BACKUP, SOURCE)
 
     normalized = SOURCE.with_suffix(".normalized.docx")
@@ -413,6 +414,8 @@ def main() -> None:
 
     with zipfile.ZipFile(SOURCE) as package:
         xml = package.read("word/document.xml").decode("utf-8")
+        visible = re.sub(r"<w:del[^>]*>.*?</w:del>", "", xml, flags=re.S)
+        visible = "".join(re.findall(r"<w:t[^>]*>(.*?)</w:t>", visible, re.S))
         checks = [
             "86.7%（26/30）",
             "Recall@GT",
@@ -423,9 +426,9 @@ def main() -> None:
             "李奇敖",
         ]
         for item in checks:
-            assert item in xml, f"缺少预期内容: {item}"
-        assert "96.8%" not in xml, "仍含旧数据 96.8%"
-        assert "任务完成率" not in xml or "Cybench" in xml, "正文仍含任务完成率"
+            assert item in visible, f"缺少预期内容: {item}"
+        assert "96.8%" not in visible, "仍含旧数据 96.8%"
+        assert "有效证据率" not in visible, "仍含旧指标 有效证据率"
         settings = package.read("word/settings.xml").decode("utf-8")
         assert "trackRevisions" in settings
 

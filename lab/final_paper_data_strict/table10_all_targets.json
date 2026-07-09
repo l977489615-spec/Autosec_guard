@@ -1,0 +1,110 @@
+[
+  {
+    "data_source": "agent_report",
+    "target_id": "MOCK-LOCAL",
+    "指标": "首次执行失败步骤数",
+    "数值": 4
+  },
+  {
+    "data_source": "agent_report",
+    "target_id": "MOCK-LOCAL",
+    "指标": "触发反思次数",
+    "数值": 2
+  },
+  {
+    "data_source": "agent_report",
+    "target_id": "MOCK-LOCAL",
+    "指标": "定向重跑次数",
+    "数值": 2
+  },
+  {
+    "data_source": "agent_report",
+    "target_id": "MOCK-LOCAL",
+    "指标": "补充侦察/补证问题数",
+    "数值": 5
+  },
+  {
+    "data_source": "comparison.json",
+    "target_id": "MOCK-LOCAL",
+    "指标": "补证成功数量",
+    "数值": 13
+  },
+  {
+    "data_source": "comparison.json",
+    "target_id": "MOCK-LOCAL",
+    "指标": "最终任务完成率",
+    "数值": "92.9%"
+  },
+  {
+    "data_source": "agent_report",
+    "target_id": "IVI-01",
+    "指标": "首次执行失败步骤数",
+    "数值": 24
+  },
+  {
+    "data_source": "agent_report",
+    "target_id": "IVI-01",
+    "指标": "触发反思次数",
+    "数值": 2
+  },
+  {
+    "data_source": "agent_report",
+    "target_id": "IVI-01",
+    "指标": "定向重跑次数",
+    "数值": 2
+  },
+  {
+    "data_source": "agent_report",
+    "target_id": "IVI-01",
+    "指标": "补充侦察/补证问题数",
+    "数值": 4
+  },
+  {
+    "data_source": "comparison.json",
+    "target_id": "IVI-01",
+    "指标": "补证成功数量",
+    "数值": 12
+  },
+  {
+    "data_source": "comparison.json",
+    "target_id": "IVI-01",
+    "指标": "最终任务完成率",
+    "数值": "100.0%"
+  },
+  {
+    "data_source": "agent_report",
+    "target_id": "REAL-CAR",
+    "指标": "首次执行失败步骤数",
+    "数值": 11
+  },
+  {
+    "data_source": "agent_report",
+    "target_id": "REAL-CAR",
+    "指标": "触发反思次数",
+    "数值": 2
+  },
+  {
+    "data_source": "agent_report",
+    "target_id": "REAL-CAR",
+    "指标": "定向重跑次数",
+    "数值": 2
+  },
+  {
+    "data_source": "agent_report",
+    "target_id": "REAL-CAR",
+    "指标": "补充侦察/补证问题数",
+    "数值": 3
+  },
+  {
+    "data_source": "comparison.json",
+    "target_id": "REAL-CAR",
+    "指标": "补证成功数量",
+    "数值": 9
+  },
+  {
+    "data_source": "comparison.json",
+    "target_id": "REAL-CAR",
+    "指标": "最终任务完成率",
+    "数值": "75.0%"
+  }
+]

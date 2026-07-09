@@ -1,0 +1,58 @@
+{
+  "generated_at": "2026-07-10 02:09:34",
+  "tables": {
+    "table4_poc_attack_surface": {
+      "row_count": 8,
+      "file": "lab/paper_data/table4_poc_attack_surface.json"
+    },
+    "table5_experiment_environment": {
+      "row_count": 6,
+      "file": "lab/paper_data/table5_experiment_environment.json"
+    },
+    "table6_poc_effectiveness": {
+      "row_count": 9,
+      "file": "lab/paper_data/table6_poc_effectiveness.json"
+    },
+    "table7_agent_ablation": {
+      "row_count": 4,
+      "file": "lab/paper_data/table7_agent_ablation.json"
+    },
+    "table8_model_comparison": {
+      "row_count": 0,
+      "file": "lab/paper_data/table8_model_comparison.json"
+    },
+    "table9_planning_comparison": {
+      "row_count": 5,
+      "file": "lab/paper_data/table9_planning_comparison.json"
+    },
+    "table10_reflection_reentry": {
+      "row_count": 6,
+      "file": "lab/paper_data/table10_reflection_reentry.json"
+    },
+    "table11_safety_control": {
+      "row_count": 4,
+      "file": "lab/paper_data/table11_safety_control.json"
+    },
+    "table12_can_linkage": {
+      "row_count": 5,
+      "file": "lab/paper_data/table12_can_linkage.json"
+    },
+    "table13_requirement_coverage": {
+      "row_count": 6,
+      "file": "lab/paper_data/table13_requirement_coverage.json"
+    },
+    "table14_automation_comparison": {
+      "row_count": 6,
+      "file": "lab/paper_data/table14_automation_comparison.json"
+    },
+    "raw_scan_rows": {
+      "row_count": 0,
+      "file": "lab/paper_data/raw_scan_rows.json"
+    },
+    "raw_global_agent_comparison": {
+      "row_count": 0,
+      "file": "lab/paper_data/raw_global_agent_comparison.json"
+    }
+  },
+  "note": "Rows with data_source=derived_* are deterministic engineering metrics derived from measured artifacts, not independent repeated runtime logs."
+}

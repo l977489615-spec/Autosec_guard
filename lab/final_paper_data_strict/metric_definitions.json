@@ -1,0 +1,26 @@
+[
+  {
+    "指标": "基准阳性召回率（Vulnerability Recall）",
+    "定义": "Primary metric — Vulnerability Recall on frozen positives: hits / deduplicated |GT| (30); hit = execution.vulnerable ∪ report.findings; union across three targets"
+  },
+  {
+    "指标": "基准子任务完成率（Benchmark Sub-task Completion Rate）",
+    "定义": "Benchmark Sub-task Completion Rate: fraction of 30 deduplicated benchmark items with expected PoC executed and archived; analogous to PentestGPT sub-task completion; ≠ Vulnerability Recall"
+  },
+  {
+    "指标": "漏报率（Miss Rate）",
+    "定义": "Miss Rate = 1 − Vulnerability Recall = missed / |GT|"
+  },
+  {
+    "指标": "GT Exposure Rate（基准风险暴露率）",
+    "定义": "GT Exposure Rate = |GT| / executed PoCs (paper Table 3 closed-loop layer)"
+  },
+  {
+    "指标": "平均端到端净耗时（Mean End-to-End Runtime）",
+    "定义": "Mean End-to-End Runtime: arithmetic mean of net wall-clock per target (full run minus manual wait)"
+  },
+  {
+    "指标": "证据完整率（Evidence Completeness Rate）",
+    "定义": "Evidence Completeness Rate (supplementary, Tables 7/8/10): L5-complete PoCs / deduplicated executed PoCs; execution trace, structured result, substantive auditable material, archived poc_run artifact, and audit record (review state or platform trace)."
+  }
+]

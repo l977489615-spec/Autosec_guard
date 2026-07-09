@@ -157,7 +157,7 @@ class ExpReadinessContractTests(unittest.TestCase):
         self.assertFalse(finding.not_native_exp)
 
     def test_real_version_audit_is_safe_professional_tier(self) -> None:
-        finding = audit_file(POCS_DIR / "application/29_CVE_2016_6309_OpenSSL_Version_Active_Validation.py")
+        finding = audit_file(POCS_DIR / "application/29_CVE_2016_6309_OpenSSL_Version_Audit.py")
 
         self.assertIsNotNone(finding)
         self.assertIn(finding.validation_tier, {"PASSIVE", "AUTHENTICATED_CONFIG"})

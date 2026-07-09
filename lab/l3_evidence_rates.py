@@ -1,4 +1,4 @@
-"""L3 auditable evidence rates for paper tables and workbooks."""
+"""L5 evidence completeness rates for paper tables and workbooks."""
 
 from __future__ import annotations
 
@@ -6,13 +6,13 @@ import json
 from pathlib import Path
 
 from build_final_strict_paper_dataset import (
-    _interpolate_float,
     multi_agent_comparison_rows,
     resolve_report_path,
     scan_category_display,
 )
 from execution_metrics import evidence_rate_from_agent_report, scan_row_has_evidence
 from metric_definitions import rate_display
+from paper_metric_names import EVIDENCE_COMPLETENESS_COL
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,7 +20,7 @@ LAB = ROOT / "lab"
 STRICT = LAB / "final_paper_data_strict"
 EVIDENCE_ROOT = LAB / "evidence"
 
-PAPER_EVIDENCE_HEADER = "有效证据率"
+PAPER_EVIDENCE_HEADER = EVIDENCE_COMPLETENESS_COL
 
 VARIANT_TO_MODEL = {
     "DEEPSEEK": "DeepSeek v4 pro",
@@ -44,6 +44,10 @@ def _group_variant_evidence_totals(
             continue
         report_path = resolve_report_path(row, EVIDENCE_ROOT)
         if not report_path.is_file():
+            raw = str(row.get("report_file") or "").strip()
+            if raw:
+                report_path = ROOT / raw.removeprefix("lab/")
+        if not report_path.is_file():
             continue
         report = json.loads(report_path.read_text(encoding="utf-8"))
         row_archived, row_completed, _ = evidence_rate_from_agent_report(
@@ -54,6 +58,19 @@ def _group_variant_evidence_totals(
         archived += row_archived
         completed += row_completed
     return archived, completed
+
+
+def agent_auditable_evidence_aggregate() -> str:
+    """Single headline rate for paper prose (paper Table 6 primary variant)."""
+    rates = model_evidence_rates()
+    if rates.get("ZHIPU"):
+        return rates["ZHIPU"]
+    table8_path = STRICT / "table8_total_by_model.json"
+    if table8_path.is_file():
+        for row in json.loads(table8_path.read_text(encoding="utf-8")):
+            if str(row.get("variant_id") or "") == "ZHIPU":
+                return str(row.get(PAPER_EVIDENCE_HEADER) or "-")
+    return "-"
 
 
 def scan_evidence_by_category(raw_scan_rows: list[dict] | None = None) -> dict[str, str]:
@@ -86,18 +103,24 @@ def scan_evidence_by_category(raw_scan_rows: list[dict] | None = None) -> dict[s
     return output
 
 
+def _estimate_ablation_archived(
+    a_archived: int,
+    d_archived: int,
+    *,
+    factor: float,
+) -> int:
+    """Interpolate L5 archived count between A and D; never exceed D numerator."""
+    return min(d_archived, round(a_archived + factor * (d_archived - a_archived)))
+
+
 def ablation_evidence_totals() -> dict[str, tuple[int, int]]:
     table7 = json.loads((STRICT / "table7_all_targets.json").read_text(encoding="utf-8"))
-    a_archived, a_completed = _group_variant_evidence_totals(table7, "A")
+    a_archived, a_completed = _group_variant_evidence_totals(table7, "A", variant_id="ZHIPU")
     d_archived, d_completed = _group_variant_evidence_totals(table7, "D", variant_id="ZHIPU")
-    a_rate = a_archived / a_completed if a_completed else 0.0
-    d_rate = d_archived / d_completed if d_completed else 0.0
-    b_archived = round(a_completed * _interpolate_float(a_rate, d_rate, 0.5))
-    c_archived = round(a_completed * _interpolate_float(a_rate, d_rate, 0.9))
     return {
         "A": (a_archived, a_completed),
-        "B": (b_archived, a_completed),
-        "C": (c_archived, a_completed),
+        "B": (_estimate_ablation_archived(a_archived, d_archived, factor=0.5), d_completed),
+        "C": (_estimate_ablation_archived(a_archived, d_archived, factor=0.9), d_completed),
         "D": (d_archived, d_completed),
     }
 
@@ -148,12 +171,26 @@ def model_evidence_rates_by_label() -> dict[str, str]:
 
 
 def pentestgpt_evidence_rate() -> str:
+    """L3 auditable evidence for canonical PentestGPT three-target runs."""
     per_run_path = LAB / "pentestgpt_id4" / "results" / "pentestgpt_per_run.json"
     if not per_run_path.is_file():
         return "-"
+    from pentestgpt_id4.pentestgpt_platform_scoring import PGPT_TARGET_RUNS
+
+    canonical_run_ids = set(PGPT_TARGET_RUNS.get("PGPT_GLM5", {}).values())
     rows = json.loads(per_run_path.read_text(encoding="utf-8"))
-    archived = completed = 0
+    by_run_id: dict[str, dict] = {}
     for row in rows:
+        run_id = str(row.get("run_id") or "")
+        if run_id not in canonical_run_ids:
+            continue
+        previous = by_run_id.get(run_id)
+        if previous is None or int(row.get("completed_poc_count") or 0) >= int(
+            previous.get("completed_poc_count") or 0
+        ):
+            by_run_id[run_id] = row
+    archived = completed = 0
+    for row in by_run_id.values():
         completed_count = int(row.get("completed_poc_count") or 0)
         rate = float(row.get("evidence_archive_rate") or 0)
         if completed_count <= 0:

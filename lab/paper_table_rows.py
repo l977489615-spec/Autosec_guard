@@ -7,6 +7,13 @@ import json
 import re
 from pathlib import Path
 
+from paper_metric_names import (
+    JSON_LATENCY_KEY,
+    JSON_MISS_KEY,
+    JSON_RECALL_KEY,
+    JSON_SUBTASK_KEY,
+)
+
 ROOT = Path(__file__).resolve().parents[1]
 STRICT_DATA = ROOT / "lab" / "final_paper_data_strict"
 
@@ -48,10 +55,10 @@ def build_paper_table_rows() -> dict[str, list[list[str]]]:
         ["已执行PoC数", str(table6_total["已执行数量"]), "授权范围内完成执行的唯一PoC"],
         ["基准阳性PoC数", str(table6_total["基准阳性PoC数"]), "人工复核、基准扫描或受控靶场确认存在风险的PoC"],
         ["Agent命中阳性数", str(table6_total["Agent命中阳性数"]), "Agent验证命中的基准阳性PoC"],
-        ["漏洞检出率", str(table6_total["Recall@GT（基准阳性召回率）"]), "Agent命中阳性数/基准阳性PoC数"],
-        ["执行覆盖率", str(table6_total["Coverage（覆盖率）"]), "覆盖项数/基准任务总数"],
-        ["漏报率", str(table6_total["漏报率"]), "漏报数/基准阳性PoC数"],
-        ["基准风险暴露率", str(table6_total["基准风险暴露率"]), "基准阳性PoC数/已执行PoC数"],
+        ["漏洞检出率", str(table6_total[JSON_RECALL_KEY]), "Agent命中阳性数/基准阳性PoC数"],
+        ["执行覆盖率", str(table6_total[JSON_SUBTASK_KEY]), "覆盖项数/基准任务总数"],
+        ["漏报率", str(table6_total[JSON_MISS_KEY]), "漏报数/基准阳性PoC数"],
+        ["基准风险暴露率", str(table6_total["GT Exposure Rate（基准风险暴露率）"]), "基准阳性PoC数/已执行PoC数"],
     ]
 
     ablation_labels = {
@@ -64,7 +71,7 @@ def build_paper_table_rows() -> dict[str, list[list[str]]]:
     for group in ("A", "B", "C", "D"):
         row = table7[group]
         if group == "D":
-            latency = str(table8_by_id["ZHIPU"]["Avg. Latency（平均验证耗时）"])
+            latency = str(table8_by_id["ZHIPU"][JSON_LATENCY_KEY])
         elif group in ("B", "C"):
             latency = "-"
         else:
@@ -72,9 +79,9 @@ def build_paper_table_rows() -> dict[str, list[list[str]]]:
         ablation_rows.append(
             [
                 ablation_labels[group],
-                str(row["Recall@GT（基准阳性召回率）"]),
-                str(row["Coverage（覆盖率）"]),
-                str(row["Miss Rate（漏报率）"]),
+                str(row[JSON_RECALL_KEY]),
+                str(row[JSON_SUBTASK_KEY]),
+                str(row[JSON_MISS_KEY]),
                 latency if latency else "-",
             ]
         )
@@ -91,11 +98,11 @@ def build_paper_table_rows() -> dict[str, list[list[str]]]:
         model_rows.append(
             [
                 display_name,
-                str(row["Recall@GT（基准阳性召回率）"]),
-                str(row["Coverage（覆盖率）"]),
-                str(row["Miss Rate（漏报率）"]),
+                str(row[JSON_RECALL_KEY]),
+                str(row[JSON_SUBTASK_KEY]),
+                str(row[JSON_MISS_KEY]),
                 format_tokens(row["平均每目标 Tokens"]),
-                str(row["Avg. Latency（平均验证耗时）"]),
+                str(row[JSON_LATENCY_KEY]),
             ]
         )
 
@@ -112,16 +119,16 @@ def build_paper_table_rows() -> dict[str, list[list[str]]]:
         [
             "PentestGPT",
             f"{int(pgpt['risk_num']) / int(pgpt['risk_den']) * 100:.1f}%（{pgpt['risk_num']}/{pgpt['risk_den']}）",
-            str(pgpt["Coverage（覆盖率）"]),
+            str(pgpt[JSON_SUBTASK_KEY] if JSON_SUBTASK_KEY in pgpt else pgpt.get("Coverage（覆盖率）", "")),
             f"{pgpt_miss / int(pgpt['risk_den']) * 100:.1f}%（{pgpt_miss}/{pgpt['risk_den']}）",
             f"{pgpt_latency_min:.2f} min",
         ],
         [
             "EDVV（智谱GLM-5）",
-            str(zhipu["Recall@GT（基准阳性召回率）"]),
-            str(zhipu["Coverage（覆盖率）"]),
-            str(zhipu["Miss Rate（漏报率）"]),
-            str(zhipu["Avg. Latency（平均验证耗时）"]),
+            str(zhipu[JSON_RECALL_KEY]),
+            str(zhipu[JSON_SUBTASK_KEY]),
+            str(zhipu[JSON_MISS_KEY]),
+            str(zhipu[JSON_LATENCY_KEY]),
         ],
     ]
 

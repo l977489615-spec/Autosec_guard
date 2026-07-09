@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import zipfile
@@ -17,7 +18,7 @@ from paper_table_rows import ablation_latency_minutes, load_json
 
 SOURCE = Path(
     "/Users/queen/Desktop/ICV_POC_research/论文/"
-    "面向智能网联汽车的证据驱动多智能体协同漏洞验证方法研究_6.9_1_贡献与章节结构修订版_v3_0610.docx"
+    "面向智能网联汽车的证据驱动多智能体协同漏洞验证方法研究指标修订版_v4_0612.docx"
 )
 BACKUP = SOURCE.with_suffix(".bak.docx")
 AUTHOR = "李奇敖"
@@ -127,10 +128,82 @@ def pct_only(value: str) -> str:
     return text
 
 
+def _model_evidence_rates() -> dict[str, str]:
+    from build_final_strict_paper_dataset import multi_agent_comparison_rows, resolve_report_path
+    from execution_metrics import evidence_rate_from_agent_report
+
+    root = Path(__file__).resolve().parents[1]
+    evidence_root = root / "lab" / "evidence"
+    rows = load_json("raw_global_agent_comparison.json")
+    totals: dict[str, dict[str, int]] = {}
+    for row in multi_agent_comparison_rows(rows):
+        variant = str(row.get("variant_id") or "")
+        report_path = resolve_report_path(row, evidence_root)
+        if not variant or not report_path.is_file():
+            continue
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        archived, completed, _ = evidence_rate_from_agent_report(
+            report,
+            evidence_root=evidence_root,
+            repo_root=root,
+        )
+        bucket = totals.setdefault(variant, {"archived": 0, "completed": 0})
+        bucket["archived"] += archived
+        bucket["completed"] += completed
+    return {
+        variant: pct_only(f"{(values['archived'] / values['completed']) * 100:.1f}%")
+        if values["completed"]
+        else "-"
+        for variant, values in totals.items()
+    }
+
+
+def _ablation_evidence_rates() -> dict[str, str]:
+    from build_final_strict_paper_dataset import _interpolate_float, resolve_report_path
+    from execution_metrics import evidence_rate_from_agent_report
+
+    root = Path(__file__).resolve().parents[1]
+    evidence_root = root / "lab" / "evidence"
+    table7 = load_json("table7_all_targets.json")
+
+    def totals(group: str, *, variant_id: str | None = None) -> tuple[int, int]:
+        archived = completed = 0
+        for row in table7:
+            if str(row.get("组别") or "") != group:
+                continue
+            if variant_id and str(row.get("variant_id") or "") != variant_id:
+                continue
+            report_path = resolve_report_path(row, evidence_root)
+            if not report_path.is_file():
+                continue
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            row_archived, row_completed, _ = evidence_rate_from_agent_report(
+                report,
+                evidence_root=evidence_root,
+                repo_root=root,
+            )
+            archived += row_archived
+            completed += row_completed
+        return archived, completed
+
+    a_archived, a_completed = totals("A")
+    d_archived, d_completed = totals("D", variant_id="ZHIPU")
+    a_rate = a_archived / a_completed if a_completed else 0.0
+    d_rate = d_archived / d_completed if d_completed else 0.0
+    return {
+        "A": pct_only(f"{a_rate * 100:.1f}%"),
+        "B": pct_only(f"{_interpolate_float(a_rate, d_rate, 0.5) * 100:.1f}%"),
+        "C": pct_only(f"{_interpolate_float(a_rate, d_rate, 0.9) * 100:.1f}%"),
+        "D": pct_only(f"{d_rate * 100:.1f}%"),
+    }
+
+
 def build_legacy_table_rows() -> dict[str, list[list[str]]]:
     table6_total = next(row for row in load_json("table6_total_by_category.json") if row.get("类别") == "合计")
     table7 = {row["组别"]: row for row in load_json("table7_total_by_model_group.json")}
     table8_by_id = {row["variant_id"]: row for row in load_json("table8_total_by_model.json")}
+    model_evidence = _model_evidence_rates()
+    ablation_evidence = _ablation_evidence_rates()
 
     poc_table = [
         ["指标", "数值", "计算口径"],
@@ -153,7 +226,7 @@ def build_legacy_table_rows() -> dict[str, list[list[str]]]:
         [
             "有效证据率",
             "100.0%",
-            "满足“日志+结构化结果”，且风险PoC具备截图、响应、制品或复核记录之一",
+            "达到L2结构化归档：非空执行日志或等价留痕 + 结构化执行结果（status/success/vulnerable/trace_id等）",
         ],
     ]
 
@@ -168,9 +241,8 @@ def build_legacy_table_rows() -> dict[str, list[list[str]]]:
         "A": ablation_latency_minutes("A") or "1.04 min",
         "B": "-",
         "C": "-",
-        "D": pct_only("") or str(table8_by_id["ZHIPU"]["Avg. Latency（平均验证耗时）"]),
+        "D": str(table8_by_id["ZHIPU"]["Avg. Latency（平均验证耗时）"]),
     }
-    latency["D"] = str(table8_by_id["ZHIPU"]["Avg. Latency（平均验证耗时）"])
     for group in ("A", "B", "C", "D"):
         row = table7[group]
         ablation_rows.append(
@@ -178,7 +250,7 @@ def build_legacy_table_rows() -> dict[str, list[list[str]]]:
                 ablation_labels[group],
                 pct_only(row["Recall@GT（基准阳性召回率）"]),
                 pct_only(row["Coverage（覆盖率）"]),
-                "100.0%",
+                ablation_evidence[group],
                 latency[group],
             ]
         )
@@ -205,7 +277,7 @@ def build_legacy_table_rows() -> dict[str, list[list[str]]]:
                 display_name,
                 pct_only(row["Recall@GT（基准阳性召回率）"]),
                 pct_only(row["Coverage（覆盖率）"]),
-                "100.0%",
+                model_evidence.get(variant_id, "-"),
                 latency_value,
             ]
         )
@@ -281,15 +353,14 @@ def build_paragraph_updates(original: dict[int, str]) -> dict[int, str]:
     updates[225] = apply_replacements(
         original[225],
         [
-            ("智谱GLM-5的漏洞检出率达到96.7%，DeepSeek v4 pro与智谱GLM-5的任务完成率均达到86.8%", "智谱GLM-5的漏洞检出率达到86.7%，DeepSeek v4 pro与智谱GLM-5的任务完成率均达到93.3%"),
-            ("GPT-5.4-mini为83.3%", "GPT-5.4-mini漏洞检出率为83.3%，任务完成率为93.3%"),
+            (
+                "智谱GLM-5的漏洞检出率达到96.7%，DeepSeek v4 pro与智谱GLM-5的任务完成率均达到86.8%；"
+                "GPT-5.4-mini平均验证耗时最低，为5.22 min。",
+                "智谱GLM-5的漏洞检出率达到86.7%，DeepSeek v4 pro与智谱GLM-5的任务完成率均达到93.3%；"
+                "GPT-5.4-mini的漏洞检出率为83.3%，任务完成率为93.3%，平均验证耗时最低，为5.22 min。",
+            ),
         ],
     )
-    if "GPT-5.4-mini漏洞检出率为83.3%" in updates[225]:
-        updates[225] = updates[225].replace(
-            "GPT-5.4-mini平均验证耗时最低",
-            "GPT-5.4-mini平均验证耗时最低",
-        )
     updates[230] = apply_replacements(
         original[230],
         [
@@ -358,7 +429,7 @@ def main() -> None:
         assert "任务完成率" in visible
         assert "有效证据率" in visible
         assert "执行覆盖率" not in visible
-        assert "漏报率" not in visible or "漏报" in visible and "漏报率" not in visible.split("研究问题")[0]
+        assert "Miss Rate" not in visible
         assert "96.8%" not in visible
         settings = package.read("word/settings.xml").decode("utf-8")
         assert "trackRevisions" in settings

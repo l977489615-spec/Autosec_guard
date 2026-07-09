@@ -1,0 +1,35 @@
+[
+  {
+    "agent_executed_poc_count": 14,
+    "agent_total_tokens": 65148,
+    "best_variant_id": "GPT",
+    "data_source": "raw_baseline_agent_comparison",
+    "gt_hit_count": 12,
+    "gt_positive_count": 12,
+    "paper_primary_recall": 1,
+    "report_file": "lab/evidence/IVI-01/agent_runs/AGENT-GPT_20260604_011302.json",
+    "target_id": "IVI-01"
+  },
+  {
+    "agent_executed_poc_count": 15,
+    "agent_total_tokens": 89410,
+    "best_variant_id": "GPT",
+    "data_source": "raw_baseline_agent_comparison",
+    "gt_hit_count": 13,
+    "gt_positive_count": 14,
+    "paper_primary_recall": 0.9286,
+    "report_file": "lab/evidence/MOCK-LOCAL/agent_runs/AGENT-GPT_20260604_012123.json",
+    "target_id": "MOCK-LOCAL"
+  },
+  {
+    "agent_executed_poc_count": 12,
+    "agent_total_tokens": 28748,
+    "best_variant_id": "QWEN-MAX",
+    "data_source": "raw_baseline_agent_comparison",
+    "gt_hit_count": 9,
+    "gt_positive_count": 12,
+    "paper_primary_recall": 0.75,
+    "report_file": "lab/evidence/REAL-CAR/agent_runs/AGENT-QWEN-MAX_20260603_212149.json",
+    "target_id": "REAL-CAR"
+  }
+]
