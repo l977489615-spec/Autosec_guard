@@ -35,31 +35,11 @@ jobs:
             server/run_benchmark_suite.py \
             server/generate_benchmark_suite.py \
             server/validate_benchmark_suite.py \
-            server/audit_pocs.py \
             server/pocs/*.py \
             server/pocs/**/*.py
 
-      - name: PoC audit gate
-        run: |
-          python server/audit_pocs.py > /tmp/poc-audit.json
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          report = json.loads(Path('/tmp/poc-audit.json').read_text(encoding='utf-8'))
-          if report['summary']['red'] > 0:
-              raise SystemExit(
-                  f"PoC audit failed: red={report['summary']['red']} yellow={report['summary']['yellow']}"
-              )
-          print(
-              f"PoC audit passed: green={report['summary']['green']} yellow={report['summary']['yellow']} red={report['summary']['red']}"
-          )
-          PY
-
-      - name: PoC smoke tests
-        run: python server/smoke_test_pocs.py
-
-      - name: Generate capability report
-        run: python server/generate_poc_capability_report.py --format markdown --output-file /tmp/poc-capability-report.md
+      - name: EXP readiness contract tests
+        run: python -m unittest server/test_exp_upgrade_contract.py
 
       - name: Benchmark suite freshness check
         working-directory: server

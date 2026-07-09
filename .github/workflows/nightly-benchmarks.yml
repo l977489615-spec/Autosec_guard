@@ -23,9 +23,7 @@ jobs:
           python generate_benchmark_suite.py --check
           python validate_benchmark_suite.py --suite-file benchmarks/default_suite.json
           python validate_benchmark_suite.py --suite-file benchmarks/regression_suite.json
-          python audit_pocs.py > nightly-poc-audit.json
-          python smoke_test_pocs.py > nightly-poc-smoke.json
-          python generate_poc_capability_report.py --format markdown --output-file nightly-poc-capability-report.md
+          python scan_cli.py exp-audit > nightly-exp-audit.txt
 
       - name: Run full benchmark suite
         working-directory: server
@@ -53,9 +51,7 @@ jobs:
         run: |
           python -c "import json, pathlib; report = json.loads(pathlib.Path('nightly-benchmark-report.json').read_text()); summary = report['summary']; gate = report['gate']; print('## Nightly Benchmark Report'); print(); print(report['report']); print(); print(f\"- sessions: {summary['session_count']}\"); print(f\"- benchmarks: {summary['benchmark_count']}\"); print(f\"- passed: {summary['passed_count']}\"); print(f\"- failed: {summary['failed_count']}\"); print(f\"- threshold: {summary['threshold']:.3f}\"); print(f\"- gate passed: {str(gate['passed']).lower()}\"); print(f\"- failing benchmarks: {', '.join(gate['failing_benchmark_ids']) or 'none'}\")" >> "$GITHUB_STEP_SUMMARY"
           python -c "import json, pathlib; report = json.loads(pathlib.Path('nightly-regression-report.json').read_text()); summary = report['summary']; gate = report['gate']; print(); print('## Nightly Regression Gate'); print(); print(report['report']); print(); print(f\"- sessions: {summary['session_count']}\"); print(f\"- benchmarks: {summary['benchmark_count']}\"); print(f\"- passed: {summary['passed_count']}\"); print(f\"- failed: {summary['failed_count']}\"); print(f\"- threshold: {summary['threshold']:.3f}\"); print(f\"- gate passed: {str(gate['passed']).lower()}\"); print(f\"- failing benchmarks: {', '.join(gate['failing_benchmark_ids']) or 'none'}\")" >> "$GITHUB_STEP_SUMMARY"
-          printf '\n## Nightly PoC Audit\n\n```json\n%s\n```\n' "$(cat nightly-poc-audit.json)" >> "$GITHUB_STEP_SUMMARY"
-          printf '\n## Nightly PoC Smoke\n\n```json\n%s\n```\n' "$(cat nightly-poc-smoke.json)" >> "$GITHUB_STEP_SUMMARY"
-          printf '\n## PoC Capability Report\n\n%s\n' "$(cat nightly-poc-capability-report.md)" >> "$GITHUB_STEP_SUMMARY"
+          printf '\n## Nightly EXP Audit\n\n```\n%s\n```\n' "$(cat nightly-exp-audit.txt)" >> "$GITHUB_STEP_SUMMARY"
           printf '\n```json\n%s\n```\n' "$(cat nightly-benchmark-report.json)" >> "$GITHUB_STEP_SUMMARY"
           printf '\n```json\n%s\n```\n' "$(cat nightly-regression-report.json)" >> "$GITHUB_STEP_SUMMARY"
 
@@ -67,7 +63,5 @@ jobs:
           path: |
             server/nightly-benchmark-report.json
             server/nightly-regression-report.json
-            server/nightly-poc-audit.json
-            server/nightly-poc-smoke.json
-            server/nightly-poc-capability-report.md
+            server/nightly-exp-audit.txt
           if-no-files-found: error

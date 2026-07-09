@@ -1,7 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # AutoSec Guard / 智驭安盾 — Git 忽略规则
-# 原则：只跟踪产品系统源码（client / server / lab 实验套件脚本与模板）；
-#       本地运行产物、论文数据、克隆参考库、Agent 工具链等不上传。
+# 原则：忽略构建产物、密钥、克隆库、Agent 工具链；
+#       lab 论文/实验数据保留在本地（可手动提交），仅忽略临时目录与本地配置。
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Logs ──────────────────────────────────────────────────────
@@ -69,10 +69,7 @@ server/edge_dist/
 server/.edge-agent-state.json
 server/backups/
 
-# ── Generated audit / readiness reports (not product source) ──
-server/reports/
-
-# ── Downloaded / cloned public PoC reference material ─────────
+# ── Downloaded / cloned reference material (not product source) ─
 server/public_poc_sources/
 server/public_poc_resources/
 
@@ -91,45 +88,14 @@ docs/superpowers/
 docs/internal/
 
 # ══════════════════════════════════════════════════════════════
-# lab/ — 实验数据采集套件
-# 保留：README、run_experiment.py、mock 环境、模板、核心度量脚本
-# 忽略：运行证据、论文数据集、本地配置、Excel 产出、论文专用脚本
+# lab/ — 仅忽略临时目录、克隆工具与本机配置副本
+# 论文数据、evidence、xlsx、paper 脚本均保留
 # ══════════════════════════════════════════════════════════════
-
-# 运行产物与证据归档
-lab/evidence/
 lab/tmp/
-lab/table10_manifests/
-lab/final_paper_data_strict/
-lab/ground_truth/
-lab/paper_data/
-lab/paper_data_selected/
 lab/pentestgpt_id4/
 lab/lab/
 
-# 本地实验配置（保留 *.template.json / *.template.csv）
+# 本机实验配置副本（保留 *.template.json / *.template.csv）
 lab/experiment_config.json
 lab/experiment_config.full.json
 lab/experiment_config.local.json
-lab/can_test_records.csv
-
-# Excel / 表格产出
-lab/*.xlsx
-lab/Book*.xlsx
-lab/实验*.xlsx
-lab/论文*.xlsx
-
-# 论文写作与数据整理脚本（非平台系统代码）
-lab/audit_paper_consistency.py
-lab/build_final_strict_paper_dataset.py
-lab/build_paper_dataset.py
-lab/build_paper_workbook.py
-lab/build_security41_condensed_paper.py
-lab/l3_evidence_rates.py
-lab/paper_*.py
-lab/render_*.py
-lab/supplement_paper_workbook.py
-lab/sync_ground_truth.py
-lab/sync_output_paper_workbooks.py
-lab/sync_paper_table_values.py
-lab/update_paper_*.py
