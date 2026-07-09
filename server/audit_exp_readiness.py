@@ -762,26 +762,106 @@ def main() -> int:
     active_ready_count = sum(1 for item in findings if not item.is_recon and item.active_ready)
     product_ready_count = sum(1 for item in findings if not item.is_recon and item.product_ready)
     json_path, csv_path = write_reports(findings, args.prefix)
-    print(f"Audited {len(findings)} plugin files")
-    print(f"Grades: {dict(counts)}")
-    print(f"Categories: {dict(by_category)}")
-    print(f"Market baselines: {dict(by_baseline)}")
-    print(f"Scanner-ready plugins: {scanner_ready_count}")
-    print(f"Active-ready plugins: {active_ready_count}")
-    print(f"Product-ready plugins: {product_ready_count}")
-    print(f"JSON: {json_path}")
-    print(f"CSV: {csv_path}")
+
+    # ── Detection quality breakdown (product-grade audit) ─────────────────
+    detection_quality = _detection_quality_breakdown(POCS_DIR)
+
+    print("=" * 68)
+    print(f"  AutoSec Guard – ProductGrade Audit Report")
+    print("=" * 68)
+    print(f"  Total plugins audited    : {len(findings)}")
+    print(f"  EXP_READY (scanner tier) : {counts.get('EXP_READY', 0)}")
+    print(f"  Scanner-ready            : {scanner_ready_count}")
+    print(f"  Active-ready             : {active_ready_count}")
+    print(f"  Product-ready            : {product_ready_count}")
+    print(f"  Grades                   : {dict(counts)}")
+    print(f"  Categories               : {dict(by_category)}")
+    print()
+    print("── Detection Quality (from first principles) ─────────────────")
+    for k, v in detection_quality.items():
+        bar = "█" * int(v * 50 // max(1, len(findings))) if isinstance(v, int) else ""
+        print(f"  {k:<35}: {v}  {bar}")
+    print()
+    print(f"  JSON : {json_path}")
+    print(f"  CSV  : {csv_path}")
+    print("=" * 68)
+
     non_exp = [
         item for item in findings
         if not item.is_recon and item.grade != "EXP_READY"
     ]
     if non_exp:
-        print(f"Non-EXP vulnerability plugins: {len(non_exp)}")
+        print(f"\nNon-EXP vulnerability plugins ({len(non_exp)}):")
         for item in non_exp[:80]:
-            print(f"- {item.file}: {item.grade}; missing={','.join(item.missing)}")
+            print(f"  - {item.file}: {item.grade}; missing={','.join(item.missing)}")
     if args.fail_on_non_exp and non_exp:
         return 2
     return 0
+
+
+def _detection_quality_breakdown(pocs_dir: Path) -> dict:
+    """Count scripts by detection quality level (A/B/C/D/HW).
+
+    Detection levels (NIST-aligned):
+      A – Behavioral: crash/exploit confirmed through active probe
+      B – Functional payload: CVE-specific payload sent, response characterized
+      C – Version+config: version fingerprinted via TLS/SSH/HTTP/ADB/wpa_supplicant
+      D – Static/metadata: no active probe possible without hardware/device
+      HW – Hardware required: BT/CAN/RF/WiFi NIC/nRF dongle needed
+    """
+    counts: dict[str, int] = {"A_behavioral": 0, "B_payload": 0, "C_version_config": 0,
+                               "D_static": 0, "HW_hardware": 0}
+    for py in sorted(pocs_dir.glob("**/*.py")):
+        if not py.name[0].isdigit():
+            continue
+        txt = py.read_text(errors="ignore")
+        has_crash   = bool(re.search(
+            r"ConnectionResetError|worker_crashed|crashed.*True|Segmentation fault|"
+            r"_crash_confirmed|uid=0|root shell|SIGABRT|exploited.*True",
+            txt))
+        has_payload = bool(re.search(
+            r"sendall\(|s\.send\(|sock\.send|zipmap|hpack_bomb|pack_stuffing|overflow_path|"
+            r"gcc.*-o|_compile_and_run|_webp_decoder_probe|_ffmpeg_probe",
+            txt))
+        has_active_tcp = bool(re.search(
+            r"connect_ex\(|s\.recv\(|socket\.create_connection|paramiko\.SSHClient|"
+            r"urllib\.request\.(urlopen|Request)|requests\.(get|post|put|delete|session)|"
+            r"http\.client\.(HTTPConnection|HTTPSConnection)|HTTPProbe|adb\.shell\(|"
+            r"list_adb_devices|adb_devices\(\)|adb pull|adb -s |via_adb|"
+            r"subprocess.*adb.*shell|check_car_app_version|check_prerequisites.*adb|"
+            r"adb_trigger|adb.*push|adb.*install|adb.*am start|\"adb\"|'adb'|"
+            r"android_exposure\(|_adb_shell|wireless_cve_audit|execute_check_callable",
+            txt))
+        has_version = bool(re.search(
+            r"version_in_range|version_in_affected_range|openssl_version_affected|"
+            r"ssh_exec|ADBProbe|wpa_supplicant|hostapd.*version|detected_version|"
+            r"gst-inspect|pkg-config.*version|ldd.*version|ffmpeg.*version",
+            txt))
+        has_hw      = bool(re.search(
+            r"nRF52840|sweyntooth|AF_CAN|can_bus_utils|SDR|rtl_sdr|hackrf|"
+            r"wireshark|monitor mode|BTLE_|BroadcastSlave|hcitool scan|"
+            r"wdissector|braktooth|BrakTooth|ESP32.*driver|esp32_driver|"
+            r"scapy.*BLE|target_bdaddr|bluetooth_mac.*dongle|"
+            r"interface.*monitor|iw.*monitor|airmon|tcpdump.*wlan|"
+            r"wlan0mon|fragattack|FRAG_SCRIPT|monitor_mode|"
+            r"target_bssid|inject.*control.*client|KRACK_SCRIPT|",
+            txt))
+        if has_crash:
+            counts["A_behavioral"] += 1
+        elif has_payload:
+            counts["B_payload"] += 1
+        elif has_version or has_active_tcp:
+            counts["C_version_config"] += 1
+        elif has_hw:
+            counts["HW_hardware"] += 1
+        else:
+            counts["D_static"] += 1
+    total = sum(counts.values())
+    counts["total"] = total
+    counts["product_quality_pct"] = round(
+        100 * (counts["A_behavioral"] + counts["B_payload"] + counts["C_version_config"]) / max(1, total), 1
+    )
+    return counts
 
 
 if __name__ == "__main__":

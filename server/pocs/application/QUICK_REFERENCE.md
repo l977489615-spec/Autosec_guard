@@ -29,7 +29,7 @@ python3 14_VW_ID4_MediaInjection.py 192.168.1.100 --media /tmp/sample.mp4
 ### 2️⃣ 优化后的元数据 - 脚本 13 更新版本
 
 ```bash
-python3 13_Mirror_Hijack.py 192.168.1.100 --media /tmp/sample.mp4
+python3 13_CWE_306_Mirror_Hijack_Active_Validation.py 192.168.1.100 --media /tmp/sample.mp4
 ```
 
 **改进内容:**
@@ -218,8 +218,8 @@ print(r.text)  # 查看是否有 AVTransport:2 支持
 
 ```
 application/
-├── 12_UPnP_AVTransport_Media_Inject.py  (原始版本)
-├── 13_Mirror_Hijack.py                   (改进版本 + 完整元数据) ← 方案 2
+├── 12_CWE_306_Inject_Active_Validation.py  (原始版本)
+├── 13_CWE_306_Mirror_Hijack_Active_Validation.py                   (改进版本 + 完整元数据) ← 方案 2
 ├── 14_VW_ID4_MediaInjection.py          (VW ID.4 专用) ← 方案 3 ✓ 推荐
 └── VW_ID4_TESTING_GUIDE.md              (详细指南)
 ```

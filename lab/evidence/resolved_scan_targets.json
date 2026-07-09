@@ -11,7 +11,7 @@
     },
     "pocs": [
       {
-        "filename": "reconnaissance/01_ICMP_Host_Discovery.py",
+        "filename": "reconnaissance/01_CWE_200_ICMP_Host_Discovery_Reconnaissance.py",
         "params": {
           "target_ip": "127.0.0.1",
           "candidate_ports": "5555,1883,7000,19090,13400,30490"
@@ -20,7 +20,7 @@
         "auto_group": "recon"
       },
       {
-        "filename": "reconnaissance/02_TCP_Port_Scan.py",
+        "filename": "reconnaissance/02_CWE_200_TCP_Port_Scan_Reconnaissance.py",
         "params": {
           "target_ip": "127.0.0.1",
           "candidate_ports": "5555,1883,7000,19090,13400,30490"
@@ -29,7 +29,7 @@
         "auto_group": "recon"
       },
       {
-        "filename": "reconnaissance/03_mDNS_Service_Discovery.py",
+        "filename": "reconnaissance/03_CWE_200_Service_Discovery_Reconnaissance.py",
         "params": {
           "target_ip": "127.0.0.1",
           "candidate_ports": "5555,1883,7000,19090,13400,30490"
@@ -38,7 +38,7 @@
         "auto_group": "recon"
       },
       {
-        "filename": "reconnaissance/04_UPnP_SSDP_Discovery.py",
+        "filename": "reconnaissance/04_CWE_200_UPnP_SSDP_Discovery_Reconnaissance.py",
         "params": {
           "target_ip": "127.0.0.1",
           "candidate_ports": "5555,1883,7000,19090,13400,30490"
@@ -47,7 +47,7 @@
         "auto_group": "recon"
       },
       {
-        "filename": "reconnaissance/05_SNMP_Info_Leak.py",
+        "filename": "reconnaissance/05_CWE_798_Leak_Reconnaissance.py",
         "params": {
           "target_ip": "127.0.0.1",
           "candidate_ports": "5555,1883,7000,19090,13400,30490"
@@ -56,7 +56,7 @@
         "auto_group": "recon"
       },
       {
-        "filename": "reconnaissance/07_TBox_Port_Scan.py",
+        "filename": "reconnaissance/07_CWE_200_TBox_Port_Scan_Reconnaissance.py",
         "params": {
           "target_ip": "127.0.0.1",
           "candidate_ports": "5555,1883,7000,19090,13400,30490"
@@ -65,7 +65,7 @@
         "auto_group": "recon"
       },
       {
-        "filename": "reconnaissance/08_HTTP_Service_Enum.py",
+        "filename": "reconnaissance/08_CWE_200_HTTP_Service_Enumeration_Reconnaissance.py",
         "params": {
           "target_ip": "127.0.0.1",
           "candidate_ports": "5555,1883,7000,19090,13400,30490"

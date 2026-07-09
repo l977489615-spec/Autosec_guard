@@ -4,7 +4,7 @@
   "errors": [],
   "evidence": "",
   "logs": [
-    "[*] Executing sandbox command: /Library/Frameworks/Python.framework/Versions/3.13/bin/python3 /Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/server/sandbox_runner.py /Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/server/pocs/reconnaissance/03_mDNS_Service_Discovery.py {\"target_ip\": \"127.0.0.1\", \"candidate_ports\": \"5555,1883,7000,19090,13400,30490\"}",
+    "[*] Executing sandbox command: /Library/Frameworks/Python.framework/Versions/3.13/bin/python3 /Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/server/sandbox_runner.py /Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/server/pocs/reconnaissance/03_CWE_200_Service_Discovery_Reconnaissance.py {\"target_ip\": \"127.0.0.1\", \"candidate_ports\": \"5555,1883,7000,19090,13400,30490\"}",
     "[2026-06-01 22:47:19,938][INFO] 已初始化漏洞验证模块: mDNSDiscoveryPlugin，目标: 127.0.0.1",
     "[2026-06-01 22:47:19,938][INFO] 正在执行前置条件检查...",
     "[2026-06-01 22:47:19,938][INFO] 前置条件满足。开始执行漏洞验证...",
@@ -25,7 +25,7 @@
   "manual_review": {
     "state": "not_required"
   },
-  "poc_id": "reconnaissance/03_mDNS_Service_Discovery.py",
+  "poc_id": "reconnaissance/03_CWE_200_Service_Discovery_Reconnaissance.py",
   "requires_human_review": false,
   "sandbox_profile": {
     "allowed_hosts": [
@@ -51,7 +51,7 @@
     ]
   },
   "success": true,
-  "trace_id": "MOCK-LOCAL_03_mDNS_Service_Discovery.py_20260601_224719",
+  "trace_id": "MOCK-LOCAL_03_CWE_200_Service_Discovery_Reconnaissance.py_20260601_224719",
   "verification_status": "auto_confirmed_not_vulnerable",
   "vulnerable": false,
   "worker_mode": "local_sandbox",

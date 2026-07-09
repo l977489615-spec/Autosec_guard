@@ -51,9 +51,26 @@ def run_active_validation(plugin: Any, vuln: dict[str, Any], *, probe: Any = Non
         })
 
     observations: list[dict[str, Any]] = []
+    probe_detection_confidence: dict[str, Any] | None = None
+
     if callable(probe):
         try:
-            observations.append({"kind": "custom_probe", **(probe(plugin, vuln) or {})})
+            # _run_poc(plugin) – single-argument convention used by all plugin probes.
+            # Falling back to two-arg call only for legacy probes that explicitly accept vuln.
+            import inspect as _inspect
+            try:
+                _sig = _inspect.signature(probe)
+                _n = len([p for p in _sig.parameters.values()
+                          if p.default is _inspect.Parameter.empty])
+            except (ValueError, TypeError):
+                _n = 1
+            if _n >= 2:
+                probe_result = probe(plugin, vuln) or {}
+            else:
+                probe_result = probe(plugin) or {}
+            # Hoist detection_confidence from probe result so it reaches the top-level return
+            probe_detection_confidence = probe_result.pop("detection_confidence", None)
+            observations.append({"kind": "custom_probe", **probe_result})
         except Exception as exc:
             observations.append({"kind": "custom_probe", "ok": False, "error": str(exc)})
     else:
@@ -71,6 +88,10 @@ def run_active_validation(plugin: Any, vuln: dict[str, Any], *, probe: Any = Non
     else:
         vulnerable_value = vulnerable
 
+    # Auto-score detection confidence if probe did not supply one.
+    if probe_detection_confidence is None:
+        probe_detection_confidence = _auto_score_observations(observations, vulnerable_value)
+
     evidence = _decode_evidence(passive.get("evidence"))
     evidence.update({
         "validation_mode": mode,
@@ -87,6 +108,7 @@ def run_active_validation(plugin: Any, vuln: dict[str, Any], *, probe: Any = Non
         "payload_authorization_required": _has_trigger_payload(plugin, vuln),
         "manual_confirmation_required": bool(active_inconclusive),
         "operator_observation_targets": _operator_observation_targets(vuln),
+        "detection_confidence": probe_detection_confidence,
     })
 
     return {
@@ -95,6 +117,7 @@ def run_active_validation(plugin: Any, vuln: dict[str, Any], *, probe: Any = Non
         "description": passive.get("description") or vuln.get("summary", ""),
         "evidence": json.dumps(evidence, ensure_ascii=False),
         "requires_manual_review": bool(active_inconclusive),
+        "detection_confidence": probe_detection_confidence,
     }
 
 
@@ -104,6 +127,41 @@ def _merge_result(base: dict[str, Any], extra_evidence: dict[str, Any]) -> dict[
     evidence.update(extra_evidence)
     result["evidence"] = json.dumps(evidence, ensure_ascii=False)
     return result
+
+
+def _auto_score_observations(observations: list[dict[str, Any]], vulnerable: Any) -> dict[str, Any]:
+    """Infer detection confidence level from available observation evidence."""
+    # Level A: exploit trigger confirmed
+    if any(item.get("kind") == "authorized_trigger" and item.get("ok") and item.get("vulnerable")
+           for item in observations):
+        return {"level": "A", "confidence": "confirmed", "fp_risk": "very_low",
+                "method": "exploit_trigger_observed",
+                "level_description": "Behavioral confirmed – exploit trigger observed in lab"}
+    # Level B: crash / payload response
+    for obs in observations:
+        ev = obs.get("evidence", obs)
+        if isinstance(ev, str):
+            import json as _j
+            try: ev = _j.loads(ev)
+            except Exception: ev = {}
+        if any(k in ev for k in ("crash_observed", "connection_reset", "exploit_confirmed",
+                                  "restore_response", "overflow_triggered", "recv_data")):
+            return {"level": "B", "confidence": "high", "fp_risk": "low",
+                    "method": "behavioral_probe",
+                    "level_description": "Functional probe – CVE-specific payload, response matched"}
+    # Level C: active TCP/HTTP observation
+    if any(item.get("ok") for item in observations if item.get("kind") not in ("authorized_trigger",)):
+        return {"level": "C", "confidence": "medium", "fp_risk": "medium",
+                "method": "active_probe",
+                "level_description": "Active probe – service reached, version/config assessed"}
+    # Level D: passive advisory hit
+    if vulnerable is True:
+        return {"level": "D", "confidence": "low", "fp_risk": "medium_high",
+                "method": "passive_advisory",
+                "level_description": "Version/config match from advisory data – active probe not reachable"}
+    return {"level": "E", "confidence": "informational", "fp_risk": "high",
+            "method": "passive_only",
+            "level_description": "Passive/inventory only – no active probe performed"}
 
 
 def _validation_tier_achieved(observations: list[dict[str, Any]]) -> str:

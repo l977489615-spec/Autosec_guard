@@ -8,32 +8,32 @@ from poc_worker import SERVER_DIR, get_poc_worker
 CASES = [
     {
         "name": "icmp-host-discovery",
-        "path": "pocs/reconnaissance/01_ICMP_Host_Discovery.py",
+        "path": "pocs/reconnaissance/01_CWE_200_ICMP_Host_Discovery_Reconnaissance.py",
         "params": {"target_ip": "127.0.0.1"},
     },
     {
         "name": "ssh-service",
-        "path": "pocs/network/03_SSH_Service.py",
+        "path": "pocs/network/03_CWE_200_SSH_Service_Active_Validation.py",
         "params": {"target_ip": "127.0.0.1"},
     },
     {
         "name": "carplay-overflow",
-        "path": "pocs/application/03_CarPlay_Stack_Overflow.py",
+        "path": "pocs/application/03_CVE_2024_23923_CarPlay_Stack_Overflow_Active_Validation.py",
         "params": {"target_ip": "127.0.0.1"},
     },
     {
         "name": "can-injection",
-        "path": "pocs/canbus/02_CAN_Message_Injection.py",
+        "path": "pocs/canbus/02_CWE_306_CAN_Message_Injection_Active_Validation.py",
         "params": {"can_interface": "vcan0"},
     },
     {
         "name": "bt-hfp-overflow",
-        "path": "pocs/wireless/09_BT_HFP_AT_Overflow.py",
+        "path": "pocs/wireless/09_CVE_2025_32059_BT_HFP_AT_Overflow_Active_Validation.py",
         "params": {"target_mac": "00:11:22:33:44:55"},
     },
     {
         "name": "gps-spoofing",
-        "path": "pocs/advanced/03_GPS_Spoofing.py",
+        "path": "pocs/advanced/03_CWE_345_GPS_Spoofing_Active_Validation.py",
         "params": {"frequency": "1575420000"},
     },
 ]

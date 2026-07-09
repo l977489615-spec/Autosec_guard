@@ -1164,6 +1164,10 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
   const exportToPdf = () => {
     const now = scanTime || new Date().toLocaleString('zh-CN', { hour12: false });
     const reportHtml = markdownToSafeHtml(finalReport);
+    const llmLabel = currentUser?.ai_config?.reportModel
+      || currentUser?.ai_config?.strongModel
+      || currentUser?.ai_config?.fastModel
+      || 'LLM';
 
     const html = `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -1196,7 +1200,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
         <span><span class="label">扫描目标：</span>${escapeHtml(targetName)}&#8203;(${escapeHtml(targetIp)})</span>
         <span><span class="label">扫描时间：</span>${escapeHtml(now)}</span>
         <span><span class="label">报告类型：</span>Agent 自动化验证报告</span>
-        <span><span class="label">工具版本：</span>AutoSec Guard v2.0 · Qwen-Max (千问)</span>
+        <span><span class="label">工具版本：</span>AutoSec Guard v2.0 · ${escapeHtml(llmLabel)}</span>
       </div>
     </div>
     <div class="section">
@@ -1320,7 +1324,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
           <Bot className="w-6 h-6 text-cyan-400 shrink-0" />
           <div>
             <h2 className="text-lg font-bold text-cyan-300">多 Agent 自动化安全验证</h2>
-            <p className="text-xs text-gray-400">针对 IVI 验证场景 · 服务感知自适应 + MCP + Qwen (千问) Function Calling</p>
+            <p className="text-xs text-gray-400">针对 IVI 验证场景 · 服务感知自适应 + MCP + LLM Function Calling</p>
           </div>
         </div>
         <div className="flex-1" />

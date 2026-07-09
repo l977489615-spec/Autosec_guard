@@ -31,19 +31,19 @@ PORT_SERVICE_LABELS: dict[int, str] = {
 }
 
 PORT_POC_HEURISTIC: dict[int, str] = {
-    21: "network/08_FTP_Anonymous.py",
-    22: "network/03_SSH_Service.py",
-    23: "network/06_Telnet_Service.py",
-    80: "reconnaissance/08_HTTP_Service_Enum.py",
+    21: "network/08_CWE_306_FTP_Anonymous_Active_Validation.py",
+    22: "network/03_CWE_200_SSH_Service_Active_Validation.py",
+    23: "network/06_CWE_319_Telnet_Service_Active_Validation.py",
+    80: "reconnaissance/08_CWE_200_HTTP_Service_Enumeration_Reconnaissance.py",
     443: "network/20_HTTPS_No_Cert_Pin.py",
-    554: "network/11_RTSP_Log_Leak.py",
-    1883: "network/09_MQTT_Unauth.py",
-    5555: "network/02_ADB_Debug_Port.py",
-    7000: "network/11_RTSP_Log_Leak.py",
-    8000: "wireless/01_QNX_Qnet_File_Read.py",
-    8080: "reconnaissance/08_HTTP_Service_Enum.py",
-    13400: "network/14_SOMEIP_Service_Discovery.py",
-    30490: "network/14_SOMEIP_Service_Discovery.py",
+    554: "network/11_CWE_200_RTSP_Log_Leak_Active_Validation.py",
+    1883: "network/09_CWE_306_MQTT_Unauth_Active_Validation.py",
+    5555: "network/02_CVE_2018_6242_ADB_Debug_Port_Active_Validation.py",
+    7000: "network/11_CWE_200_RTSP_Log_Leak_Active_Validation.py",
+    8000: "wireless/01_CVE_2017_3891_QNX_Qnet_File_Read_Active_Validation.py",
+    8080: "reconnaissance/08_CWE_200_HTTP_Service_Enumeration_Reconnaissance.py",
+    13400: "network/14_CWE_200_SOMEIP_Service_Discovery_Active_Validation.py",
+    30490: "network/14_CWE_200_SOMEIP_Service_Discovery_Active_Validation.py",
 }
 
 POC_FILENAME_PORT_HINTS: list[tuple[str, int]] = [

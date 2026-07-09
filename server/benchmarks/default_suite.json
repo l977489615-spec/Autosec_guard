@@ -21,7 +21,7 @@
       },
       "expected_findings": {
         "required": [
-          "network/07_Telnet_Weak_Creds.py"
+          "network/07_CWE_521_Telnet_Weak_Credentials_Active_Validation.py"
         ],
         "optional": [
           "未知漏洞"
@@ -30,21 +30,21 @@
       },
       "expected_attack_plan": {
         "required": [
-          "network/02_ADB_Debug_Port.py",
-          "wireless/01_QNX_Qnet_File_Read.py",
-          "network/07_Telnet_Weak_Creds.py",
-          "network/04_SSH_Weak_Creds.py",
-          "application/11_RTSP_CarPlay_DoS.py",
-          "application/03_CarPlay_Stack_Overflow.py",
-          "network/11_RTSP_Log_Leak.py",
-          "application/01_AirPlay_AirBorne_UAF.py"
+          "network/02_CVE_2018_6242_ADB_Debug_Port_Active_Validation.py",
+          "wireless/01_CVE_2017_3891_QNX_Qnet_File_Read_Active_Validation.py",
+          "network/07_CWE_521_Telnet_Weak_Credentials_Active_Validation.py",
+          "network/04_CWE_521_SSH_Weak_Credentials_Active_Validation.py",
+          "application/11_CVE_2023_28898_RTSP_CarPlay_DoS_Active_Validation.py",
+          "application/03_CVE_2024_23923_CarPlay_Stack_Overflow_Active_Validation.py",
+          "network/11_CWE_200_RTSP_Log_Leak_Active_Validation.py",
+          "application/01_CVE_2025_24252_AirPlay_AirBorne_UAF_Active_Validation.py"
         ],
         "optional": [],
         "forbidden": []
       },
       "expected_execution": {
         "required": [
-          "network/07_Telnet_Weak_Creds.py"
+          "network/07_CWE_521_Telnet_Weak_Credentials_Active_Validation.py"
         ],
         "optional": [],
         "forbidden": []
@@ -75,9 +75,9 @@
       },
       "expected_findings": {
         "required": [
-          "network/03_SSH_Service.py",
-          "network/06_Telnet_Service.py",
-          "network/07_Telnet_Weak_Creds.py"
+          "network/03_CWE_200_SSH_Service_Active_Validation.py",
+          "network/06_CWE_319_Telnet_Service_Active_Validation.py",
+          "network/07_CWE_521_Telnet_Weak_Credentials_Active_Validation.py"
         ],
         "optional": [
           "未知漏洞"
@@ -86,20 +86,20 @@
       },
       "expected_attack_plan": {
         "required": [
-          "network/03_SSH_Service.py",
-          "network/06_Telnet_Service.py",
-          "network/04_SSH_Weak_Creds.py",
-          "network/05_SSH_Hardcoded_Creds.py",
-          "network/07_Telnet_Weak_Creds.py"
+          "network/03_CWE_200_SSH_Service_Active_Validation.py",
+          "network/06_CWE_319_Telnet_Service_Active_Validation.py",
+          "network/04_CWE_521_SSH_Weak_Credentials_Active_Validation.py",
+          "network/05_CWE_798_SSH_Hardcoded_Credentials_Active_Validation.py",
+          "network/07_CWE_521_Telnet_Weak_Credentials_Active_Validation.py"
         ],
         "optional": [],
         "forbidden": []
       },
       "expected_execution": {
         "required": [
-          "network/03_SSH_Service.py",
-          "network/06_Telnet_Service.py",
-          "network/07_Telnet_Weak_Creds.py"
+          "network/03_CWE_200_SSH_Service_Active_Validation.py",
+          "network/06_CWE_319_Telnet_Service_Active_Validation.py",
+          "network/07_CWE_521_Telnet_Weak_Credentials_Active_Validation.py"
         ],
         "optional": [],
         "forbidden": []

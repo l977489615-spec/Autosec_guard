@@ -1,6 +1,6 @@
 [
   {
-    "file": "pocs/advanced/01_OTA_MITM_Interception.py",
+    "file": "pocs/advanced/01_CWE_295_OTA_MITM_Interception_Active_Validation.py",
     "category": "advanced",
     "poc_name": "OTA MITM Interception",
     "cve_id": "CWE-295",
@@ -18,7 +18,7 @@
     ]
   },
   {
-    "file": "pocs/advanced/02_RF_Keyfob_Replay.py",
+    "file": "pocs/advanced/02_CVE_2022_27254_RF_Keyfob_Replay_Active_Validation.py",
     "category": "advanced",
     "poc_name": "RF Keyfob Replay",
     "cve_id": "CVE-2022-27254",
@@ -32,7 +32,7 @@
     "missing": []
   },
   {
-    "file": "pocs/advanced/03_GPS_Spoofing.py",
+    "file": "pocs/advanced/03_CWE_345_GPS_Spoofing_Active_Validation.py",
     "category": "advanced",
     "poc_name": "GPS Spoofing",
     "cve_id": "CWE-345",
@@ -49,7 +49,7 @@
     ]
   },
   {
-    "file": "pocs/advanced/04_TPMS_Signal_Spoofing.py",
+    "file": "pocs/advanced/04_CWE_345_TPMS_Signal_Spoofing_Active_Validation.py",
     "category": "advanced",
     "poc_name": "TPMS Signal Spoofing",
     "cve_id": "CWE-345",
@@ -67,7 +67,7 @@
     ]
   },
   {
-    "file": "pocs/advanced/05_V2X_BSM_Injection.py",
+    "file": "pocs/advanced/05_CWE_345_V2X_BSM_Injection_Active_Validation.py",
     "category": "advanced",
     "poc_name": "V2X BSM Injection",
     "cve_id": "CWE-345",
@@ -84,7 +84,7 @@
     ]
   },
   {
-    "file": "pocs/advanced/06_FW_Update_TOCTOU.py",
+    "file": "pocs/advanced/06_CWE_367_FW_Update_TOCTOU_Active_Validation.py",
     "category": "advanced",
     "poc_name": "FW Update TOCTOU",
     "cve_id": "CWE-367",
@@ -101,7 +101,7 @@
     ]
   },
   {
-    "file": "pocs/advanced/07_QNX_Unsigned_Firmware.py",
+    "file": "pocs/advanced/07_CWE_347_QNX_Unsigned_Firmware_Active_Validation.py",
     "category": "advanced",
     "poc_name": "QNX Unsigned Firmware",
     "cve_id": "CWE-347",
@@ -119,7 +119,7 @@
     ]
   },
   {
-    "file": "pocs/advanced/08_USB_Unsigned_Update.py",
+    "file": "pocs/advanced/08_CWE_347_USB_Unsigned_Update_Active_Validation.py",
     "category": "advanced",
     "poc_name": "USB Unsigned Update",
     "cve_id": "CWE-347",
@@ -136,7 +136,7 @@
     ]
   },
   {
-    "file": "pocs/advanced/09_File_ACL_Permission_Audit.py",
+    "file": "pocs/advanced/09_CWE_732_File_ACL_Permission_Active_Validation.py",
     "category": "advanced",
     "poc_name": "检测已连接的 Android 设备上若干敏感文件或接口的权限问题...",
     "cve_id": "CWE-732",
@@ -154,7 +154,7 @@
     ]
   },
   {
-    "file": "pocs/advanced/10_SELinux_Policy_Audit.py",
+    "file": "pocs/advanced/10_CWE_284_SELinux_Policy_Active_Validation.py",
     "category": "advanced",
     "poc_name": "检测设备是否启用安全SELinux状态...",
     "cve_id": "CWE-284",
@@ -171,7 +171,7 @@
     ]
   },
   {
-    "file": "pocs/advanced/11_Stack_Canary_Hardening_Audit.py",
+    "file": "pocs/advanced/11_CWE_693_Stack_Canary_Hardening_Active_Validation.py",
     "category": "advanced",
     "poc_name": "检测已连接设备是否启用栈保护机制...",
     "cve_id": "CWE-693",
@@ -189,7 +189,7 @@
     ]
   },
   {
-    "file": "pocs/advanced/12_ASLR_Address_Space_Audit.py",
+    "file": "pocs/advanced/12_CWE_693_ASLR_Address_Space_Active_Validation.py",
     "category": "advanced",
     "poc_name": "检测设备是否启用了地址空间布局随机化（ASLR）...",
     "cve_id": "CWE-693",
@@ -207,7 +207,7 @@
     ]
   },
   {
-    "file": "pocs/advanced/13_Android_Zygote_Command_Injection_Audit.py",
+    "file": "pocs/advanced/13_CVE_2024_31317_Android_Zygote_Command_Injection_Active_Validation.py",
     "category": "advanced",
     "poc_name": "检测设备是否存在Zygote进程命令注入漏洞（CVE-2024-31317）...",
     "cve_id": "CVE-2024-31317",
@@ -224,7 +224,7 @@
     ]
   },
   {
-    "file": "pocs/advanced/14_SELinux_Runtime_Enforcement_Audit.py",
+    "file": "pocs/advanced/14_CWE_284_SELinux_Runtime_Enforcement_Active_Validation.py",
     "category": "advanced",
     "poc_name": "检测SELinux宽容设备是否存在敏感数据泄露风险...",
     "cve_id": "CWE-284",
@@ -241,7 +241,7 @@
     ]
   },
   {
-    "file": "pocs/advanced/15_System_Directory_Protection_Audit.py",
+    "file": "pocs/advanced/15_CWE_353_System_Directory_Protection_Active_Validation.py",
     "category": "advanced",
     "poc_name": "检测设备dm_verity系统分区完整性验证是否开启...",
     "cve_id": "CWE-353",
@@ -259,7 +259,7 @@
     ]
   },
   {
-    "file": "pocs/advanced/16_ProcFS_Hidepid_Audit.py",
+    "file": "pocs/advanced/16_CWE_200_ProcFS_Hidepid_Active_Validation.py",
     "category": "advanced",
     "poc_name": "检测设备是否存在procfs进程信息泄露漏洞...",
     "cve_id": "CWE-200",
@@ -276,7 +276,7 @@
     ]
   },
   {
-    "file": "pocs/advanced/17_QNX_Kernel_Null_Deref_DoS_Audit.py",
+    "file": "pocs/advanced/17_CVE_2025_8090_Active_Validation.py",
     "category": "advanced",
     "poc_name": "CVE-2025-8090 空指针引用/DoS Active Validation",
     "cve_id": "CVE-2025-8090",
@@ -318,7 +318,7 @@
     "missing": []
   },
   {
-    "file": "pocs/advanced/20_QNX_Network_Stack_Null_Deref_DoS_Audit.py",
+    "file": "pocs/advanced/20_CVE_2024_35215_Active_Validation.py",
     "category": "advanced",
     "poc_name": "CVE-2024-35215 空指针/DoS Active Validation",
     "cve_id": "CVE-2024-35215",
@@ -393,7 +393,7 @@
     "missing": []
   },
   {
-    "file": "pocs/advanced/25_QNX_Calloc_Integer_Overflow_RCE_DoS_Audit.py",
+    "file": "pocs/advanced/25_CVE_2021_22156_Active_Validation.py",
     "category": "advanced",
     "poc_name": "CVE-2021-22156 整数溢出/RCE或DoS Active Validation",
     "cve_id": "CVE-2021-22156",
@@ -411,7 +411,7 @@
     ]
   },
   {
-    "file": "pocs/advanced/26_QNX_Kernel_Privilege_Escalation_Audit.py",
+    "file": "pocs/advanced/26_CVE_2021_32025_Active_Validation.py",
     "category": "advanced",
     "poc_name": "CVE-2021-32025 权限提升 Active Validation",
     "cve_id": "CVE-2021-32025",
@@ -429,7 +429,7 @@
     ]
   },
   {
-    "file": "pocs/advanced/28_QNX_GOT_PLT_Memory_Protection_Bypass_Audit.py",
+    "file": "pocs/advanced/28_CVE_2017_3893_Active_Validation.py",
     "category": "advanced",
     "poc_name": "CVE-2017-3893 内存保护绕过 Active Validation",
     "cve_id": "CVE-2017-3893",
@@ -447,7 +447,7 @@
     ]
   },
   {
-    "file": "pocs/advanced/29_XZ_LibLZMA_Supply_Chain_Backdoor_Audit.py",
+    "file": "pocs/advanced/29_CVE_2024_3094_Active_Validation.py",
     "category": "advanced",
     "poc_name": "CVE-2024-3094 供应链后门 Active Validation",
     "cve_id": "CVE-2024-3094",
@@ -466,7 +466,7 @@
     ]
   },
   {
-    "file": "pocs/advanced/30_Glibc_Iconv_Buffer_Overflow_Audit.py",
+    "file": "pocs/advanced/30_CVE_2024_2961_Active_Validation.py",
     "category": "advanced",
     "poc_name": "CVE-2024-2961 缓冲区溢出 Active Validation",
     "cve_id": "CVE-2024-2961",
@@ -483,7 +483,7 @@
     ]
   },
   {
-    "file": "pocs/advanced/36_Nissan_Bosch_IVI_Module_Signature_Verification_Audit.py",
+    "file": "pocs/advanced/36_CVE_2025_32060_Active_Validation.py",
     "category": "advanced",
     "poc_name": "CVE-2025-32060 签名校验缺失 Active Validation",
     "cve_id": "CVE-2025-32060",
@@ -502,7 +502,7 @@
     ]
   },
   {
-    "file": "pocs/advanced/37_Linux_Kernel_Copy_Fail_LPE_Audit.py",
+    "file": "pocs/advanced/37_CVE_2026_31431_Active_Validation.py",
     "category": "advanced",
     "poc_name": "Linux Kernel Copy Fail LPE Audit",
     "cve_id": "CVE-2026-31431",
@@ -520,7 +520,7 @@
     ]
   },
   {
-    "file": "pocs/application/01_AirPlay_AirBorne_UAF.py",
+    "file": "pocs/application/01_CVE_2025_24252_AirPlay_AirBorne_UAF_Active_Validation.py",
     "category": "application",
     "poc_name": "AirPlay AirBorne UAF",
     "cve_id": "CVE-2025-24252",
@@ -534,7 +534,7 @@
     "missing": []
   },
   {
-    "file": "pocs/application/02_IVI_USB_SQLi.py",
+    "file": "pocs/application/02_CVE_2024_8355_USB_SQLi_Active_Validation.py",
     "category": "application",
     "poc_name": "IVI USB SQLi",
     "cve_id": "CVE-2024-8355",
@@ -551,7 +551,7 @@
     ]
   },
   {
-    "file": "pocs/application/03_CarPlay_Stack_Overflow.py",
+    "file": "pocs/application/03_CVE_2024_23923_CarPlay_Stack_Overflow_Active_Validation.py",
     "category": "application",
     "poc_name": "CarPlay Stack Overflow",
     "cve_id": "CVE-2024-23923,CVE-2025-8474",
@@ -568,7 +568,7 @@
     ]
   },
   {
-    "file": "pocs/application/04_HiQnet_Stack_Overflow_TCP.py",
+    "file": "pocs/application/04_CVE_2021_23906_HiQnet_Stack_Overflow_TCP_Active_Validation.py",
     "category": "application",
     "poc_name": "HiQnet Stack Overflow TCP",
     "cve_id": "CVE-2021-23906",
@@ -585,7 +585,7 @@
     ]
   },
   {
-    "file": "pocs/application/05_HiQnet_Heap_Overflow_UDP.py",
+    "file": "pocs/application/05_CVE_2021_23906_HiQnet_Heap_Overflow_UDP_Active_Validation.py",
     "category": "application",
     "poc_name": "HiQnet Heap Overflow UDP",
     "cve_id": "CVE-2021-23906",
@@ -602,7 +602,7 @@
     ]
   },
   {
-    "file": "pocs/application/06_WebView_File_Exfil.py",
+    "file": "pocs/application/06_CWE_200_WebView_File_Exfil_Active_Validation.py",
     "category": "application",
     "poc_name": "WebView File Exfil",
     "cve_id": "CWE-200",
@@ -620,7 +620,7 @@
     ]
   },
   {
-    "file": "pocs/application/07_Filename_Command_Injection.py",
+    "file": "pocs/application/07_CWE_78_Command_Injection_Active_Validation.py",
     "category": "application",
     "poc_name": "Filename Command Injection",
     "cve_id": "CWE-78",
@@ -637,7 +637,7 @@
     ]
   },
   {
-    "file": "pocs/application/08_USB_Path_Injection.py",
+    "file": "pocs/application/08_CWE_22_USB_Path_Injection_Active_Validation.py",
     "category": "application",
     "poc_name": "USB Path Injection",
     "cve_id": "CWE-22",
@@ -654,7 +654,7 @@
     ]
   },
   {
-    "file": "pocs/application/09_IVI_DevMode_Bypass.py",
+    "file": "pocs/application/09_CVE_2025_32063_IVI_DevMode_Bypass_Active_Validation.py",
     "category": "application",
     "poc_name": "IVI DevMode Bypass",
     "cve_id": "CVE-2025-32063",
@@ -672,7 +672,7 @@
     ]
   },
   {
-    "file": "pocs/application/10_Wireless_Dongle_Auth_Bypass.py",
+    "file": "pocs/application/10_CVE_2025_2765_Authentication_Bypass_Active_Validation.py",
     "category": "application",
     "poc_name": "Wireless Dongle Auth Bypass",
     "cve_id": "CVE-2025-2765",
@@ -690,7 +690,7 @@
     ]
   },
   {
-    "file": "pocs/application/11_RTSP_CarPlay_DoS.py",
+    "file": "pocs/application/11_CVE_2023_28898_RTSP_CarPlay_DoS_Active_Validation.py",
     "category": "application",
     "poc_name": "RTSP CarPlay DoS",
     "cve_id": "CVE-2023-28898",
@@ -704,7 +704,7 @@
     "missing": []
   },
   {
-    "file": "pocs/application/12_UPnP_AVTransport_Media_Inject.py",
+    "file": "pocs/application/12_CWE_306_Inject_Active_Validation.py",
     "category": "application",
     "poc_name": "UPnP AVTransport Media Inject",
     "cve_id": "CWE-306",
@@ -718,7 +718,7 @@
     "missing": []
   },
   {
-    "file": "pocs/application/13_Mirror_Hijack.py",
+    "file": "pocs/application/13_CWE_306_Mirror_Hijack_Active_Validation.py",
     "category": "application",
     "poc_name": "Mirror Hijack",
     "cve_id": "CWE-306",
@@ -732,7 +732,7 @@
     "missing": []
   },
   {
-    "file": "pocs/application/14_LGE_Cinemo_MediaInjection.py",
+    "file": "pocs/application/14_CWE_306_Injection_Active_Validation.py",
     "category": "application",
     "poc_name": "LGE Cinemo Media Injection",
     "cve_id": "CWE-306",
@@ -746,7 +746,7 @@
     "missing": []
   },
   {
-    "file": "pocs/application/15_Android_Cleartext_HTTP_Audit.py",
+    "file": "pocs/application/15_CWE_319_Android_Cleartext_HTTP_Active_Validation.py",
     "category": "application",
     "poc_name": "检测设备app是否允许不安全的明文通信...",
     "cve_id": "CWE-319",
@@ -765,7 +765,7 @@
     ]
   },
   {
-    "file": "pocs/application/16_Android_Debuggable_App_Audit.py",
+    "file": "pocs/application/16_CWE_489_Android_Debuggable_App_Active_Validation.py",
     "category": "application",
     "poc_name": "检测设备app是否允许不安全的动态调试...",
     "cve_id": "CWE-489",
@@ -784,7 +784,7 @@
     ]
   },
   {
-    "file": "pocs/application/17_Android_AllowBackup_Audit.py",
+    "file": "pocs/application/17_CWE_530_Android_AllowBackup_Active_Validation.py",
     "category": "application",
     "poc_name": "检测设备app是否允许不安全的应用数据备份和还原...",
     "cve_id": "CWE-530",
@@ -803,7 +803,7 @@
     ]
   },
   {
-    "file": "pocs/application/18_Android_Install_Ask_Audit.py",
+    "file": "pocs/application/18_CWE_284_Android_Install_Ask_Active_Validation.py",
     "category": "application",
     "poc_name": "检测设备是否允许未经警告的第三方app安装...",
     "cve_id": "CWE-284",
@@ -817,7 +817,7 @@
     "missing": []
   },
   {
-    "file": "pocs/application/19_Android_StrandHogg_Task_Hijack_Audit.py",
+    "file": "pocs/application/19_CWE_1021_Android_StrandHogg_Task_Hijack_Active_Validation.py",
     "category": "application",
     "poc_name": "检测设备app是否存在StrandHogg/Task Hijacking风险（CWE-1021）...",
     "cve_id": "CWE-1021",
@@ -834,7 +834,7 @@
     ]
   },
   {
-    "file": "pocs/application/20_Android_Exported_Activity_Audit.py",
+    "file": "pocs/application/20_CWE_926_Android_Exported_Activity_Active_Validation.py",
     "category": "application",
     "poc_name": "检测设备app是否存在不安全的Activity（及 activity-alias）导出（存在暴露风险）...",
     "cve_id": "CWE-926",
@@ -852,7 +852,7 @@
     ]
   },
   {
-    "file": "pocs/application/21_Android_Exported_Service_Audit.py",
+    "file": "pocs/application/21_CWE_926_Android_Exported_Service_Active_Validation.py",
     "category": "application",
     "poc_name": "检测设备app是否存在不安全的Service导出（存在暴露风险）...",
     "cve_id": "CWE-926",
@@ -870,7 +870,7 @@
     ]
   },
   {
-    "file": "pocs/application/22_Android_Exported_Provider_Audit.py",
+    "file": "pocs/application/22_CWE_926_Android_Exported_Provider_Active_Validation.py",
     "category": "application",
     "poc_name": "检测设备app是否存在不安全的ContentProvider导出（存在暴露风险）...",
     "cve_id": "CWE-926",
@@ -888,7 +888,7 @@
     ]
   },
   {
-    "file": "pocs/application/23_Android_Exported_Broadcast_Audit.py",
+    "file": "pocs/application/23_CWE_926_Android_Exported_Broadcast_Active_Validation.py",
     "category": "application",
     "poc_name": "检测设备app是否存在不安全的BroadcastReceiver导出（存在暴露风险）...",
     "cve_id": "CWE-926",
@@ -906,7 +906,7 @@
     ]
   },
   {
-    "file": "pocs/application/24_Android_Scheme_URL_Export_Audit.py",
+    "file": "pocs/application/24_CWE_939_Android_Scheme_URL_Export_Active_Validation.py",
     "category": "application",
     "poc_name": "检测设备app是否存在不安全的URL Scheme导出（存在暴露风险）...",
     "cve_id": "CWE-939",
@@ -924,7 +924,7 @@
     ]
   },
   {
-    "file": "pocs/application/25_LibUPnP_Version_Audit.py",
+    "file": "pocs/application/25_CVE_2016_8863_LibUPnP_Version_Active_Validation.py",
     "category": "application",
     "poc_name": "检测系统或app是否使用了不安全的libupnp.so库（CVE-2016-8863）...",
     "cve_id": "CVE-2016-8863",
@@ -942,7 +942,7 @@
     ]
   },
   {
-    "file": "pocs/application/26_LibAVFormat_Version_Audit.py",
+    "file": "pocs/application/26_CVE_2016_1897_LibAVFormat_Version_Active_Validation.py",
     "category": "application",
     "poc_name": "检测系统或app是否使用了不安全的libavformat.so库-v1（CVE-2016-1897）...",
     "cve_id": "CVE-2016-1897",
@@ -960,7 +960,7 @@
     ]
   },
   {
-    "file": "pocs/application/27_LibAVFormat_Secondary_Version_Audit.py",
+    "file": "pocs/application/27_CVE_2016_1898_LibAVFormat_Secondary_Version_Active_Validation.py",
     "category": "application",
     "poc_name": "检测系统或app是否使用了不安全的libavformat.so库-v2（CVE-2016-1898）...",
     "cve_id": "CVE-2016-1898",
@@ -978,7 +978,7 @@
     ]
   },
   {
-    "file": "pocs/application/28_LibPNG_Version_Audit.py",
+    "file": "pocs/application/28_CVE_2004_0597_LibPNG_Version_Active_Validation.py",
     "category": "application",
     "poc_name": "检测系统或app是否使用了不安全的libpng.so库（CVE-2004-0597）...",
     "cve_id": "CVE-2004-0597",
@@ -996,7 +996,7 @@
     ]
   },
   {
-    "file": "pocs/application/29_OpenSSL_Version_Audit.py",
+    "file": "pocs/application/29_CVE_2016_6309_OpenSSL_Version_Active_Validation.py",
     "category": "application",
     "poc_name": "检测系统或app是否使用了不安全的openssl（CVE-2016_6309）...",
     "cve_id": "CVE-2016-6309",
@@ -1014,7 +1014,7 @@
     ]
   },
   {
-    "file": "pocs/application/30_Android_SDCard_Access_Audit.py",
+    "file": "pocs/application/30_CWE_922_Android_SDCard_Access_Active_Validation.py",
     "category": "application",
     "poc_name": "检测设备app是否使用了不安全的外部数据存储...",
     "cve_id": "CWE-922",
@@ -1030,7 +1030,7 @@
     ]
   },
   {
-    "file": "pocs/application/31_Android_WebView_Java_Bridge_Audit.py",
+    "file": "pocs/application/31_CWE_749_Android_WebView_Java_Bridge_Active_Validation.py",
     "category": "application",
     "poc_name": "检测设备app是否使用了不安全的Webview本地Java接口...",
     "cve_id": "CWE-749",
@@ -1047,7 +1047,7 @@
     ]
   },
   {
-    "file": "pocs/application/32_Android_WebView_RCE_Surface_Audit.py",
+    "file": "pocs/application/32_CWE_829_Android_WebView_RCE_Surface_Active_Validation.py",
     "category": "application",
     "poc_name": "检测设备app是否使用了不安全的Webview代码加载接口...",
     "cve_id": "CWE-829",
@@ -1064,7 +1064,7 @@
     ]
   },
   {
-    "file": "pocs/application/33_Android_WebView_File_Access_Audit.py",
+    "file": "pocs/application/33_CWE_22_Android_WebView_File_Access_Active_Validation.py",
     "category": "application",
     "poc_name": "检测设备app是否使用了不安全的Webview文件访问接口...",
     "cve_id": "CWE-22",
@@ -1081,7 +1081,7 @@
     ]
   },
   {
-    "file": "pocs/application/34_Android_OpenFile_ReadWrite_Audit.py",
+    "file": "pocs/application/34_CWE_732_Android_OpenFile_ReadWrite_Active_Validation.py",
     "category": "application",
     "poc_name": "检测设备app是否使用了不安全的文件全局可读写访问接口...",
     "cve_id": "CWE-732",
@@ -1098,7 +1098,7 @@
     ]
   },
   {
-    "file": "pocs/application/35_Android_OpenFile_Write_Audit.py",
+    "file": "pocs/application/35_CWE_732_Android_OpenFile_Write_Active_Validation.py",
     "category": "application",
     "poc_name": "检测设备app是否使用了不安全的文件全局可写访问接口...",
     "cve_id": "CWE-732",
@@ -1115,7 +1115,7 @@
     ]
   },
   {
-    "file": "pocs/application/36_Android_SharedPrefs_Read_Audit.py",
+    "file": "pocs/application/36_CWE_732_Android_SharedPrefs_Read_Active_Validation.py",
     "category": "application",
     "poc_name": "检测设备app是否使用了不安全的数据库全局可读访问接口...",
     "cve_id": "CWE-732",
@@ -1132,7 +1132,7 @@
     ]
   },
   {
-    "file": "pocs/application/37_Android_SharedPrefs_Write_Audit.py",
+    "file": "pocs/application/37_CWE_732_Android_SharedPrefs_Write_Active_Validation.py",
     "category": "application",
     "poc_name": "检测设备app是否使用了不安全的数据库全局可写访问接口...",
     "cve_id": "CWE-732",
@@ -1149,7 +1149,7 @@
     ]
   },
   {
-    "file": "pocs/application/38_Weak_AES_Mode_Audit.py",
+    "file": "pocs/application/38_CWE_327_Weak_AES_Mode_Active_Validation.py",
     "category": "application",
     "poc_name": "检测设备app是否使用了不安全的加密算法配置（ECB、NO/PKCS5 Padding）...",
     "cve_id": "CWE-327",
@@ -1167,7 +1167,7 @@
     ]
   },
   {
-    "file": "pocs/application/39_Weak_Randomness_Audit.py",
+    "file": "pocs/application/39_CWE_338_Weak_Randomness_Active_Validation.py",
     "category": "application",
     "poc_name": "检测设备app是否使用了不安全的伪随机数生成...",
     "cve_id": "CWE-338",
@@ -1186,7 +1186,7 @@
     ]
   },
   {
-    "file": "pocs/application/40_BYD_Public_Log_Exposure_Audit.py",
+    "file": "pocs/application/40_CVE_2024_54728_BYD_Public_Log_Active_Validation.py",
     "category": "application",
     "poc_name": "检测设备是否存在系统日志泄露漏洞（CVE-2024-54728）...",
     "cve_id": "CVE-2024-54728",
@@ -1205,7 +1205,7 @@
     ]
   },
   {
-    "file": "pocs/application/41_USB_Input_Injection_Audit.py",
+    "file": "pocs/application/41_CWE_20_USB_Input_Injection_Active_Validation.py",
     "category": "application",
     "poc_name": "检测设备是否存在USB伪装命令注入漏洞...",
     "cve_id": "CWE-20",
@@ -1222,7 +1222,7 @@
     ]
   },
   {
-    "file": "pocs/application/42_Android_Database_Export_Audit.py",
+    "file": "pocs/application/42_CWE_200_Android_Database_Export_Active_Validation.py",
     "category": "application",
     "poc_name": "检测设备是否存在数据库泄露风险...",
     "cve_id": "CWE-200",
@@ -1240,7 +1240,7 @@
     ]
   },
   {
-    "file": "pocs/application/43_Android_Syslog_Exposure_Audit.py",
+    "file": "pocs/application/43_CWE_532_Android_Syslog_Active_Validation.py",
     "category": "application",
     "poc_name": "检测设备是否存在系统日志泄露风险...",
     "cve_id": "CWE-532",
@@ -1259,7 +1259,7 @@
     ]
   },
   {
-    "file": "pocs/application/44_LibJPEG_Version_Audit.py",
+    "file": "pocs/application/44_CVE_2018_1152_LibJPEG_Version_Active_Validation.py",
     "category": "application",
     "poc_name": "检测系统或app是否使用了不安全的libjpeg-turbo.so库（CVE-2018-1152）...",
     "cve_id": "CVE-2018-1152",
@@ -1277,7 +1277,7 @@
     ]
   },
   {
-    "file": "pocs/application/45_Android_WebView_Remote_URL_Audit.py",
+    "file": "pocs/application/45_CWE_829_Android_WebView_Remote_URL_Active_Validation.py",
     "category": "application",
     "poc_name": "WebView 远程 URL 加载受控检测",
     "cve_id": "CWE-829",
@@ -1296,7 +1296,7 @@
     ]
   },
   {
-    "file": "pocs/application/46_Android_WebView_JavaScript_Audit.py",
+    "file": "pocs/application/46_CWE_749_Android_WebView_JavaScript_Active_Validation.py",
     "category": "application",
     "poc_name": "WebView JavaScript 启用风险检测",
     "cve_id": "CWE-749",
@@ -1315,7 +1315,7 @@
     ]
   },
   {
-    "file": "pocs/application/47_Android_WebView_Mixed_Content_Audit.py",
+    "file": "pocs/application/47_CWE_319_Android_WebView_Mixed_Content_Active_Validation.py",
     "category": "application",
     "poc_name": "WebView MixedContent 兼容模式检测",
     "cve_id": "CWE-319",
@@ -1334,7 +1334,7 @@
     ]
   },
   {
-    "file": "pocs/application/48_Android_SQLite_Plaintext_Audit.py",
+    "file": "pocs/application/48_CWE_312_Android_SQLite_Plaintext_Active_Validation.py",
     "category": "application",
     "poc_name": "SQLite 明文敏感数据存储检测",
     "cve_id": "CWE-312",
@@ -1353,7 +1353,7 @@
     ]
   },
   {
-    "file": "pocs/application/49_Android_SQLite_Injection_Pattern_Audit.py",
+    "file": "pocs/application/49_CWE_89_Android_SQLite_Injection_Pattern_Active_Validation.py",
     "category": "application",
     "poc_name": "SQL 拼接注入风险模式检测",
     "cve_id": "CWE-89",
@@ -1371,7 +1371,7 @@
     ]
   },
   {
-    "file": "pocs/application/50_Android_Sensitive_File_Storage_Audit.py",
+    "file": "pocs/application/50_CWE_922_Android_Sensitive_File_Storage_Active_Validation.py",
     "category": "application",
     "poc_name": "应用本地敏感文件存储检测",
     "cve_id": "CWE-922",
@@ -1390,7 +1390,7 @@
     ]
   },
   {
-    "file": "pocs/application/51_Android_Activity_Intent_Filter_Audit.py",
+    "file": "pocs/application/51_CWE_926_Android_Activity_Intent_Filter_Active_Validation.py",
     "category": "application",
     "poc_name": "Exported Activity Intent-Filter 风险检测",
     "cve_id": "CWE-926",
@@ -1409,7 +1409,7 @@
     ]
   },
   {
-    "file": "pocs/application/52_Android_Service_Permission_Audit.py",
+    "file": "pocs/application/52_CWE_926_Android_Service_Permission_Active_Validation.py",
     "category": "application",
     "poc_name": "Exported Service 缺少权限保护检测",
     "cve_id": "CWE-926",
@@ -1428,7 +1428,7 @@
     ]
   },
   {
-    "file": "pocs/application/53_Android_Receiver_Permission_Audit.py",
+    "file": "pocs/application/53_CWE_926_Android_Receiver_Permission_Active_Validation.py",
     "category": "application",
     "poc_name": "Exported Receiver 缺少权限保护检测",
     "cve_id": "CWE-926",
@@ -1447,7 +1447,7 @@
     ]
   },
   {
-    "file": "pocs/application/54_Android_Provider_URI_Grant_Audit.py",
+    "file": "pocs/application/54_CWE_926_Android_Provider_URI_Grant_Active_Validation.py",
     "category": "application",
     "poc_name": "Provider 导出与 grantUriPermissions 风险检测",
     "cve_id": "CWE-926",
@@ -1466,7 +1466,7 @@
     ]
   },
   {
-    "file": "pocs/application/55_Android_Sensitive_Debug_Log_Audit.py",
+    "file": "pocs/application/55_CWE_532_Android_Sensitive_Debug_Log_Active_Validation.py",
     "category": "application",
     "poc_name": "调试日志敏感信息泄露检测",
     "cve_id": "CWE-532",
@@ -1485,7 +1485,7 @@
     ]
   },
   {
-    "file": "pocs/application/56_Android_Hardcoded_Debug_Endpoint_Audit.py",
+    "file": "pocs/application/56_CWE_489_Android_Hardcoded_Debug_Endpoint_Active_Validation.py",
     "category": "application",
     "poc_name": "硬编码调试接口与测试域名检测",
     "cve_id": "CWE-489",
@@ -1504,7 +1504,7 @@
     ]
   },
   {
-    "file": "pocs/application/57_Weak_Crypto_ECB_Audit.py",
+    "file": "pocs/application/57_CWE_327_Crypto_ECB_Active_Validation.py",
     "category": "application",
     "poc_name": "弱加密 ECB/静态 IV 使用检测",
     "cve_id": "CWE-327",
@@ -1523,7 +1523,7 @@
     ]
   },
   {
-    "file": "pocs/application/58_Weak_Random_Seed_Audit.py",
+    "file": "pocs/application/58_CWE_337_Random_Seed_Active_Validation.py",
     "category": "application",
     "poc_name": "伪随机数固定种子风险检测",
     "cve_id": "CWE-337",
@@ -1542,7 +1542,7 @@
     ]
   },
   {
-    "file": "pocs/application/59_AirPlay_SDK_Memory_Corruption_Audit.py",
+    "file": "pocs/application/59_CVE_2024_23204_Active_Validation.py",
     "category": "application",
     "poc_name": "CVE-2024-23204 内存破坏/协议缺陷 Active Validation",
     "cve_id": "CVE-2024-23204",
@@ -1556,7 +1556,7 @@
     "missing": []
   },
   {
-    "file": "pocs/application/60_AirPlay_SDK_Access_Control_Audit.py",
+    "file": "pocs/application/60_CVE_2024_23205_Active_Validation.py",
     "category": "application",
     "poc_name": "CVE-2024-23205 认证/访问控制缺陷 Active Validation",
     "cve_id": "CVE-2024-23205",
@@ -1570,7 +1570,7 @@
     "missing": []
   },
   {
-    "file": "pocs/application/61_AirPlay_SDK_AirBorne_Exposure_Audit.py",
+    "file": "pocs/application/61_CVE_2025_24132_Active_Validation.py",
     "category": "application",
     "poc_name": "CVE-2025-24132 AirBorne系列漏洞 Active Validation",
     "cve_id": "CVE-2025-24132",
@@ -1584,7 +1584,7 @@
     "missing": []
   },
   {
-    "file": "pocs/application/63_AirPlay_SDK_AirBorne_Exposure_Audit.py",
+    "file": "pocs/application/63_CVE_2025_24271_Active_Validation.py",
     "category": "application",
     "poc_name": "CVE-2025-24271 AirBorne系列漏洞 Active Validation",
     "cve_id": "CVE-2025-24271",
@@ -1598,7 +1598,7 @@
     "missing": []
   },
   {
-    "file": "pocs/application/64_LibWebP_Decoder_Heap_Overflow_RCE_Audit.py",
+    "file": "pocs/application/64_CVE_2023_4863_Active_Validation.py",
     "category": "application",
     "poc_name": "CVE-2023-4863 堆溢出/RCE Active Validation",
     "cve_id": "CVE-2023-4863",
@@ -1612,7 +1612,7 @@
     "missing": []
   },
   {
-    "file": "pocs/application/65_Chromium_CSSFontFeatureValuesMap_UAF_Audit.py",
+    "file": "pocs/application/65_CVE_2026_2441_Chromium_CSSFontFeatureValuesMap_UAF_Active_Validation.py",
     "category": "application",
     "poc_name": "Chromium CSSFontFeatureValuesMap UAF Active Validation",
     "cve_id": "CVE-2026-2441",
@@ -1626,7 +1626,7 @@
     "missing": []
   },
   {
-    "file": "pocs/application/66_FFmpeg_MagicYUV_Heap_OOB_RCE_Audit.py",
+    "file": "pocs/application/66_CVE_2026_8461_FFmpeg_MagicYUV_Heap_OOB_RCE_Active_Validation.py",
     "category": "application",
     "poc_name": "FFmpeg MagicYUV Heap OOB RCE Active Validation",
     "cve_id": "CVE-2026-8461",
@@ -1640,7 +1640,7 @@
     "missing": []
   },
   {
-    "file": "pocs/canbus/01_CAN_Bus_Sniff.py",
+    "file": "pocs/canbus/01_CWE_200_CAN_Bus_Sniff_Active_Validation.py",
     "category": "canbus",
     "poc_name": "CAN Bus Sniff",
     "cve_id": "CWE-200",
@@ -1658,7 +1658,7 @@
     ]
   },
   {
-    "file": "pocs/canbus/02_CAN_Message_Injection.py",
+    "file": "pocs/canbus/02_CWE_306_CAN_Message_Injection_Active_Validation.py",
     "category": "canbus",
     "poc_name": "CAN Message Injection",
     "cve_id": "CWE-306",
@@ -1672,7 +1672,7 @@
     "missing": []
   },
   {
-    "file": "pocs/canbus/03_CAN_DoS_Flood.py",
+    "file": "pocs/canbus/03_CWE_400_CAN_DoS_Flood_Active_Validation.py",
     "category": "canbus",
     "poc_name": "CAN DoS Flood",
     "cve_id": "CWE-400",
@@ -1689,7 +1689,7 @@
     ]
   },
   {
-    "file": "pocs/canbus/04_CAN_Replay_Attack.py",
+    "file": "pocs/canbus/04_CWE_294_CAN_Replay_Attack_Active_Validation.py",
     "category": "canbus",
     "poc_name": "CAN Replay Attack",
     "cve_id": "CWE-294",
@@ -1703,7 +1703,7 @@
     "missing": []
   },
   {
-    "file": "pocs/canbus/05_UDS_DiagSession_Bypass.py",
+    "file": "pocs/canbus/05_CWE_306_UDS_Diagnostic_Session_Bypass_Active_Validation.py",
     "category": "canbus",
     "poc_name": "UDS Diagnostic Session Bypass",
     "cve_id": "CWE-306",
@@ -1720,7 +1720,7 @@
     ]
   },
   {
-    "file": "pocs/canbus/06_UDS_Security_Access_Brute.py",
+    "file": "pocs/canbus/06_CWE_307_UDS_Security_Access_Brute_Active_Validation.py",
     "category": "canbus",
     "poc_name": "UDS Security Access Brute",
     "cve_id": "CWE-307",
@@ -1737,7 +1737,7 @@
     ]
   },
   {
-    "file": "pocs/canbus/07_UDS_ReadMemory.py",
+    "file": "pocs/canbus/07_CWE_200_UDS_ReadMemory_Active_Validation.py",
     "category": "canbus",
     "poc_name": "UDS ReadMemory",
     "cve_id": "CWE-200",
@@ -1754,7 +1754,7 @@
     ]
   },
   {
-    "file": "pocs/canbus/08_UDS_RoutineControl.py",
+    "file": "pocs/canbus/08_CWE_306_UDS_RoutineControl_Active_Validation.py",
     "category": "canbus",
     "poc_name": "UDS RoutineControl",
     "cve_id": "CWE-306",
@@ -1771,7 +1771,7 @@
     ]
   },
   {
-    "file": "pocs/canbus/09_OBD_VIN_Spoof.py",
+    "file": "pocs/canbus/09_CWE_345_OBD_VIN_Spoofing_Active_Validation.py",
     "category": "canbus",
     "poc_name": "OBD VIN Spoof",
     "cve_id": "CWE-345",
@@ -1788,7 +1788,7 @@
     ]
   },
   {
-    "file": "pocs/canbus/10_UDS_ECU_Reset_Unauth.py",
+    "file": "pocs/canbus/10_CWE_306_UDS_ECU_Reset_Unauthenticated_Active_Validation.py",
     "category": "canbus",
     "poc_name": "UDS ECU Reset Unauthenticated",
     "cve_id": "CWE-306",
@@ -1802,7 +1802,7 @@
     "missing": []
   },
   {
-    "file": "pocs/canbus/11_BYD_CAN_Traffic_Hijack_Audit.py",
+    "file": "pocs/canbus/11_CVE_2025_28169_CAN_Traffic_Hijack_Active_Validation.py",
     "category": "canbus",
     "poc_name": "检测设备是否存在CAN流量劫持漏洞（CVE-2025-28169）...",
     "cve_id": "CVE-2025-28169",
@@ -1820,7 +1820,7 @@
     ]
   },
   {
-    "file": "pocs/canbus/12_DoIP_Entity_Status_Audit.py",
+    "file": "pocs/canbus/12_CWE_200_DoIP_Entity_Status_Active_Validation.py",
     "category": "canbus",
     "poc_name": "DoIP Entity Status 安全探测",
     "cve_id": "CWE-200",
@@ -1838,7 +1838,7 @@
     ]
   },
   {
-    "file": "pocs/canbus/13_DoIP_Routing_Activation_Audit.py",
+    "file": "pocs/canbus/13_CWE_306_DoIP_Routing_Activation_Active_Validation.py",
     "category": "canbus",
     "poc_name": "DoIP Routing Activation 前置条件检测",
     "cve_id": "CWE-306",
@@ -1855,7 +1855,7 @@
     ]
   },
   {
-    "file": "pocs/canbus/14_CAN_Log_Replay_Safety_Audit.py",
+    "file": "pocs/canbus/14_CWE_294_CAN_Lint_Active_Validation.py",
     "category": "canbus",
     "poc_name": "CAN 重放日志安全 Lint",
     "cve_id": "CWE-294",
@@ -1872,7 +1872,7 @@
     ]
   },
   {
-    "file": "pocs/canbus/15_UDS_Negative_Response_Audit.py",
+    "file": "pocs/canbus/15_CWE_209_UDS_Negative_Response_Active_Validation.py",
     "category": "canbus",
     "poc_name": "UDS 负响应与安全访问日志检测",
     "cve_id": "CWE-209",
@@ -1891,7 +1891,7 @@
     ]
   },
   {
-    "file": "pocs/canbus/16_Nissan_Bosch_CAN_Weak_Random_Auth_Bypass_Audit.py",
+    "file": "pocs/canbus/16_CVE_2025_32056_Active_Validation.py",
     "category": "canbus",
     "poc_name": "CVE-2025-32056 弱随机/认证绕过 Active Validation",
     "cve_id": "CVE-2025-32056",
@@ -1910,7 +1910,7 @@
     ]
   },
   {
-    "file": "pocs/canbus/17_Nissan_Bosch_INC_Stack_Overflow_RCE_Audit.py",
+    "file": "pocs/canbus/17_CVE_2025_32058_Active_Validation.py",
     "category": "canbus",
     "poc_name": "CVE-2025-32058 栈溢出/RCE Active Validation",
     "cve_id": "CVE-2025-32058",
@@ -1928,7 +1928,7 @@
     ]
   },
   {
-    "file": "pocs/network/01_USB_ADB_Debug.py",
+    "file": "pocs/network/01_CWE_489_USB_ADB_Debug_Interface_Active_Validation.py",
     "category": "network",
     "poc_name": "USB ADB Debug Interface Detection",
     "cve_id": "CWE-489",
@@ -1946,7 +1946,7 @@
     ]
   },
   {
-    "file": "pocs/network/02_ADB_Debug_Port.py",
+    "file": "pocs/network/02_CVE_2018_6242_ADB_Debug_Port_Active_Validation.py",
     "category": "network",
     "poc_name": "Network ADB Debug Port Detection",
     "cve_id": "CVE-2018-6242",
@@ -1960,7 +1960,7 @@
     "missing": []
   },
   {
-    "file": "pocs/network/03_SSH_Service.py",
+    "file": "pocs/network/03_CWE_200_SSH_Service_Active_Validation.py",
     "category": "network",
     "poc_name": "SSH Service",
     "cve_id": "CWE-200",
@@ -1978,7 +1978,7 @@
     ]
   },
   {
-    "file": "pocs/network/04_SSH_Weak_Creds.py",
+    "file": "pocs/network/04_CWE_521_SSH_Weak_Credentials_Active_Validation.py",
     "category": "network",
     "poc_name": "SSH Weak Creds",
     "cve_id": "CWE-521",
@@ -1996,7 +1996,7 @@
     ]
   },
   {
-    "file": "pocs/network/05_SSH_Hardcoded_Creds.py",
+    "file": "pocs/network/05_CWE_798_SSH_Hardcoded_Credentials_Active_Validation.py",
     "category": "network",
     "poc_name": "SSH Hardcoded Creds",
     "cve_id": "CWE-798",
@@ -2014,7 +2014,7 @@
     ]
   },
   {
-    "file": "pocs/network/06_Telnet_Service.py",
+    "file": "pocs/network/06_CWE_319_Telnet_Service_Active_Validation.py",
     "category": "network",
     "poc_name": "Telnet Service",
     "cve_id": "CWE-319",
@@ -2032,7 +2032,7 @@
     ]
   },
   {
-    "file": "pocs/network/07_Telnet_Weak_Creds.py",
+    "file": "pocs/network/07_CWE_521_Telnet_Weak_Credentials_Active_Validation.py",
     "category": "network",
     "poc_name": "Telnet Weak Creds",
     "cve_id": "CWE-521",
@@ -2049,7 +2049,7 @@
     ]
   },
   {
-    "file": "pocs/network/08_FTP_Anonymous.py",
+    "file": "pocs/network/08_CWE_306_FTP_Anonymous_Active_Validation.py",
     "category": "network",
     "poc_name": "FTP Anonymous",
     "cve_id": "CWE-306",
@@ -2067,7 +2067,7 @@
     ]
   },
   {
-    "file": "pocs/network/09_MQTT_Unauth.py",
+    "file": "pocs/network/09_CWE_306_MQTT_Unauth_Active_Validation.py",
     "category": "network",
     "poc_name": "MQTT Unauth",
     "cve_id": "CWE-306",
@@ -2084,7 +2084,7 @@
     ]
   },
   {
-    "file": "pocs/network/10_DBus_Anon_Auth.py",
+    "file": "pocs/network/10_CVE_2015_5611_Auth_Active_Validation.py",
     "category": "network",
     "poc_name": "DBus Anon Auth",
     "cve_id": "CVE-2015-5611",
@@ -2102,7 +2102,7 @@
     ]
   },
   {
-    "file": "pocs/network/11_RTSP_Log_Leak.py",
+    "file": "pocs/network/11_CWE_200_RTSP_Log_Leak_Active_Validation.py",
     "category": "network",
     "poc_name": "RTSP Log Leak",
     "cve_id": "CWE-200",
@@ -2118,7 +2118,7 @@
     ]
   },
   {
-    "file": "pocs/network/12_DLNA_AVTransport_Unauth.py",
+    "file": "pocs/network/12_CWE_306_DLNA_AVTransport_Unauth_Active_Validation.py",
     "category": "network",
     "poc_name": "DLNA AVTransport Unauth",
     "cve_id": "CWE-306",
@@ -2135,7 +2135,7 @@
     ]
   },
   {
-    "file": "pocs/network/13_HTTPS_No_Cert_Pin.py",
+    "file": "pocs/network/13_CWE_295_HTTPS_No_Cert_Pin_Active_Validation.py",
     "category": "network",
     "poc_name": "HTTPS No Cert Pin",
     "cve_id": "CWE-295",
@@ -2153,7 +2153,7 @@
     ]
   },
   {
-    "file": "pocs/network/14_SOMEIP_Service_Discovery.py",
+    "file": "pocs/network/14_CWE_200_SOMEIP_Service_Discovery_Active_Validation.py",
     "category": "network",
     "poc_name": "SOMEIP Service Discovery",
     "cve_id": "CWE-200",
@@ -2170,7 +2170,7 @@
     ]
   },
   {
-    "file": "pocs/network/15_Dynamic_Unknown_Service_Probe.py",
+    "file": "pocs/network/15_CWE_200_Service_Probe_Active_Validation.py",
     "category": "network",
     "poc_name": "Dynamic Unknown Service Probe",
     "cve_id": "CWE-200",
@@ -2187,7 +2187,7 @@
     ]
   },
   {
-    "file": "pocs/network/17_Nissan_Redbend_OTA_Certificate_Validation_Audit.py",
+    "file": "pocs/network/17_CVE_2025_32057_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2025-32057 证书校验缺失 Active Validation",
     "cve_id": "CVE-2025-32057",
@@ -2206,7 +2206,7 @@
     ]
   },
   {
-    "file": "pocs/network/21_Nissan_Bosch_IVI_Stack_Overflow_RCE_Audit.py",
+    "file": "pocs/network/21_CVE_2025_32061_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2025-32061 栈溢出/RCE Active Validation",
     "cve_id": "CVE-2025-32061",
@@ -2224,7 +2224,7 @@
     ]
   },
   {
-    "file": "pocs/network/22_Nissan_Bosch_IVI_Access_Control_Audit.py",
+    "file": "pocs/network/22_CVE_2025_32062_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2025-32062 访问控制缺陷 Active Validation",
     "cve_id": "CVE-2025-32062",
@@ -2242,7 +2242,7 @@
     ]
   },
   {
-    "file": "pocs/network/24_KIA_Keyless_Fixed_Code_Replay_Audit.py",
+    "file": "pocs/network/24_CVE_2025_6029_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2025-6029 固定学习码/重放 Active Validation",
     "cve_id": "CVE-2025-6029",
@@ -2259,7 +2259,7 @@
     ]
   },
   {
-    "file": "pocs/network/25_Cyclone_Keyless_Fixed_Code_Replay_Audit.py",
+    "file": "pocs/network/25_CVE_2025_6030_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2025-6030 固定学习码/重放 Active Validation",
     "cve_id": "CVE-2025-6030",
@@ -2277,7 +2277,7 @@
     ]
   },
   {
-    "file": "pocs/network/26_Tesla_Model3_Physical_Access_Injection_Audit.py",
+    "file": "pocs/network/26_CVE_2025_6785_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2025-6785 注入/物理访问控制不足 Active Validation",
     "cve_id": "CVE-2025-6785",
@@ -2294,7 +2294,7 @@
     ]
   },
   {
-    "file": "pocs/network/27_BYD_DiLink_Log_Crypto_Bypass_Audit.py",
+    "file": "pocs/network/27_CVE_2025_7020_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2025-7020 加密实现错误 Active Validation",
     "cve_id": "CVE-2025-7020",
@@ -2312,7 +2312,7 @@
     ]
   },
   {
-    "file": "pocs/network/28_Sony_XAV_AX5500_Firmware_Update_Verification_Audit.py",
+    "file": "pocs/network/28_CVE_2024_23922_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2024-23922 更新包校验不足/RCE Active Validation",
     "cve_id": "CVE-2024-23922",
@@ -2367,7 +2367,7 @@
     ]
   },
   {
-    "file": "pocs/network/31_Autel_MaxiCharger_Heartbeat_Stack_Overflow_RCE_Audit.py",
+    "file": "pocs/network/31_CVE_2024_23957_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2024-23957 栈溢出/RCE Active Validation",
     "cve_id": "CVE-2024-23957",
@@ -2385,7 +2385,7 @@
     ]
   },
   {
-    "file": "pocs/network/32_Alpine_Halo9_Firmware_Signature_Verification_Audit.py",
+    "file": "pocs/network/32_CVE_2024_23960_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2024-23960 签名校验不当 Active Validation",
     "cve_id": "CVE-2024-23960",
@@ -2404,7 +2404,7 @@
     ]
   },
   {
-    "file": "pocs/network/33_Alpine_Halo9_Input_Validation_Audit.py",
+    "file": "pocs/network/33_CVE_2024_23967_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2024-23967 输入校验或内存破坏 Active Validation",
     "cve_id": "CVE-2024-23967",
@@ -2422,7 +2422,7 @@
     ]
   },
   {
-    "file": "pocs/network/34_Sony_XAV_AX5500_USB_Descriptor_Stack_Overflow_RCE_Audit.py",
+    "file": "pocs/network/34_CVE_2024_23972_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2024-23972 栈溢出/RCE Active Validation",
     "cve_id": "CVE-2024-23972",
@@ -2440,7 +2440,7 @@
     ]
   },
   {
-    "file": "pocs/network/35_Automotive_Component_Access_Control_Input_Validation_Audit.py",
+    "file": "pocs/network/35_CVE_2024_1633_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2024-1633 访问控制/输入校验 Active Validation",
     "cve_id": "CVE-2024-1633",
@@ -2458,7 +2458,7 @@
     ]
   },
   {
-    "file": "pocs/network/36_Automotive_Component_Memory_Config_Exposure_Audit.py",
+    "file": "pocs/network/36_CVE_2024_5684_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2024-5684 内存安全/配置问题 Active Validation",
     "cve_id": "CVE-2024-5684",
@@ -2477,7 +2477,7 @@
     ]
   },
   {
-    "file": "pocs/network/37_Maruti_SmartPlay_Default_Credentials_Audit.py",
+    "file": "pocs/network/37_CVE_2024_6245_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2024-6245 默认凭据 Active Validation",
     "cve_id": "CVE-2024-6245",
@@ -2496,7 +2496,7 @@
     ]
   },
   {
-    "file": "pocs/network/38_Automotive_Component_Input_Validation_Access_Control_Audit.py",
+    "file": "pocs/network/38_CVE_2024_6287_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2024-6287 输入校验/访问控制 Active Validation",
     "cve_id": "CVE-2024-6287",
@@ -2515,7 +2515,7 @@
     ]
   },
   {
-    "file": "pocs/network/39_Automotive_Backend_Missing_Auth_Authorization_Audit.py",
+    "file": "pocs/network/39_CVE_2024_6347_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2024-6347 缺少认证/授权不当 Active Validation",
     "cve_id": "CVE-2024-6347",
@@ -2533,7 +2533,7 @@
     ]
   },
   {
-    "file": "pocs/network/40_Renesas_RCar_Secure_Boot_Buffer_Copy_OOB_Audit.py",
+    "file": "pocs/network/40_CVE_2024_6563_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2024-6563 缓冲区拷贝越界 Active Validation",
     "cve_id": "CVE-2024-6563",
@@ -2550,7 +2550,7 @@
     ]
   },
   {
-    "file": "pocs/network/41_Renesas_RCar_Secure_Boot_Bypass_Audit.py",
+    "file": "pocs/network/41_CVE_2024_6564_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2024-6564 缓冲区溢出/安全启动绕过 Active Validation",
     "cve_id": "CVE-2024-6564",
@@ -2567,7 +2567,7 @@
     ]
   },
   {
-    "file": "pocs/network/42_Automotive_Component_Input_Validation_Auth_Audit.py",
+    "file": "pocs/network/42_CVE_2024_7746_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2024-7746 输入校验/认证缺陷 Active Validation",
     "cve_id": "CVE-2024-7746",
@@ -2585,7 +2585,7 @@
     ]
   },
   {
-    "file": "pocs/network/43_Maruti_SmartPlay_Access_Control_Info_Leak_Audit.py",
+    "file": "pocs/network/43_CVE_2024_39339_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2024-39339 访问控制/信息泄露 Active Validation",
     "cve_id": "CVE-2024-39339",
@@ -2603,7 +2603,7 @@
     ]
   },
   {
-    "file": "pocs/network/44_VW_ID3_REST_API_DoS_Command_Spoofing_Audit.py",
+    "file": "pocs/network/44_CVE_2023_6073_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2023-6073 DoS/命令伪造 Active Validation",
     "cve_id": "CVE-2023-6073",
@@ -2621,7 +2621,7 @@
     ]
   },
   {
-    "file": "pocs/network/45_Automotive_Backend_Hardcoded_Credentials_Audit.py",
+    "file": "pocs/network/45_CVE_2023_28895_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2023-28895 硬编码凭据 Active Validation",
     "cve_id": "CVE-2023-28895",
@@ -2640,7 +2640,7 @@
     ]
   },
   {
-    "file": "pocs/network/46_Skoda_Connect_VIN_User_Info_Leak_Audit.py",
+    "file": "pocs/network/46_CVE_2023_28900_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2023-28900 越权/信息泄露 Active Validation",
     "cve_id": "CVE-2023-28900",
@@ -2659,7 +2659,7 @@
     ]
   },
   {
-    "file": "pocs/network/47_VW_MIB3_Input_Validation_DoS_Audit.py",
+    "file": "pocs/network/47_CVE_2023_28903_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2023-28903 输入校验/DoS Active Validation",
     "cve_id": "CVE-2023-28903",
@@ -2677,7 +2677,7 @@
     ]
   },
   {
-    "file": "pocs/network/48_VW_MIB3_Integer_Overflow_Audit.py",
+    "file": "pocs/network/48_CVE_2023_28908_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2023-28908 整数溢出 Active Validation",
     "cve_id": "CVE-2023-28908",
@@ -2695,7 +2695,7 @@
     ]
   },
   {
-    "file": "pocs/network/49_VW_MIB3_Access_Control_Auth_Audit.py",
+    "file": "pocs/network/49_CVE_2023_28910_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2023-28910 访问控制/认证缺陷 Active Validation",
     "cve_id": "CVE-2023-28910",
@@ -2714,7 +2714,7 @@
     ]
   },
   {
-    "file": "pocs/network/50_VW_MIB3_Input_Validation_DoS_Audit.py",
+    "file": "pocs/network/50_CVE_2023_28911_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2023-28911 输入校验/DoS Active Validation",
     "cve_id": "CVE-2023-28911",
@@ -2733,7 +2733,7 @@
     ]
   },
   {
-    "file": "pocs/network/51_Enel_Waybox_PHP_Auth_Bypass_Audit.py",
+    "file": "pocs/network/51_CVE_2023_29126_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2023-29126 PHP类型混淆/认证绕过 Active Validation",
     "cve_id": "CVE-2023-29126",
@@ -2751,7 +2751,7 @@
     ]
   },
   {
-    "file": "pocs/network/52_QNX_Network_Stack_Input_Validation_DoS_Info_Leak_Audit.py",
+    "file": "pocs/network/52_CVE_2023_32701_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2023-32701 输入校验/信息泄露或DoS Active Validation",
     "cve_id": "CVE-2023-32701",
@@ -2769,7 +2769,7 @@
     ]
   },
   {
-    "file": "pocs/network/53_OpenSSL_C_Rehash_Command_Injection_Audit.py",
+    "file": "pocs/network/53_CVE_2022_1292_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2022-1292 命令注入 Active Validation",
     "cve_id": "CVE-2022-1292",
@@ -2787,7 +2787,7 @@
     ]
   },
   {
-    "file": "pocs/network/54_OpenSSL_AES_OCB_Crypto_Implementation_Audit.py",
+    "file": "pocs/network/54_CVE_2022_2068_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2022-2068 数据加密实现错误 Active Validation",
     "cve_id": "CVE-2022-2068",
@@ -2805,7 +2805,7 @@
     ]
   },
   {
-    "file": "pocs/network/55_Zlib_Inflate_Integer_Overflow_Audit.py",
+    "file": "pocs/network/55_CVE_2022_37434_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2022-37434 整数溢出/内存破坏 Active Validation",
     "cve_id": "CVE-2022-37434",
@@ -2822,7 +2822,7 @@
     ]
   },
   {
-    "file": "pocs/network/56_Go_HTTP_Client_Resource_Exhaustion_DoS_Audit.py",
+    "file": "pocs/network/56_CVE_2023_29406_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2023-29406 资源消耗/DoS Active Validation",
     "cve_id": "CVE-2023-29406",
@@ -2840,7 +2840,7 @@
     ]
   },
   {
-    "file": "pocs/network/57_OpenSSL_X509_Name_Check_DoS_Audit.py",
+    "file": "pocs/network/57_CVE_2024_6119_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2024-6119 DoS/验证问题 Active Validation",
     "cve_id": "CVE-2024-6119",
@@ -2858,7 +2858,7 @@
     ]
   },
   {
-    "file": "pocs/network/58_OpenSSL_Next_Proto_Buffer_OOB_Audit.py",
+    "file": "pocs/network/58_CVE_2024_5535_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2024-5535 缓冲区越界 Active Validation",
     "cve_id": "CVE-2024-5535",
@@ -2876,7 +2876,7 @@
     ]
   },
   {
-    "file": "pocs/network/59_OpenSSL_TLS_Handshake_DoS_Audit.py",
+    "file": "pocs/network/59_CVE_2024_4741_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2024-4741 内存使用/DoS Active Validation",
     "cve_id": "CVE-2024-4741",
@@ -2894,7 +2894,7 @@
     ]
   },
   {
-    "file": "pocs/network/60_OpenSSL_TLS_DTLS_DoS_Audit.py",
+    "file": "pocs/network/60_CVE_2024_2511_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2024-2511 DoS Active Validation",
     "cve_id": "CVE-2024-2511",
@@ -2912,7 +2912,7 @@
     ]
   },
   {
-    "file": "pocs/network/61_OpenSSL_PKCS12_DoS_Audit.py",
+    "file": "pocs/network/61_CVE_2024_0727_Active_Validation.py",
     "category": "network",
     "poc_name": "CVE-2024-0727 DoS Active Validation",
     "cve_id": "CVE-2024-0727",
@@ -2930,7 +2930,7 @@
     ]
   },
   {
-    "file": "pocs/network/62_Redis_Restore_Heap_Memory_RCE_Audit.py",
+    "file": "pocs/network/62_CVE_2026_25243_Active_Validation.py",
     "category": "network",
     "poc_name": "Redis RESTORE Heap Memory RCE Audit",
     "cve_id": "CVE-2026-25243",
@@ -2944,7 +2944,7 @@
     "missing": []
   },
   {
-    "file": "pocs/network/63_Valkey_RESP_PreAuth_DoS_Audit.py",
+    "file": "pocs/network/63_CVE_2026_27623_Active_Validation.py",
     "category": "network",
     "poc_name": "Valkey RESP Pre-Auth DoS Audit",
     "cve_id": "CVE-2026-27623",
@@ -2958,7 +2958,7 @@
     "missing": []
   },
   {
-    "file": "pocs/network/64_NGINX_Rift_Rewrite_Heap_Overflow_Audit.py",
+    "file": "pocs/network/64_CVE_2026_42945_Active_Validation.py",
     "category": "network",
     "poc_name": "NGINX Rift Rewrite Heap Overflow Audit",
     "cve_id": "CVE-2026-42945",
@@ -2972,7 +2972,7 @@
     "missing": []
   },
   {
-    "file": "pocs/network/65_HTTP2_HPACK_Bomb_DoS_Audit.py",
+    "file": "pocs/network/65_CVE_2026_49975_Active_Validation.py",
     "category": "network",
     "poc_name": "HTTP2 HPACK Bomb DoS Audit",
     "cve_id": "CVE-2026-49975",
@@ -2990,7 +2990,7 @@
     ]
   },
   {
-    "file": "pocs/network/66_Nezha_Dashboard_Path_Traversal_JWT_Audit.py",
+    "file": "pocs/network/66_CVE_2026_53519_Active_Validation.py",
     "category": "network",
     "poc_name": "Nezha Dashboard Path Traversal JWT Audit",
     "cve_id": "CVE-2026-53519",
@@ -3006,7 +3006,7 @@
     ]
   },
   {
-    "file": "pocs/network/67_LiteLLM_Key_Generation_Privilege_Escalation_Audit.py",
+    "file": "pocs/network/67_CVE_2026_47101_Active_Validation.py",
     "category": "network",
     "poc_name": "LiteLLM Key Generation Privilege Escalation Audit",
     "cve_id": "CVE-2026-47101",
@@ -3024,7 +3024,7 @@
     ]
   },
   {
-    "file": "pocs/reconnaissance/01_ICMP_Host_Discovery.py",
+    "file": "pocs/reconnaissance/01_CWE_200_ICMP_Host_Discovery_Reconnaissance.py",
     "category": "reconnaissance",
     "poc_name": "ICMP Host Discovery",
     "cve_id": "CWE-200",
@@ -3040,7 +3040,7 @@
     ]
   },
   {
-    "file": "pocs/reconnaissance/02_TCP_Port_Scan.py",
+    "file": "pocs/reconnaissance/02_CWE_200_TCP_Port_Scan_Reconnaissance.py",
     "category": "reconnaissance",
     "poc_name": "TCP Port Scan",
     "cve_id": "CWE-200",
@@ -3057,7 +3057,7 @@
     ]
   },
   {
-    "file": "pocs/reconnaissance/03_mDNS_Service_Discovery.py",
+    "file": "pocs/reconnaissance/03_CWE_200_Service_Discovery_Reconnaissance.py",
     "category": "reconnaissance",
     "poc_name": "mDNS Service Discovery",
     "cve_id": "CWE-200",
@@ -3074,7 +3074,7 @@
     ]
   },
   {
-    "file": "pocs/reconnaissance/04_UPnP_SSDP_Discovery.py",
+    "file": "pocs/reconnaissance/04_CWE_200_UPnP_SSDP_Discovery_Reconnaissance.py",
     "category": "reconnaissance",
     "poc_name": "UPnP SSDP Discovery",
     "cve_id": "CWE-200",
@@ -3091,7 +3091,7 @@
     ]
   },
   {
-    "file": "pocs/reconnaissance/05_SNMP_Info_Leak.py",
+    "file": "pocs/reconnaissance/05_CWE_798_Leak_Reconnaissance.py",
     "category": "reconnaissance",
     "poc_name": "SNMP Info Leak",
     "cve_id": "CWE-798",
@@ -3108,7 +3108,7 @@
     ]
   },
   {
-    "file": "pocs/reconnaissance/06_BT_SDP_Enum.py",
+    "file": "pocs/reconnaissance/06_CWE_200_BT_SDP_Enumeration_Reconnaissance.py",
     "category": "reconnaissance",
     "poc_name": "BT SDP Enum",
     "cve_id": "CWE-200",
@@ -3124,7 +3124,7 @@
     ]
   },
   {
-    "file": "pocs/reconnaissance/07_TBox_Port_Scan.py",
+    "file": "pocs/reconnaissance/07_CWE_200_TBox_Port_Scan_Reconnaissance.py",
     "category": "reconnaissance",
     "poc_name": "TBox Port Scan",
     "cve_id": "CWE-200",
@@ -3141,7 +3141,7 @@
     ]
   },
   {
-    "file": "pocs/reconnaissance/08_HTTP_Service_Enum.py",
+    "file": "pocs/reconnaissance/08_CWE_200_HTTP_Service_Enumeration_Reconnaissance.py",
     "category": "reconnaissance",
     "poc_name": "HTTP Service Enum",
     "cve_id": "CWE-200",
@@ -3158,7 +3158,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/01_QNX_Qnet_File_Read.py",
+    "file": "pocs/wireless/01_CVE_2017_3891_QNX_Qnet_File_Read_Active_Validation.py",
     "category": "wireless",
     "poc_name": "QNX Qnet File Read",
     "cve_id": "CVE-2017-3891",
@@ -3175,7 +3175,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/02_WiFi_Deauth.py",
+    "file": "pocs/wireless/02_CWE_345_WiFi_Deauth_Active_Validation.py",
     "category": "wireless",
     "poc_name": "WiFi Deauth",
     "cve_id": "CWE-345",
@@ -3193,7 +3193,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/03_WiFi_Evil_Twin.py",
+    "file": "pocs/wireless/03_CWE_300_WiFi_Evil_Twin_Active_Validation.py",
     "category": "wireless",
     "poc_name": "WiFi Evil Twin",
     "cve_id": "CWE-300",
@@ -3210,7 +3210,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/04_WiFi_KRACK.py",
+    "file": "pocs/wireless/04_CVE_2017_13077_WiFi_KRACK_Active_Validation.py",
     "category": "wireless",
     "poc_name": "WiFi KRACK",
     "cve_id": "CVE-2017-13077",
@@ -3228,7 +3228,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/05_WiFi_TI_WL18xx_Overflow.py",
+    "file": "pocs/wireless/05_CVE_2023_29468_WiFi_TI_WL18xx_Overflow_Active_Validation.py",
     "category": "wireless",
     "poc_name": "WiFi TI WL18xx Overflow",
     "cve_id": "CVE-2023-29468",
@@ -3245,7 +3245,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/06_ConnMan_DHCP_Overflow.py",
+    "file": "pocs/wireless/06_CVE_2021_26675_Overflow_Active_Validation.py",
     "category": "wireless",
     "poc_name": "ConnMan DHCP Overflow",
     "cve_id": "CVE-2021-26675",
@@ -3262,7 +3262,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/07_Broadcom_WME_Overflow.py",
+    "file": "pocs/wireless/07_CVE_2017_9417_Overflow_Active_Validation.py",
     "category": "wireless",
     "poc_name": "Broadcom WME Overflow",
     "cve_id": "CVE-2017-9417",
@@ -3279,7 +3279,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/08_WiFi_Unauth_Vehicle_Ctrl.py",
+    "file": "pocs/wireless/08_CWE_306_WiFi_Unauth_Vehicle_Ctrl_Active_Validation.py",
     "category": "wireless",
     "poc_name": "WiFi Unauth Vehicle Ctrl",
     "cve_id": "CWE-306",
@@ -3296,7 +3296,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/09_BT_HFP_AT_Overflow.py",
+    "file": "pocs/wireless/09_CVE_2025_32059_BT_HFP_AT_Overflow_Active_Validation.py",
     "category": "wireless",
     "poc_name": "BT HFP AT Overflow",
     "cve_id": "CVE-2025-32059",
@@ -3313,7 +3313,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/10_BT_BLUFFS_Key_Downgrade.py",
+    "file": "pocs/wireless/10_CVE_2023_24023_BT_BLUFFS_Key_Downgrade_Active_Validation.py",
     "category": "wireless",
     "poc_name": "BT BLUFFS Key Downgrade",
     "cve_id": "CVE-2023-24023",
@@ -3331,7 +3331,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/11_BT_PerfektBlue_L2CAP.py",
+    "file": "pocs/wireless/11_CVE_2024_45431_BT_PerfektBlue_L2CAP_Active_Validation.py",
     "category": "wireless",
     "poc_name": "BT PerfektBlue L2CAP",
     "cve_id": "CVE-2024-45431",
@@ -3349,7 +3349,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/12_BT_PerfektBlue_RFCOMM.py",
+    "file": "pocs/wireless/12_CVE_2024_45432_BT_PerfektBlue_RFCOMM_Active_Validation.py",
     "category": "wireless",
     "poc_name": "BT PerfektBlue RFCOMM",
     "cve_id": "CVE-2024-45432",
@@ -3366,7 +3366,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/13_BT_HFP_UAF.py",
+    "file": "pocs/wireless/13_CVE_2025_0084_BT_HFP_UAF_Active_Validation.py",
     "category": "wireless",
     "poc_name": "BT HFP UAF",
     "cve_id": "CVE-2025-0084",
@@ -3383,7 +3383,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/15_BlueBorne_BNEP_Overflow.py",
+    "file": "pocs/wireless/15_CVE_2017_0781_BlueBorne_BNEP_Overflow_Active_Validation.py",
     "category": "wireless",
     "poc_name": "BlueBorne BNEP Overflow",
     "cve_id": "CVE-2017-0781",
@@ -3400,7 +3400,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/16_BleedingTooth_L2CAP.py",
+    "file": "pocs/wireless/16_CVE_2020_12351_BleedingTooth_L2CAP_Active_Validation.py",
     "category": "wireless",
     "poc_name": "BleedingTooth L2CAP",
     "cve_id": "CVE-2020-12351",
@@ -3417,7 +3417,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/17_BT_CVE_2020_0022_DoS.py",
+    "file": "pocs/wireless/17_CVE_2020_0022_BT_CVE_2020_0022_DoS_Active_Validation.py",
     "category": "wireless",
     "poc_name": "BT CVE 2020 0022 DoS",
     "cve_id": "CVE-2020-0022",
@@ -3434,7 +3434,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/18_WiFi_SSID_Clone_AutoConnect.py",
+    "file": "pocs/wireless/18_CWE_345_WiFi_SSID_Clone_AutoConnect_Active_Validation.py",
     "category": "wireless",
     "poc_name": "WiFi SSID Clone AutoConnect",
     "cve_id": "CWE-345",
@@ -3448,7 +3448,7 @@
     "missing": []
   },
   {
-    "file": "pocs/wireless/19_WiFi_PEAP_Auth_Bypass_Audit.py",
+    "file": "pocs/wireless/19_CVE_2023_52160_WiFi_PEAP_Authentication_Bypass_Active_Validation.py",
     "category": "wireless",
     "poc_name": "WiFi PEAP Auth Bypass Audit",
     "cve_id": "CVE-2023-52160",
@@ -3466,7 +3466,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/20_WiFi_FragAttacks_Kernel_Audit.py",
+    "file": "pocs/wireless/20_CVE_2020_24586_WiFi_FragAttacks_Kernel_Active_Validation.py",
     "category": "wireless",
     "poc_name": "WiFi FragAttacks Kernel Audit",
     "cve_id": "CVE-2020-24586,CVE-2020-24587,CVE-2020-24588",
@@ -3484,7 +3484,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/21_WiFi_KR00K_Chipset_Audit.py",
+    "file": "pocs/wireless/21_CVE_2019_15126_WiFi_KR00K_Chipset_Active_Validation.py",
     "category": "wireless",
     "poc_name": "WiFi KR00K Chipset Audit",
     "cve_id": "CVE-2019-15126",
@@ -3502,7 +3502,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/22_BT_KNOB_Key_Length_Audit.py",
+    "file": "pocs/wireless/22_CVE_2019_9506_BT_KNOB_Key_Length_Active_Validation.py",
     "category": "wireless",
     "poc_name": "BT KNOB Key Length Audit",
     "cve_id": "CVE-2019-9506",
@@ -3520,7 +3520,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/23_BT_BLURtooth_CTKD_Audit.py",
+    "file": "pocs/wireless/23_CVE_2020_15802_BT_BLURtooth_CTKD_Active_Validation.py",
     "category": "wireless",
     "poc_name": "BT BLURtooth CTKD Audit",
     "cve_id": "CVE-2020-15802",
@@ -3538,7 +3538,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/24_BT_BlueZ_HID_Access_Audit.py",
+    "file": "pocs/wireless/24_CVE_2023_45866_BT_BlueZ_HID_Access_Active_Validation.py",
     "category": "wireless",
     "poc_name": "BT BlueZ HID Access Audit",
     "cve_id": "CVE-2023-45866,CVE-2024-8805",
@@ -3556,7 +3556,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/25_WiFi_SAE_Cache_Side_Channel_Audit.py",
+    "file": "pocs/wireless/25_CVE_2022_23303_WiFi_SAE_Cache_Side_Channel_Active_Validation.py",
     "category": "wireless",
     "poc_name": "WiFi SAE Cache Side Channel Audit",
     "cve_id": "CVE-2022-23303",
@@ -3574,7 +3574,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/26_WiFi_Broadcom_Firmware_RCE_Audit.py",
+    "file": "pocs/wireless/26_CVE_2017_0561_WiFi_Broadcom_Firmware_RCE_Active_Validation.py",
     "category": "wireless",
     "poc_name": "WiFi Broadcom Firmware RCE Audit",
     "cve_id": "CVE-2017-0561",
@@ -3591,7 +3591,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/27_WiFi_EAP_PWD_Cache_Audit.py",
+    "file": "pocs/wireless/27_CVE_2019_9495_WiFi_EAP_PWD_Cache_Active_Validation.py",
     "category": "wireless",
     "poc_name": "WiFi EAP PWD Cache Audit",
     "cve_id": "CVE-2019-9495",
@@ -3609,7 +3609,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/28_WiFi_EAP_PWD_Auth_Bypass_Audit.py",
+    "file": "pocs/wireless/28_CVE_2019_9497_WiFi_EAP_PWD_Authentication_Bypass_Active_Validation.py",
     "category": "wireless",
     "poc_name": "WiFi EAP PWD Auth Bypass Audit",
     "cve_id": "CVE-2019-9497",
@@ -3627,7 +3627,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/29_WiFi_EAP_PWD_Client_Takeover_Audit.py",
+    "file": "pocs/wireless/29_CVE_2019_9499_WiFi_EAP_PWD_Client_Takeover_Active_Validation.py",
     "category": "wireless",
     "poc_name": "WiFi EAP PWD Client Takeover Audit",
     "cve_id": "CVE-2019-9499",
@@ -3644,7 +3644,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/30_BT_Android_L2CAP_UAF_RCE_Audit.py",
+    "file": "pocs/wireless/30_CVE_2021_0475_BT_Android_L2CAP_UAF_RCE_Active_Validation.py",
     "category": "wireless",
     "poc_name": "BT Android L2CAP UAF RCE Audit",
     "cve_id": "CVE-2021-0475",
@@ -3661,7 +3661,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/31_BT_Android_BLE_L2CAP_OOB_RCE_Audit.py",
+    "file": "pocs/wireless/31_CVE_2022_20345_BT_Android_BLE_L2CAP_OOB_RCE_Active_Validation.py",
     "category": "wireless",
     "poc_name": "BT Android BLE L2CAP OOB RCE Audit",
     "cve_id": "CVE-2022-20345",
@@ -3678,7 +3678,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/32_BT_Android_AVDTP_OOB_RCE_Audit.py",
+    "file": "pocs/wireless/32_CVE_2022_20411_BT_Android_AVDTP_OOB_RCE_Active_Validation.py",
     "category": "wireless",
     "poc_name": "BT Android AVDTP OOB RCE Audit",
     "cve_id": "CVE-2022-20411",
@@ -3695,7 +3695,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/33_BT_Android_HFP_SDP_UAF_RCE_Audit.py",
+    "file": "pocs/wireless/33_CVE_2023_21108_BT_Android_HFP_SDP_UAF_RCE_Active_Validation.py",
     "category": "wireless",
     "poc_name": "BT Android HFP SDP UAF RCE Audit",
     "cve_id": "CVE-2023-21108",
@@ -3728,7 +3728,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/35_Micca_KE700_RF_Plaintext_Credential_Leak_Audit.py",
+    "file": "pocs/wireless/35_CVE_2026_2539_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2026-2539 协议明文/认证材料泄露 Active Validation",
     "cve_id": "CVE-2026-2539",
@@ -3746,7 +3746,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/36_Micca_KE700_RF_Auth_Bypass_Replay_Audit.py",
+    "file": "pocs/wireless/36_CVE_2026_2540_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2026-2540 认证绕过/重放 Active Validation",
     "cve_id": "CVE-2026-2540",
@@ -3763,7 +3763,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/37_Micca_KE700_RF_Low_Entropy_Audit.py",
+    "file": "pocs/wireless/37_CVE_2026_2541_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2026-2541 熵不足 Active Validation",
     "cve_id": "CVE-2026-2541",
@@ -3781,7 +3781,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/38_RKES_Protocol_State_Machine_Audit.py",
+    "file": "pocs/wireless/38_CVE_2026_49318_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2026-49318 协议状态机缺陷 Active Validation",
     "cve_id": "CVE-2026-49318",
@@ -3800,7 +3800,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/39_Suzuki_Swift_RKES_Replay_Audit.py",
+    "file": "pocs/wireless/39_CVE_2026_49319_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2026-49319 重放攻击 Active Validation",
     "cve_id": "CVE-2026-49319",
@@ -3817,7 +3817,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/40_RKES_Weak_Crypto_Replay_Audit.py",
+    "file": "pocs/wireless/40_CVE_2026_49322_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2026-49322 弱加密/重放 Active Validation",
     "cve_id": "CVE-2026-49322",
@@ -3836,7 +3836,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/41_RKES_Auth_Rate_Limit_Audit.py",
+    "file": "pocs/wireless/41_CVE_2026_49324_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2026-49324 认证节流不足 Active Validation",
     "cve_id": "CVE-2026-49324",
@@ -3853,7 +3853,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/42_Sony_XAV_AX8500_BT_Integer_Overflow_RCE_Audit.py",
+    "file": "pocs/wireless/42_CVE_2025_5475_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2025-5475 Bluetooth整数溢出/RCE Active Validation",
     "cve_id": "CVE-2025-5475",
@@ -3870,7 +3870,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/43_Sony_XAV_AX8500_BT_Auth_Bypass_Audit.py",
+    "file": "pocs/wireless/43_CVE_2025_5476_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2025-5476 Bluetooth认证绕过 Active Validation",
     "cve_id": "CVE-2025-5476",
@@ -3889,7 +3889,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/44_Sony_XAV_AX8500_BT_L2CAP_Heap_Overflow_RCE_Audit.py",
+    "file": "pocs/wireless/44_CVE_2025_5477_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2025-5477 Bluetooth L2CAP堆溢出/RCE Active Validation",
     "cve_id": "CVE-2025-5477",
@@ -3906,7 +3906,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/45_Sony_XAV_AX8500_BT_SDP_Integer_Overflow_RCE_Audit.py",
+    "file": "pocs/wireless/45_CVE_2025_5478_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2025-5478 Bluetooth SDP整数溢出/RCE Active Validation",
     "cve_id": "CVE-2025-5478",
@@ -3923,7 +3923,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/46_Sony_XAV_AX8500_BT_AVCTP_Heap_Overflow_RCE_Audit.py",
+    "file": "pocs/wireless/46_CVE_2025_5479_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2025-5479 Bluetooth AVCTP堆溢出/RCE Active Validation",
     "cve_id": "CVE-2025-5479",
@@ -3940,7 +3940,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/47_Sony_XAV_AX8500_BT_ERTM_Auth_Bypass_Audit.py",
+    "file": "pocs/wireless/47_CVE_2025_5820_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2025-5820 Bluetooth ERTM认证绕过 Active Validation",
     "cve_id": "CVE-2025-5820",
@@ -3959,7 +3959,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/48_Automotive_RF_Weak_Random_Audit.py",
+    "file": "pocs/wireless/48_CVE_2024_6348_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2024-6348 随机数不足 Active Validation",
     "cve_id": "CVE-2024-6348",
@@ -3978,7 +3978,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/49_Enel_Waybox_Log_Access_Control_Info_Leak_Audit.py",
+    "file": "pocs/wireless/49_CVE_2023_29114_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2023-29114 访问控制不足/敏感信息泄露 Active Validation",
     "cve_id": "CVE-2023-29114",
@@ -3996,7 +3996,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/51_Android_BT_SDP_BlueBorne_Info_Leak_Audit.py",
+    "file": "pocs/wireless/51_CVE_2017_0785_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2017-0785 BlueBorne信息泄露 Active Validation",
     "cve_id": "CVE-2017-0785",
@@ -4014,7 +4014,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/53_Android_BT_BlueBorne_RCE_Audit.py",
+    "file": "pocs/wireless/53_CVE_2017_0782_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2017-0782 BlueBorne RCE Active Validation",
     "cve_id": "CVE-2017-0782",
@@ -4033,7 +4033,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/54_Linux_BlueZ_L2CAP_BlueBorne_RCE_Audit.py",
+    "file": "pocs/wireless/54_CVE_2017_1000251_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2017-1000251 BlueBorne内核RCE Active Validation",
     "cve_id": "CVE-2017-1000251",
@@ -4050,7 +4050,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/56_WiFi_KRACK_Group_Key_Reinstall_Audit.py",
+    "file": "pocs/wireless/56_CVE_2017_13078_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2017-13078 KRACK密钥重装 Active Validation",
     "cve_id": "CVE-2017-13078",
@@ -4068,7 +4068,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/57_WiFi_KRACK_FT_Key_Reinstall_Audit.py",
+    "file": "pocs/wireless/57_CVE_2017_13079_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2017-13079 KRACK密钥重装 Active Validation",
     "cve_id": "CVE-2017-13079",
@@ -4086,7 +4086,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/58_WiFi_KRACK_Group_Key_Reinstall_Audit.py",
+    "file": "pocs/wireless/58_CVE_2017_13080_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2017-13080 KRACK密钥重装 Active Validation",
     "cve_id": "CVE-2017-13080",
@@ -4104,7 +4104,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/59_WiFi_KRACK_IGTK_Key_Reinstall_Audit.py",
+    "file": "pocs/wireless/59_CVE_2017_13081_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2017-13081 KRACK密钥重装 Active Validation",
     "cve_id": "CVE-2017-13081",
@@ -4122,7 +4122,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/62_BT_BIAS_Auth_Bypass_Audit.py",
+    "file": "pocs/wireless/62_CVE_2020_10135_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2020-10135 认证绕过 Active Validation",
     "cve_id": "CVE-2020-10135",
@@ -4140,7 +4140,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/63_BT_Classic_Impersonation_Auth_Bypass_Audit.py",
+    "file": "pocs/wireless/63_CVE_2020_26555_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2020-26555 认证绕过 Active Validation",
     "cve_id": "CVE-2020-26555",
@@ -4159,7 +4159,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/64_BLE_Passkey_Pairing_MITM_Audit.py",
+    "file": "pocs/wireless/64_CVE_2020_26558_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2020-26558 配对绕过/中间人 Active Validation",
     "cve_id": "CVE-2020-26558",
@@ -4178,7 +4178,7 @@
     ]
   },
   {
-    "file": "pocs/wireless/67_AirPlay_SDK_Nearby_Network_RCE_Audit.py",
+    "file": "pocs/wireless/67_CVE_2024_23206_Active_Validation.py",
     "category": "wireless",
     "poc_name": "CVE-2024-23206 RCE/网络邻近攻击 Active Validation",
     "cve_id": "CVE-2024-23206",

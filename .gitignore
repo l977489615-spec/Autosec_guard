@@ -63,3 +63,7 @@ lab/
 
 # video 
 *.mp4
+
+# reports
+reports/
+

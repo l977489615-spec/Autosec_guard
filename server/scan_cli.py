@@ -130,15 +130,41 @@ def run_single_poc(poc_name: str, params: dict[str, Any], timeout: int = 60) -> 
 
 
 def _format_single_result(result: dict[str, Any]) -> str:
-    status = "ERROR" if not result.get("success") else ("VULNERABLE" if result.get("vulnerable") else "NOT VULNERABLE")
+    vuln = result.get("vulnerable")
+    if not result.get("success"):
+        status = "ERROR"
+    elif vuln is True:
+        status = "VULNERABLE"
+    elif vuln is False:
+        status = "NOT VULNERABLE"
+    else:
+        status = "INCONCLUSIVE"
+
     lines = [
         f"PoC: {result.get('poc_id', '')}",
         f"Status: {status}",
         f"CVE: {result.get('cve_id') or 'N/A'}",
         f"Elapsed: {result.get('elapsed_seconds', 0)}s",
     ]
+
+    # Detection confidence — show when present
+    dc = result.get("detection_confidence")
+    if dc:
+        if isinstance(dc, str):
+            import json as _j
+            try: dc = _j.loads(dc)
+            except Exception: dc = {}
+        if isinstance(dc, dict):
+            level = dc.get("level", "?")
+            conf  = dc.get("confidence", "?")
+            fpr   = dc.get("fp_risk", "?")
+            meth  = dc.get("method", "?")
+            lines.append(f"Detection: Level={level} confidence={conf} fp_risk={fpr} method={meth}")
+
     if result.get("error"):
         lines.append(f"Error: {result['error']}")
+    if result.get("requires_manual_review"):
+        lines.append("Note: Requires manual review for confirmation")
     evidence = result.get("evidence")
     if evidence:
         lines.append("Evidence:")
@@ -329,7 +355,9 @@ def run_global_scan(args: argparse.Namespace) -> dict[str, Any]:
         "duration_seconds": round(time.time() - started, 3),
         "total": len(results),
         "vulnerable_count": sum(1 for r in results if r.get("vulnerable") is True),
+        "inconclusive_count": sum(1 for r in results if r.get("vulnerable") is None and r.get("success")),
         "error_count": sum(1 for r in results if not r.get("success")),
+        "detection_quality_summary": _detection_quality_summary(results),
         "results": results,
     }
     _write_reports(report, args.output)
@@ -347,6 +375,11 @@ def run_agent_scan(args: argparse.Namespace) -> dict[str, Any]:
         "wifi_interface": params.get("wifi_interface", ""),
         "context": args.context,
         "approve_high_risk_batch": bool(getattr(args, "approve_high_risk_batch", False)),
+        "execution_mode": getattr(args, "execution_mode", "progressive_auto"),
+        "risk_ceiling": getattr(args, "risk_ceiling", ""),
+        "enable_reflection_reentry": bool(getattr(args, "enable_reflection_reentry", False)),
+        "allow_domains": getattr(args, "allow_domains", []) or [],
+        "lab_policy": bool(getattr(args, "lab_policy", False)),
     }
     if args.ai_config_file:
         payload["ai_config"] = json.loads(Path(args.ai_config_file).read_text(encoding="utf-8"))
@@ -372,10 +405,42 @@ def run_agent_scan(args: argparse.Namespace) -> dict[str, Any]:
         "target": {"target_ip": params.get("target_ip", ""), "target_name": args.target_name},
         "started_at": _dt.datetime.now().isoformat(timespec="seconds"),
         "duration_seconds": round(time.time() - started, 3),
+        "enable_reflection_reentry": bool(getattr(args, "enable_reflection_reentry", False)),
         "agent_result": data,
     }
     _write_reports(report, args.output)
     return report
+
+
+def _detection_quality_summary(results: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate detection_confidence levels from a result list."""
+    import json as _j
+    levels: dict[str, int] = {"A": 0, "B": 0, "C": 0, "D": 0, "E": 0, "HW": 0, "unknown": 0}
+    for r in results:
+        dc = r.get("detection_confidence")
+        if not dc:
+            levels["unknown"] += 1
+            continue
+        if isinstance(dc, str):
+            try: dc = _j.loads(dc)
+            except Exception: levels["unknown"] += 1; continue
+        if isinstance(dc, dict):
+            levels[dc.get("level", "unknown")] = levels.get(dc.get("level", "unknown"), 0) + 1
+        else:
+            levels["unknown"] += 1
+    total = sum(levels.values())
+    high_quality = levels["A"] + levels["B"]
+    medium_quality = levels["C"] + levels["HW"]
+    return {
+        "by_level": levels,
+        "high_quality_pct": round(100 * high_quality / total, 1) if total else 0,
+        "medium_quality_pct": round(100 * medium_quality / total, 1) if total else 0,
+        "behavioral_confirmed": levels["A"],
+        "functional_probe": levels["B"],
+        "version_config_probe": levels["C"],
+        "hardware_required": levels["HW"],
+        "passive_only": levels["D"] + levels["E"],
+    }
 
 
 def _write_reports(report: dict[str, Any], output: str = "") -> tuple[Path, Path]:
@@ -432,6 +497,8 @@ def _render_markdown(report: dict[str, Any]) -> str:
     else:
         lines.extend([
             "## Agent Result",
+            "",
+            f"- Reflection Reentry: `{bool(report.get('enable_reflection_reentry', False))}`",
             "",
             "```json",
             json.dumps(report.get("agent_result", {}), ensure_ascii=False, indent=2),
@@ -492,6 +559,11 @@ def build_parser() -> argparse.ArgumentParser:
     agent.add_argument("--target-name", default="CLI Target", help="Target display name")
     agent.add_argument("--context", default="", help="Additional agent context")
     agent.add_argument("--approve-high-risk-batch", action="store_true", help="Single-run approval to auto-execute high-risk/disruptive PoCs selected by agent mode")
+    agent.add_argument("--execution-mode", choices=["safe_only", "progressive_auto", "full_auto_lab"], default="progressive_auto", help="Agent disruptive execution policy")
+    agent.add_argument("--risk-ceiling", choices=["SAFE", "PROBE", "RESTART", "DATALOSS", "BRICK"], default="", help="Upper risk ceiling for automatic high-risk execution")
+    agent.add_argument("--enable-reflection-reentry", action="store_true", help="Enable Reflector audit and limited reentry loop")
+    agent.add_argument("--allow-domain", dest="allow_domains", action="append", default=[], help="Authorized PoC domain for batch auto-approval")
+    agent.add_argument("--lab-policy", action="store_true", help="Mark this run as trusted lab context for DataLoss-level checks")
     agent.add_argument("--ai-config-file", default="", help="JSON AI config file")
     agent.add_argument("--session-id", default="", help="Report session id")
     agent.add_argument("--output", default="", help="Output path prefix for reports")

@@ -14,7 +14,7 @@
 
 ```bash
 # 使用真实视频文件
-python3 12_UPnP_AVTransport_Media_Inject.py 10.173.189.1 --media /path/to/your_video.mp4
+python3 12_CWE_306_Inject_Active_Validation.py 10.173.189.1 --media /path/to/your_video.mp4
 ```
 
 **推荐的视频格式**：
@@ -30,7 +30,7 @@ python3 12_UPnP_AVTransport_Media_Inject.py 10.173.189.1 --media /path/to/your_v
 
 ```bash
 # 使用自动生成的 MP4（无媒体参数）
-python3 12_UPnP_AVTransport_Media_Inject.py 10.173.189.1
+python3 12_CWE_306_Inject_Active_Validation.py 10.173.189.1
 ```
 
 自动生成的 MP4 包含：
@@ -55,7 +55,7 @@ ffmpeg -f lavfi -i testsrc=s=640x480:d=2 -c:v libx264 -preset ultrafast -y test_
 然后投送：
 
 ```bash
-python3 12_UPnP_AVTransport_Media_Inject.py 10.173.189.1 --media test_video.mp4
+python3 12_CWE_306_Inject_Active_Validation.py 10.173.189.1 --media test_video.mp4
 ```
 
 ## 改进内容
@@ -95,19 +95,19 @@ python3 12_UPnP_AVTransport_Media_Inject.py 10.173.189.1 --media test_video.mp4
 ### 基本用法（使用生成的最小化 MP4）
 
 ```bash
-python3 12_UPnP_AVTransport_Media_Inject.py 10.173.189.1
+python3 12_CWE_306_Inject_Active_Validation.py 10.173.189.1
 ```
 
 ### 投送自定义图片
 
 ```bash
-python3 12_UPnP_AVTransport_Media_Inject.py 10.173.189.1 --media /path/to/image.jpg
+python3 12_CWE_306_Inject_Active_Validation.py 10.173.189.1 --media /path/to/image.jpg
 ```
 
 ### 投送自定义视频
 
 ```bash
-python3 12_UPnP_AVTransport_Media_Inject.py 10.173.189.1 --media /path/to/video.mp4
+python3 12_CWE_306_Inject_Active_Validation.py 10.173.189.1 --media /path/to/video.mp4
 ```
 
 ## 参数说明
@@ -122,7 +122,7 @@ python3 12_UPnP_AVTransport_Media_Inject.py 10.173.189.1 --media /path/to/video.
 ### 投送测试图片
 
 ```bash
-python3 12_UPnP_AVTransport_Media_Inject.py 10.173.189.1 --media ./poc_test_image.jpg
+python3 12_CWE_306_Inject_Active_Validation.py 10.173.189.1 --media ./poc_test_image.jpg
 ```
 
 ### 生成并投送测试视频
@@ -132,7 +132,7 @@ python3 12_UPnP_AVTransport_Media_Inject.py 10.173.189.1 --media ./poc_test_imag
 ffmpeg -f lavfi -i testsrc=s=320x240:d=1 -c:v libx264 -preset ultrafast -y test.mp4
 
 # 投送视频
-python3 12_UPnP_AVTransport_Media_Inject.py 10.173.189.1 --media test.mp4
+python3 12_CWE_306_Inject_Active_Validation.py 10.173.189.1 --media test.mp4
 ```
 
 ## 预期输出

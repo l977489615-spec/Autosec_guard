@@ -4,7 +4,7 @@
   "errors": [],
   "evidence": "Host responds to ICMP",
   "logs": [
-    "[*] Executing sandbox command: /Library/Frameworks/Python.framework/Versions/3.13/bin/python3 /Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/server/sandbox_runner.py /Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/server/pocs/reconnaissance/01_ICMP_Host_Discovery.py {\"target_ip\": \"127.0.0.1\", \"candidate_ports\": \"5555,1883,7000,19090,13400,30490\"}",
+    "[*] Executing sandbox command: /Library/Frameworks/Python.framework/Versions/3.13/bin/python3 /Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/server/sandbox_runner.py /Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/server/pocs/reconnaissance/01_CWE_200_ICMP_Host_Discovery_Reconnaissance.py {\"target_ip\": \"127.0.0.1\", \"candidate_ports\": \"5555,1883,7000,19090,13400,30490\"}",
     "[2026-06-02 14:53:41,829][INFO] 已初始化漏洞验证模块: ICMPHostDiscoveryPlugin，目标: 127.0.0.1",
     "[2026-06-02 14:53:41,829][INFO] 正在执行前置条件检查...",
     "[2026-06-02 14:53:41,829][INFO] 前置条件满足。开始执行漏洞验证...",
@@ -29,7 +29,7 @@
   "manual_review": {
     "state": "not_required"
   },
-  "poc_id": "reconnaissance/01_ICMP_Host_Discovery.py",
+  "poc_id": "reconnaissance/01_CWE_200_ICMP_Host_Discovery_Reconnaissance.py",
   "requires_human_review": false,
   "sandbox_profile": {
     "allowed_hosts": [
@@ -55,7 +55,7 @@
     ]
   },
   "success": true,
-  "trace_id": "MOCK-LOCAL_01_ICMP_Host_Discovery.py_20260602_145341",
+  "trace_id": "MOCK-LOCAL_01_CWE_200_ICMP_Host_Discovery_Reconnaissance.py_20260602_145341",
   "verification_status": "auto_confirmed_vulnerable",
   "vulnerable": true,
   "worker_mode": "local_sandbox",

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { User, Key, Save, AlertTriangle, CheckCircle, Activity, Eye, EyeOff } from 'lucide-react';
-import { defaultAiSettings, getBackendUrl, buildAiConfigPayload } from '../services/api';
+import { AI_CONFIG_PLACEHOLDERS, defaultAiSettings, getBackendUrl, buildAiConfigPayload } from '../services/api';
 import { sanitizeUserForStorage } from '../utils/security';
 
 interface ProfileProps {
@@ -200,14 +200,14 @@ const Profile: React.FC<ProfileProps> = ({ currentUser, token, onUpdateSuccess }
 						</ul>
 					</div>
 
-					<div className="text-[11px] text-gray-500">
-						推荐：Base URL 填写 <code className="text-cyber-accent">https://dashscope.aliyuncs.com/compatible-mode/v1</code>，模型可选 <code className="text-cyber-accent">qwen-max</code> / <code className="text-cyber-accent">qwen-plus</code>。
+					<div className="text-[11px] text-gray-500 leading-relaxed">
+						支持任意 OpenAI 兼容 API（OpenAI、Azure OpenAI、DeepSeek、通义千问等）。填写服务商提供的 Base URL（通常以 <code className="text-cyber-accent">/v1</code> 结尾）及 Report / Fast / Strong 三个模型名即可。
 					</div>
 						<div className="space-y-3">
 							<input
 								type="text"
 								value={aiSettings.baseUrl}
-								placeholder={defaultAiSettings().baseUrl}
+								placeholder={AI_CONFIG_PLACEHOLDERS.baseUrl}
 								onChange={(e) => setAiSettings((prev) => ({ ...prev, baseUrl: e.target.value }))}
 								className="w-full bg-cyber-900 border border-cyber-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-cyber-accent transition-colors"
 							/>
@@ -231,21 +231,21 @@ const Profile: React.FC<ProfileProps> = ({ currentUser, token, onUpdateSuccess }
 								<input
 									type="text"
 									value={aiSettings.reportModel}
-									placeholder="Report model"
+									placeholder={AI_CONFIG_PLACEHOLDERS.reportModel}
 									onChange={(e) => setAiSettings((prev) => ({ ...prev, reportModel: e.target.value }))}
 									className="w-full bg-cyber-900 border border-cyber-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-cyber-accent transition-colors"
 								/>
 								<input
 									type="text"
 									value={aiSettings.fastModel}
-									placeholder="Fast model"
+									placeholder={AI_CONFIG_PLACEHOLDERS.fastModel}
 									onChange={(e) => setAiSettings((prev) => ({ ...prev, fastModel: e.target.value }))}
 									className="w-full bg-cyber-900 border border-cyber-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-cyber-accent transition-colors"
 								/>
 								<input
 									type="text"
 									value={aiSettings.strongModel}
-									placeholder="Strong model"
+									placeholder={AI_CONFIG_PLACEHOLDERS.strongModel}
 									onChange={(e) => setAiSettings((prev) => ({ ...prev, strongModel: e.target.value }))}
 									className="w-full bg-cyber-900 border border-cyber-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-cyber-accent transition-colors"
 								/>

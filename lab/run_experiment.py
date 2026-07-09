@@ -132,7 +132,7 @@ def infer_poc_profiles(meta: dict) -> list[str]:
     params = {item.strip() for item in str(meta.get("required_params") or "").split(",") if item.strip()}
     profiles: set[str] = set()
 
-    if rel == "network/15_Dynamic_Unknown_Service_Probe.py":
+    if rel == "network/15_CWE_200_Service_Probe_Active_Validation.py":
         profiles.add("unknown_service")
     if category == "reconnaissance":
         if "bd_addr" in params or "bluetooth" in text or "bt_" in text:
@@ -140,7 +140,7 @@ def infer_poc_profiles(meta: dict) -> list[str]:
         elif "target_ip" in params:
             profiles.add("recon")
     elif category == "network":
-        if rel == "network/01_USB_ADB_Debug.py" or ("usb" in text and "adb" in text):
+        if rel == "network/01_CWE_489_USB_ADB_Debug_Interface_Active_Validation.py" or ("usb" in text and "adb" in text):
             profiles.add("usb_adb")
         elif "target_ip" in params:
             profiles.add("network")

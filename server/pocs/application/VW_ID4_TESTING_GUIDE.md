@@ -12,7 +12,7 @@
 
 | 脚本 | 功能 | 最佳场景 |
 |------|------|--------|
-| `13_Mirror_Hijack.py` | 增强版本：支持实际媒体文件、完整元数据 | 通用 UPnP 投屏 |
+| `13_CWE_306_Mirror_Hijack_Active_Validation.py` | 增强版本：支持实际媒体文件、完整元数据 | 通用 UPnP 投屏 |
 | `14_VW_ID4_MediaInjection.py` | 大众 ID.4 专用：多种元数据方式 | **针对大众 ID.4** ✓ |
 
 ---
@@ -275,7 +275,7 @@ echo "[3] 检查车机屏幕"
 
 ## 如果还是不行？
 
-1. **降级到 13_Mirror_Hijack.py** - 使用更基础的方法
+1. **降级到 13_CWE_306_Mirror_Hijack_Active_Validation.py** - 使用更基础的方法
 2. **检查车机型号** - 不同年份 ID.4 可能有不同实现
 3. **查找大众官方文档** - 某些车型可能有特殊 URN
 4. **尝试 RTSP 协议** - 作为 HTTP 的备选方案

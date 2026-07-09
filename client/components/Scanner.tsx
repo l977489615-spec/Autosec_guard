@@ -738,6 +738,10 @@ const Scanner: React.FC<ScannerProps> = ({
 
     // Parse Markdown manually like AgentScan to ensure clean print styles
     const reportHtml = markdownToSafeHtml(session.aiReport);
+    const llmLabel = currentUser?.ai_config?.reportModel
+      || currentUser?.ai_config?.strongModel
+      || currentUser?.ai_config?.fastModel
+      || 'LLM';
 
     const html = `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -770,7 +774,7 @@ const Scanner: React.FC<ScannerProps> = ({
         <span><span class="label">扫描目标：</span>${escapeHtml(targetInfo)}</span>
         <span><span class="label">扫描时间：</span>${escapeHtml(now)}</span>
         <span><span class="label">报告类型：</span>常规扫描引擎报告</span>
-        <span><span class="label">工具版本：</span>AutoSec Guard v2.0 · Qwen-Max (千问)</span>
+        <span><span class="label">工具版本：</span>AutoSec Guard v2.0 · ${escapeHtml(llmLabel)}</span>
       </div>
     </div>
     <div class="section">

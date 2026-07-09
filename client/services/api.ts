@@ -27,12 +27,20 @@ export interface UserAiSettings {
 }
 
 export const defaultAiSettings = (): UserAiSettings => ({
-  baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  baseUrl: '',
   apiKey: '',
-  reportModel: 'qwen-max',
-  fastModel: 'qwen-plus',
-  strongModel: 'qwen-max',
+  reportModel: '',
+  fastModel: '',
+  strongModel: '',
 });
+
+/** UI 占位示例：任意 OpenAI 兼容服务商均可使用 */
+export const AI_CONFIG_PLACEHOLDERS = {
+  baseUrl: 'https://api.openai.com/v1',
+  reportModel: '报告模型（如 gpt-4o）',
+  fastModel: '快速模型（如 gpt-4o-mini）',
+  strongModel: '强推理模型（如 o1 / deepseek-reasoner）',
+} as const;
 
 export const buildAiConfigPayload = (settings?: Partial<UserAiSettings> | null, options?: { includeApiKey?: boolean }) => {
   const resolved = {

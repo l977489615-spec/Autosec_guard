@@ -4,7 +4,7 @@
   "errors": [],
   "evidence": "Open: [(1883, 'MQTT'), (5555, 'ADB'), (7000, 'AirPlay/Ctrl'), (8080, 'HTTP-Alt')]",
   "logs": [
-    "[*] Executing sandbox command: /Library/Frameworks/Python.framework/Versions/3.13/bin/python3 /Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/server/sandbox_runner.py /Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/server/pocs/reconnaissance/07_TBox_Port_Scan.py {\"target_ip\": \"127.0.0.1\", \"candidate_ports\": \"5555,1883,7000,19090,13400,30490\"}",
+    "[*] Executing sandbox command: /Library/Frameworks/Python.framework/Versions/3.13/bin/python3 /Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/server/sandbox_runner.py /Users/queen/Desktop/ICV_POC_research/autosec-guard---icv-vulnerability-scanner/server/pocs/reconnaissance/07_CWE_200_TBox_Port_Scan_Reconnaissance.py {\"target_ip\": \"127.0.0.1\", \"candidate_ports\": \"5555,1883,7000,19090,13400,30490\"}",
     "[2026-06-01 22:47:35,163][INFO] 已初始化漏洞验证模块: TBOXPortScanPlugin，目标: 127.0.0.1",
     "[2026-06-01 22:47:35,163][INFO] 正在执行前置条件检查...",
     "[2026-06-01 22:47:35,163][INFO] 前置条件满足。开始执行漏洞验证...",
@@ -30,7 +30,7 @@
   "manual_review": {
     "state": "not_required"
   },
-  "poc_id": "reconnaissance/07_TBox_Port_Scan.py",
+  "poc_id": "reconnaissance/07_CWE_200_TBox_Port_Scan_Reconnaissance.py",
   "requires_human_review": false,
   "sandbox_profile": {
     "allowed_hosts": [
@@ -56,7 +56,7 @@
     ]
   },
   "success": true,
-  "trace_id": "MOCK-LOCAL_07_TBox_Port_Scan.py_20260601_224735",
+  "trace_id": "MOCK-LOCAL_07_CWE_200_TBox_Port_Scan_Reconnaissance.py_20260601_224735",
   "verification_status": "auto_confirmed_vulnerable",
   "vulnerable": true,
   "worker_mode": "local_sandbox",

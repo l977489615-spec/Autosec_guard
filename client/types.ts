@@ -278,6 +278,18 @@ export interface ScanSession {
   findings?: ScanResult[];
   phase_records?: PhaseRecord[];
   structured?: Record<string, any>;
+  agentDraft?: {
+    targetIp: string;
+    targetName: string;
+    canInterface: string;
+    bluetoothMac: string;
+    wifiInterface: string;
+    rfFrequency: string;
+    usbAdbSerial: string;
+    executionMode: 'safe_only' | 'progressive_auto' | 'full_auto_lab';
+    enableReflectionReentry: boolean;
+    lowResourceMode: boolean;
+  };
 }
 
 export interface LocalCapabilityFlags {

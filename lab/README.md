@@ -62,7 +62,7 @@ cp lab/experiment_config.template.json lab/experiment_config.json
 
 - `expected_usb_serial` 或 `usb_device_serial`
 
-此时会自动加入 `POC-NET-001 / network/01_USB_ADB_Debug.py`。
+此时会自动加入 `POC-NET-001 / network/01_CWE_489_USB_ADB_Debug_Interface_Active_Validation.py`。
 
 常用 profile：
 

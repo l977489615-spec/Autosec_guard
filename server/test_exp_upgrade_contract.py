@@ -157,14 +157,14 @@ class ExpReadinessContractTests(unittest.TestCase):
         self.assertFalse(finding.not_native_exp)
 
     def test_real_version_audit_is_safe_professional_tier(self) -> None:
-        finding = audit_file(POCS_DIR / "application/29_OpenSSL_Version_Audit.py")
+        finding = audit_file(POCS_DIR / "application/29_CVE_2016_6309_OpenSSL_Version_Active_Validation.py")
 
         self.assertIsNotNone(finding)
         self.assertIn(finding.validation_tier, {"PASSIVE", "AUTHENTICATED_CONFIG"})
         self.assertNotEqual(finding.exp_capability, "native_verified")
 
     def test_real_local_decoder_probe_is_lab_harness_not_remote_active(self) -> None:
-        finding = audit_file(POCS_DIR / "application/64_LibWebP_Decoder_Heap_Overflow_RCE_Audit.py")
+        finding = audit_file(POCS_DIR / "application/64_CVE_2023_4863_Active_Validation.py")
 
         self.assertIsNotNone(finding)
         self.assertEqual(finding.validation_tier, "LAB_EXP")

@@ -755,7 +755,7 @@
       "high_risk": false
     },
     {
-      "poc_file": "reconnaissance/01_ICMP_Host_Discovery.py",
+      "poc_file": "reconnaissance/01_CWE_200_ICMP_Host_Discovery_Reconnaissance.py",
       "display_id": "",
       "poc_name": "ICMP Host Discovery",
       "category": "reconnaissance",
@@ -771,7 +771,7 @@
       "high_risk": false
     },
     {
-      "poc_file": "reconnaissance/02_TCP_Port_Scan.py",
+      "poc_file": "reconnaissance/02_CWE_200_TCP_Port_Scan_Reconnaissance.py",
       "display_id": "",
       "poc_name": "TCP Port Scan",
       "category": "reconnaissance",
@@ -787,7 +787,7 @@
       "high_risk": false
     },
     {
-      "poc_file": "reconnaissance/03_mDNS_Service_Discovery.py",
+      "poc_file": "reconnaissance/03_CWE_200_Service_Discovery_Reconnaissance.py",
       "display_id": "",
       "poc_name": "mDNS Service Discovery",
       "category": "reconnaissance",
@@ -803,7 +803,7 @@
       "high_risk": false
     },
     {
-      "poc_file": "reconnaissance/04_UPnP_SSDP_Discovery.py",
+      "poc_file": "reconnaissance/04_CWE_200_UPnP_SSDP_Discovery_Reconnaissance.py",
       "display_id": "",
       "poc_name": "UPnP SSDP Discovery",
       "category": "reconnaissance",
@@ -819,7 +819,7 @@
       "high_risk": false
     },
     {
-      "poc_file": "reconnaissance/05_SNMP_Info_Leak.py",
+      "poc_file": "reconnaissance/05_CWE_798_Leak_Reconnaissance.py",
       "display_id": "",
       "poc_name": "SNMP Info Leak",
       "category": "reconnaissance",
@@ -835,7 +835,7 @@
       "high_risk": false
     },
     {
-      "poc_file": "reconnaissance/06_BT_SDP_Enum.py",
+      "poc_file": "reconnaissance/06_CWE_200_BT_SDP_Enumeration_Reconnaissance.py",
       "display_id": "",
       "poc_name": "BT SDP Enum",
       "category": "reconnaissance",
@@ -851,7 +851,7 @@
       "high_risk": false
     },
     {
-      "poc_file": "reconnaissance/07_TBox_Port_Scan.py",
+      "poc_file": "reconnaissance/07_CWE_200_TBox_Port_Scan_Reconnaissance.py",
       "display_id": "",
       "poc_name": "TBox Port Scan",
       "category": "reconnaissance",
@@ -867,7 +867,7 @@
       "high_risk": false
     },
     {
-      "poc_file": "reconnaissance/08_HTTP_Service_Enum.py",
+      "poc_file": "reconnaissance/08_CWE_200_HTTP_Service_Enumeration_Reconnaissance.py",
       "display_id": "",
       "poc_name": "HTTP Service Enum",
       "category": "reconnaissance",
