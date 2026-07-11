@@ -226,7 +226,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc49CVE202329114AccessControlAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-058'
+    meta_display_id = "POC-WIRELESS-049"
     meta_poc_name = 'CVE-2023-29114 敏感信息泄露 Active Validation'
     meta_cve_id = 'CVE-2023-29114'
     meta_severity = 'High'

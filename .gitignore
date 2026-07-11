@@ -48,6 +48,8 @@ venv/
 .env.*
 !.env.example
 claude_code_env.sh
+**/.session-secret
+**/.ai-config-secret
 
 # ── Local databases ───────────────────────────────────────────
 *.db
@@ -99,3 +101,4 @@ lab/lab/
 lab/experiment_config.json
 lab/experiment_config.full.json
 lab/experiment_config.local.json
+lab/.mock_vehicle_services.pid

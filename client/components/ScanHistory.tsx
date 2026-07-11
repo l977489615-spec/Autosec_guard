@@ -3,11 +3,12 @@ import { ScanSession, POC, PhaseRecord, PlannerStep, SupervisorAdjustment, Super
 import { Clock, AlertTriangle, CheckCircle, FileText, ChevronRight, X, List, Shield, Download, Trash2, Square, CheckSquare } from 'lucide-react';
 import ScanLogs from './ScanLogs';
 import PocDetailModal from './PocDetailModal';
-import { getBackendUrl } from '../services/api';
+import { getBackendUrl, getV3SessionArtifacts, getV3SessionEventsSnapshot, listLegacyHistory, listV3Sessions, LegacyHistoryRecord, V3Session, V3SessionEvent, ApiRequestError } from '../services/api';
 import AttackGraph from './AttackGraph';
 import { findPocInCatalog } from '../services/pocCatalog';
 import { usePocCatalog } from '../hooks/usePocCatalog';
 import { markdownToSafeHtml, escapeHtml } from '../utils/security';
+import { exportReportPdf } from '../utils/pdfExport';
 
 interface ScanHistoryProps {
     localHistory?: ScanSession[];
@@ -17,6 +18,141 @@ interface ScanHistoryProps {
     onResumeSession?: (session: ScanSession) => void;
 }
 
+const historyRichness = (session: ScanSession): number =>
+    (session.results?.length || 0)
+    + (session.logs?.length || 0)
+    + (session.phase_records?.length || 0)
+    + (session.findings?.length || 0)
+    + (session.aiReport ? 20 : 0);
+
+const mapPayloadToScanSession = (
+    id: string,
+    parsedJson: Record<string, any>,
+    extras: Partial<ScanSession> = {},
+): ScanSession => {
+    const isWrapper = !!parsedJson.results && Array.isArray(parsedJson.results);
+    const finalResults = isWrapper ? parsedJson.results : (Array.isArray(parsedJson) ? parsedJson : []);
+    const target = extras.connection || parsedJson.connection || {};
+    return {
+        id,
+        targetName: parsedJson.targetName || extras.targetName || target.ip || '未命名目标',
+        connection: {
+            ip: target.resolved_ip || target.ip || '',
+            bluetoothMac: target.bluetooth_mac || target.bluetoothMac || '',
+            port: target.port || '',
+            canInterface: target.can_interface || target.canInterface || '',
+            url: target.url || '',
+            frequency: target.frequency || '',
+            interface: target.wifi_interface || target.interface || '',
+            usbAdbSerial: target.usb_adb_serial || target.usbAdbSerial || '',
+            usbMountPoint: target.usb_mount_point || target.usbMountPoint || '',
+        },
+        startTime: extras.startTime || '',
+        endTime: extras.endTime,
+        status: extras.status || 'completed',
+        isConnected: true,
+        results: finalResults,
+        logs: Array.isArray(parsedJson.logs) ? parsedJson.logs : (extras.logs || []),
+        aiReport: isWrapper ? parsedJson.aiReport : (parsedJson.aiReport || extras.aiReport || null),
+        riskScore: Number(parsedJson.risk_score ?? parsedJson.riskScore ?? extras.riskScore ?? 0),
+        mode: extras.mode || parsedJson.mode,
+        assessment: isWrapper ? parsedJson.assessment : extras.assessment,
+        findings: isWrapper ? (parsedJson.findings || []) : (extras.findings || []),
+        phase_records: isWrapper ? (parsedJson.phase_records || []) : (extras.phase_records || []),
+        structured: isWrapper ? (parsedJson.structured || {}) : (extras.structured || {}),
+        dbId: extras.dbId,
+        username: extras.username,
+    };
+};
+
+const mapV3SessionToScanSession = (session: V3Session): ScanSession => {
+    const parsedJson = (session.result || {}) as Record<string, any>;
+    const target = (session.target || {}) as Record<string, any>;
+    return mapPayloadToScanSession(session.id, parsedJson, {
+        targetName: target.name as string | undefined,
+        connection: {
+            ip: String(target.resolved_ip || target.ip || ''),
+            bluetoothMac: String(target.bluetooth_mac || ''),
+            canInterface: String(target.can_interface || ''),
+            interface: String(target.wifi_interface || ''),
+            frequency: String(target.frequency || ''),
+            usbAdbSerial: String(target.usb_adb_serial || ''),
+            port: '',
+            url: '',
+            usbMountPoint: '',
+        },
+        startTime: session.started_at || session.created_at || '',
+        endTime: session.completed_at,
+        status: session.status as ScanSession['status'],
+        mode: session.mode,
+    });
+};
+
+const mapLegacyHistoryToScanSession = (record: LegacyHistoryRecord): ScanSession => {
+    const parsedJson = (record.results_json || {}) as Record<string, any>;
+    const legacyLogs = Array.isArray(record.logs) && record.logs.length > 0
+        ? record.logs as ScanSession['logs']
+        : undefined;
+    return mapPayloadToScanSession(record.session_id || `hist-${record.id}`, parsedJson, {
+        dbId: record.id,
+        targetName: record.target_ip || undefined,
+        connection: {
+            ip: record.target_ip || '',
+            bluetoothMac: record.target_mac || '',
+            port: '',
+            canInterface: '',
+            url: '',
+            frequency: '',
+            interface: '',
+            usbAdbSerial: '',
+            usbMountPoint: '',
+        },
+        startTime: record.started_at || '',
+        endTime: record.completed_at || undefined,
+        status: (record.status || 'completed') as ScanSession['status'],
+        riskScore: record.risk_score,
+        logs: legacyLogs,
+        findings: Array.isArray(record.findings) ? record.findings as ScanSession['findings'] : undefined,
+        phase_records: Array.isArray(record.phase_records) ? record.phase_records as ScanSession['phase_records'] : undefined,
+        structured: record.structured,
+        username: record.username,
+        mode: parsedJson.mode as ScanSession['mode'],
+    });
+};
+
+const mergeScanHistory = (v3Sessions: ScanSession[], legacySessions: ScanSession[]): ScanSession[] => {
+    const merged = new Map<string, ScanSession>();
+    for (const session of v3Sessions) {
+        merged.set(session.id, session);
+    }
+    for (const legacy of legacySessions) {
+        const existing = merged.get(legacy.id);
+        if (!existing) {
+            merged.set(legacy.id, legacy);
+            continue;
+        }
+        const preferred = historyRichness(legacy) > historyRichness(existing) ? legacy : existing;
+        const fallback = preferred === legacy ? existing : legacy;
+        merged.set(legacy.id, {
+            ...preferred,
+            id: existing.id,
+            dbId: legacy.dbId ?? existing.dbId,
+            username: legacy.username ?? existing.username,
+            mode: preferred.mode || existing.mode,
+            status: existing.status || preferred.status,
+            startTime: existing.startTime || preferred.startTime,
+            endTime: existing.endTime || preferred.endTime,
+            connection: {
+                ...fallback.connection,
+                ...preferred.connection,
+            },
+        });
+    }
+    return Array.from(merged.values()).sort(
+        (left, right) => new Date(right.startTime || 0).getTime() - new Date(left.startTime || 0).getTime(),
+    );
+};
+
 const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHistory = [], onUnauthorized, onResumeSession }) => {
 
     const [selectedSession, setSelectedSession] = useState<ScanSession | null>(null);
@@ -25,62 +161,33 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
     const [dbHistory, setDbHistory] = useState<ScanSession[]>([]);
     const [supervisorSnapshots, setSupervisorSnapshots] = useState<any[]>([]);
     const [sessionArtifacts, setSessionArtifacts] = useState<ExecutionArtifactRecord[]>([]);
+    const [sessionEvents, setSessionEvents] = useState<V3SessionEvent[]>([]);
     const [loading, setLoading] = useState(true);
+    const [fetchError, setFetchError] = useState<string | null>(null);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const [isDeleting, setIsDeleting] = useState(false);
 
     const fetchHistory = async () => {
         if (!token) return;
+        setLoading(true);
+        setFetchError(null);
         try {
-            const res = await fetch(`${getBackendUrl()}/api/history`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.status === 401 || res.status === 403) {
+            const [sessions, legacy] = await Promise.all([
+                listV3Sessions(token),
+                listLegacyHistory(token),
+            ]);
+            const mappedHistory = mergeScanHistory(
+                sessions.map(mapV3SessionToScanSession),
+                legacy.map(mapLegacyHistoryToScanSession),
+            );
+            setDbHistory(mappedHistory);
+        } catch (err) {
+            console.error("Failed to fetch history:", err);
+            if (err instanceof ApiRequestError && (err.status === 401 || err.status === 403)) {
                 onUnauthorized?.();
                 return;
             }
-            if (res.ok) {
-                const data = await res.json();
-                // Map backend format to frontend ScanSession format
-                const mappedHistory: ScanSession[] = data.history.map((h: any) => {
-                    const parsedJson = h.results_json || [];
-                    const isWrapper = !!parsedJson.results && Array.isArray(parsedJson.results);
-                    const finalResults = isWrapper ? parsedJson.results : (Array.isArray(parsedJson) ? parsedJson : []);
-
-                    return {
-                        id: h.session_id || `hist-${h.id}`,
-                        dbId: h.id, // Keep the actual database ID for deletion
-                        targetName: isWrapper && parsedJson.targetName ? parsedJson.targetName : (h.target_ip || 'Unknown Target'),
-                        connection: isWrapper && parsedJson.connection ? parsedJson.connection : { ip: h.target_ip, bluetoothMac: h.target_mac, port: '', canInterface: '', url: '', frequency: '', interface: '' },
-                        startTime: h.started_at,
-                        endTime: h.completed_at,
-                        status: 'completed',
-                        isConnected: true,
-                        results: finalResults,
-                        // Prioritize the new dedicated 'logs' column, fallback to the old results_json bundle
-                        logs: (h.logs && Array.isArray(h.logs) && h.logs.length > 0)
-                            ? h.logs
-                            : (isWrapper && parsedJson.logs && parsedJson.logs.length > 0
-                                ? parsedJson.logs
-                                : [{
-                                    timestamp: h.started_at ? new Date(h.started_at).toLocaleTimeString() : "N/A",
-                                    type: 'warning',
-                                    message: 'Logs were not saved for this historical record (pre-update). Full log persistence is now active for new scans.'
-                                }]),
-                        aiReport: isWrapper ? parsedJson.aiReport : null,
-                        riskScore: h.risk_score,
-                        username: h.username,
-                        mode: isWrapper && parsedJson.mode ? parsedJson.mode : 'batch',
-                        assessment: isWrapper ? parsedJson.assessment : undefined,
-                        findings: h.findings || (isWrapper ? parsedJson.findings : []),
-                        phase_records: h.phase_records || (isWrapper ? parsedJson.phase_records : []),
-                        structured: h.structured || (isWrapper ? parsedJson.structured : {}),
-                    };
-                });
-                setDbHistory(mappedHistory);
-            }
-        } catch (err) {
-            console.error("Failed to fetch history:", err);
+            setFetchError(err instanceof Error ? err.message : '加载历史记录失败，请确认本机引擎在线并已登录。');
         } finally {
             setLoading(false);
         }
@@ -93,8 +200,9 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
         const fetchSupervisorMetrics = async () => {
             if (!token) return;
             try {
-                const res = await fetch(`${getBackendUrl()}/api/supervisor-metrics?limit=20`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
+                const res = await fetch(`${getBackendUrl()}/api/v1/supervisor-metrics?limit=20`, {
+                    headers: token !== 'cookie-session' ? { 'Authorization': `Bearer ${token}` } : undefined,
+                    credentials: 'same-origin',
                 });
                 if (res.status === 401 || res.status === 403) {
                     onUnauthorized?.();
@@ -115,19 +223,19 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
         const fetchArtifacts = async () => {
             if (!token || !selectedSession?.id) {
                 setSessionArtifacts([]);
+                setSessionEvents([]);
                 return;
             }
             try {
-                const res = await fetch(`${getBackendUrl()}/api/session-artifacts/${selectedSession.id}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (res.status === 401 || res.status === 403) {
-                    onUnauthorized?.();
-                    return;
-                }
-                if (res.ok) {
-                    const data = await res.json();
-                    setSessionArtifacts(Array.isArray(data.artifacts) ? data.artifacts : []);
+                const [artifacts, events] = await Promise.all([
+                    getV3SessionArtifacts(selectedSession.id, token),
+                    getV3SessionEventsSnapshot(selectedSession.id, token),
+                ]);
+                setSessionArtifacts(artifacts);
+                setSessionEvents(events);
+                const reportArtifact = artifacts.find((artifact: ExecutionArtifactRecord) => artifact.artifact_type === 'assessment_report');
+                if (reportArtifact?.payload?.report) {
+                    setSelectedSession(previous => previous ? { ...previous, aiReport: String(reportArtifact.payload.report) } : previous);
                 }
             } catch (err) {
                 console.error("Failed to fetch session artifacts:", err);
@@ -180,9 +288,10 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
 
         try {
             setIsDeleting(true);
-            const res = await fetch(`${getBackendUrl()}/api/history/${dbId}`, {
+            const res = await fetch(`${getBackendUrl()}/api/v1/history/${dbId}`, {
                 method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: token !== 'cookie-session' ? { 'Authorization': `Bearer ${token}` } : undefined,
+                credentials: 'same-origin',
             });
             if (res.ok) {
                 fetchHistory();
@@ -208,12 +317,13 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
 
         try {
             setIsDeleting(true);
-            const res = await fetch(`${getBackendUrl()}/api/history/delete-batch`, {
+            const res = await fetch(`${getBackendUrl()}/api/v1/history/delete-batch`, {
                 method: 'POST',
-                headers: { 
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token !== 'cookie-session' ? { 'Authorization': `Bearer ${token}` } : {}),
                 },
+                credentials: 'same-origin',
                 body: JSON.stringify({ ids: Array.from(selectedIds) })
             });
             if (res.ok) {
@@ -250,7 +360,7 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
         }
     };
 
-    const exportToPdf = (session: ScanSession) => {
+    const exportToPdf = async (session: ScanSession) => {
         if (!session.aiReport) return;
 
         const now = new Date(session.startTime).toLocaleString('zh-CN', { hour12: false });
@@ -290,7 +400,7 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
         <span><span class="label">扫描目标：</span>${escapeHtml(targetInfo)}</span>
         <span><span class="label">扫描时间：</span>${escapeHtml(now)}</span>
         <span><span class="label">报告类型：</span>历史记录导出</span>
-        <span><span class="label">工具版本：</span>AutoSec Guard v2.0 · Archive</span>
+        <span><span class="label">工具版本：</span>智驭安盾 v3.0 · 会话归档</span>
       </div>
     </div>
     <div class="section">
@@ -301,15 +411,25 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
 </body>
 </html>`;
 
-        const printWindow = window.open('', '_blank');
-        if (printWindow) {
-            printWindow.document.write(html);
-            printWindow.document.close();
-        }
+        await exportReportPdf({
+            filename: `AutoSec-History-${targetInfo}-${new Date().toISOString().slice(0, 10)}.pdf`,
+            title: 'AutoSec Guard 智能网联汽车安全评估报告',
+            metadata: [
+                { label: '扫描目标', value: targetInfo },
+                { label: '扫描时间', value: now },
+                { label: '报告类型', value: '历史记录导出' },
+                { label: '工具版本', value: '智驭安盾 v3.0 · 会话归档' },
+            ],
+            reportHtml,
+        });
     };
 
     if (selectedSession) {
-        const vulnCount = selectedSession.results.filter(r => r.vulnerable).length;
+        const confirmedArtifactCount = sessionArtifacts.filter(artifact => (
+            artifact.artifact_type === 'auto_confirmed_vulnerable'
+            || artifact.artifact_type === 'manual_confirmed_vulnerable'
+        )).length;
+        const vulnCount = Math.max(selectedSession.results.filter(r => r.vulnerable).length, confirmedArtifactCount);
         const topAttackPath = selectedSession.assessment?.attackGraph?.paths?.[0];
         const graphSummary = selectedSession.assessment?.attackGraph?.summary;
         const phaseRecords = selectedSession.phase_records || [];
@@ -449,6 +569,26 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                     </div>
 
                     <div className="lg:col-span-2 flex flex-col gap-6 h-full overflow-y-auto pb-10 pr-2">
+                        <div className="bg-cyber-800 border border-cyber-700 rounded-lg p-4 shrink-0">
+                            <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                                <Clock size={14} className="text-cyan-400" /> 权威会话时间线
+                            </h3>
+                            <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                                {sessionEvents.map(event => (
+                                    <div key={event.id} className="border-l-2 border-cyan-900 bg-cyber-900 px-3 py-2 rounded-r">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <span className="text-xs font-semibold text-cyan-200">{event.event_type}</span>
+                                            <span className="text-[10px] text-gray-500 font-mono">{event.created_at || 'N/A'}</span>
+                                        </div>
+                                        {Object.keys(event.payload || {}).length > 0 && (
+                                            <pre className="mt-2 text-[10px] text-gray-400 whitespace-pre-wrap overflow-x-auto">{JSON.stringify(event.payload, null, 2)}</pre>
+                                        )}
+                                    </div>
+                                ))}
+                                {sessionEvents.length === 0 && <div className="text-xs text-gray-500">暂无持久事件。</div>}
+                            </div>
+                        </div>
+
                         <div className="h-96 shrink-0">
                             <ScanLogs logs={selectedSession.logs} />
                         </div>
@@ -657,11 +797,11 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                             </div>
                         )}
 
-                        {selectedSession.mode === 'agent' && sessionArtifacts.length > 0 && (
+                        {sessionArtifacts.length > 0 && (
                             <div className="bg-cyber-800 border border-cyber-700 rounded-lg p-4 shrink-0">
                                 <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
                                     <FileText size={14} className="text-cyan-400" />
-                                    Session Artifacts
+                                    会话证据链
                                 </h3>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
                                     {Object.entries(artifactSummary).map(([type, count]) => (
@@ -708,10 +848,10 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
         <div className="p-6 h-full flex flex-col">
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                    <Clock className="text-cyber-accent" /> Scan History
+                    <Clock className="text-cyber-accent" /> 历史记录
                 </h2>
                 <div className="flex items-center gap-3">
-                    <span className="text-sm text-gray-500">Total Records: {displayHistory.length}</span>
+                    <span className="text-sm text-gray-500">会话总数：{displayHistory.length}</span>
                     {supervisorTrend.snapshots.length > 0 && (
                         <button
                             onClick={exportSupervisorMetrics}
@@ -728,11 +868,22 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                 <div className="flex-1 flex items-center justify-center text-cyber-accent">
                     <div className="w-8 h-8 border-4 border-cyber-accent border-t-transparent rounded-full animate-spin"></div>
                 </div>
+            ) : fetchError ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-red-300 border border-dashed border-red-900/50 rounded-lg gap-3">
+                    <AlertTriangle size={40} className="opacity-70" />
+                    <p className="text-lg">{fetchError}</p>
+                    <button
+                        onClick={fetchHistory}
+                        className="text-xs bg-cyber-900 border border-cyber-700 hover:border-cyber-accent text-white px-3 py-1.5 rounded"
+                    >
+                        重试加载
+                    </button>
+                </div>
             ) : dbHistory.length === 0 && localHistory.length === 0 ? (
                 <div className="flex-1 flex flex-col items-center justify-center text-gray-500 border border-dashed border-cyber-700 rounded-lg">
                     <List size={48} className="mb-4 opacity-50" />
-                    <p className="text-lg">No scan history available.</p>
-                    <p className="text-sm">Run a Global Auto Scan to save records here.</p>
+                    <p className="text-lg">暂无扫描会话。</p>
+                    <p className="text-sm">创建扫描后，权威状态与证据会显示在这里。</p>
                 </div>
             ) : (
                 <div className="flex-1 flex flex-col min-h-0">

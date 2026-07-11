@@ -13,7 +13,7 @@ import {
   Usb,
   Wifi,
 } from 'lucide-react';
-import { getLocalCapabilities, listPocs, runPocPlugin } from '../services/api';
+import { approveV3SessionAction, createV3Session, getLocalCapabilities, listPocs, runPocPlugin, startV3SessionRun, updateV3SessionRun } from '../services/api';
 import { LocalCapabilityFlags } from '../types';
 
 interface LocalRuntimeProps {
@@ -122,21 +122,67 @@ const LocalRuntime: React.FC<LocalRuntimeProps> = ({ token, currentUser, onUnaut
     setError('');
     setMessage('');
     setRunResult(null);
+    let auditSessionId: string | null = null;
     try {
+      const executionParams = buildParams();
+      const requiresApproval = Boolean(
+        selectedPoc?.requires_disruptive_approval
+        || selectedPoc?.requiresDisruptiveApproval
+        || selectedPoc?.professional_policy?.requires_disruptive_approval
+      );
+      if (requiresApproval && !window.confirm('该 PoC 属于高风险操作。确认已在授权台架或受控环境中，并继续执行？')) {
+        setMessage('已取消高风险 PoC 执行。');
+        return;
+      }
+      const target = String(
+        executionParams.target_ip
+        || executionParams.bluetooth_mac
+        || executionParams.can_interface
+        || executionParams.interface
+        || 'local'
+      );
+      const durableSession = await createV3Session('manual', {
+        name: target,
+        ip: executionParams.target_ip,
+        bluetooth_mac: executionParams.bluetooth_mac,
+        can_interface: executionParams.can_interface,
+        wifi_interface: executionParams.interface,
+        frequency: executionParams.rf_frequency,
+      }, { source: 'local_capabilities' }, token);
+      auditSessionId = durableSession.id;
+      await startV3SessionRun(auditSessionId, token);
+      if (requiresApproval) {
+        executionParams.approval_token = await approveV3SessionAction(
+          auditSessionId, selectedFilename, target, token
+        );
+      }
       const data = await runPocPlugin(
         selectedFilename,
-        { ...buildParams(), allow_disruptive: true },
+        executionParams,
         token,
+        null,
+        auditSessionId,
       );
       setRunResult(data);
+      const needsReview = data?.requires_human_review || data?.verification_status === 'pending_manual_review';
+      await updateV3SessionRun(auditSessionId, needsReview ? 'await_review' : 'complete', {
+        trace_id: data?.trace_id,
+        verification_status: data?.verification_status,
+        confirmed_findings: data?.vulnerable === true ? 1 : 0,
+      }, token);
       setMessage(
-        data?.requires_human_review || data?.verification_status === 'pending_manual_review'
+        needsReview
           ? '本机验证完成：该 PoC 需要人工观察后判定。'
           : data?.vulnerable
             ? '本机验证完成：发现可验证风险。'
             : '本机验证完成。'
       );
     } catch (err: any) {
+      if (auditSessionId) {
+        await updateV3SessionRun(auditSessionId, 'fail', {
+          error_code: err?.message || 'LOCAL_RUNTIME_EXECUTION_FAILED',
+        }, token).catch(() => undefined);
+      }
       if (String(err?.message || '').includes('401')) {
         onUnauthorized?.();
       }

@@ -94,6 +94,8 @@ class TelnetWeakCredsPlugin(IVIVulnerabilityPlugin):
     meta_target_os = ["all"]
     meta_required_params = ["target_ip"]
     meta_profiles         = ["network"]
+    meta_requires_capabilities = ["service:telnet"]
+    meta_grants_on_confirmed = ["access:telnet_authenticated", "capability:remote_shell"]
     requires_manual_review = True
     is_disruptive = True
     meta_destructive_level = "Disruptive"

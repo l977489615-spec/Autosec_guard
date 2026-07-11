@@ -1,203 +1,176 @@
 #!/usr/bin/env python3
-"""
-PoC Name: Dynamic Unknown Service Probe
-Identifier: CWE-200
-Component: Unknown Network Service
-Category: Network
-Severity: Medium
-Description: Weaponize Agent 生成的协议感知型未知服务动态探测脚本
-Prerequisites: 目标可达
+"""Bounded unknown-service fingerprint probe.
+
+This is not a fuzzer and does not claim a vulnerability. It executes a small,
+allowlisted set of read-only protocol profiles against one authorized TCP port
+and records reproducible fingerprint evidence.
 """
 from __future__ import annotations
 
-import sys
+import hashlib
+import json
 import socket
+import ssl
+import sys
 import time
+from typing import Any
+
 from iv_plugin_base import IVIVulnerabilityPlugin
 
 
-VULN = {
-    "id":             0,
-    "cve":            "CWE-200",
-    "year":           200,
-    "domain":         "network",
-    "vendor_product": "Unknown",
-    "component":      "Unknown",
-    "type":           "Unknown",
-    "summary":        "Dynamic Unknown Service Probe",
-    "source_url":     "https://cwe.mitre.org/data/definitions/200.html",
-    "affected":       [{"vendor": "Unknown", "product": "Unknown", "versions": []}],
-    "references":     ["https://cwe.mitre.org/data/definitions/200.html"],
-    "signature_tokens": ["CWE-200"],
-}
+MAX_PROFILES = 3
+MAX_RESPONSE_BYTES = 4096
+MAX_TOTAL_SECONDS = 12.0
+ALLOWED_PROFILES = ("passive_banner", "http_head", "tls_handshake")
 
 
-def _run_poc(plugin, vuln=None) -> dict:
-    """
-    CWE-200 主动探针包装（兼容旧式 exploit() 实现）。
-    通过调用插件自身的 exploit 逻辑并将结果标准化为 detection_confidence 格式。
-    """
-    try:
-        result = plugin.exploit() or {}
-    except Exception as exc:
-        result = {"error": str(exc)}
-
-    vulnerable = result.get("vulnerable", None)
-    evidence = {
-        "cve":       vuln.get("cve", "CWE-200") if vuln else "CWE-200",
-        "target":    getattr(plugin, "target_ip", "unknown"),
-        "technique": "legacy exploit() wrapper",
-        "raw":       str(result)[:300],
-    }
-
-    # 根据是否有主动网络调用推断等级
-    level = "B" if vulnerable is True else ("C" if vulnerable is False else "D")
-    try:
-        from probe_utils import detection_confidence as _detection_confidence
-        return _detection_confidence(level, evidence, vulnerable=vulnerable)
-    except ImportError:
-        return {
-            "detection_confidence": {
-                "level": level, "vulnerable": vulnerable,
-                "evidence": evidence, "method": "legacy_wrapper",
-            }
-        }
+def _safe_preview(data: bytes, limit: int = 256) -> str:
+    return data[:limit].decode("utf-8", errors="backslashreplace")
 
 
 class DynamicUnknownServiceProbePlugin(IVIVulnerabilityPlugin):
-    meta_display_id       = "POC-NET-015"
-    meta_poc_name = 'CWE-200 Service Probe Active Validation'
+    meta_display_id = "POC-NET-015"
+    meta_poc_name = "Unknown TCP Service Fingerprint Probe"
     meta_cve_id = "CWE-200"
     meta_source_url = "https://cwe.mitre.org/data/definitions/200.html"
-    meta_references = ['https://cwe.mitre.org/data/definitions/200.html']
-    meta_severity = "Medium"
+    meta_references = [meta_source_url]
+    meta_severity = "Info"
     meta_protocol = "tcp"
     meta_target_os = ["all"]
-    meta_required_params = ["target_ip"]
-    meta_profiles         = ["network"]
+    meta_required_params = ["target_ip", "target_port"]
+    meta_profiles = ["recon", "network", "unknown_service"]
     is_disruptive = False
     meta_destructive_level = "Probe"
 
     def check_prerequisites(self):
         if not self.target_ip:
-            raise RuntimeError("需要指定目标IP地址。")
+            raise RuntimeError("target_ip is required")
+        try:
+            port = int(self.target_port)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("target_port must be an integer") from exc
+        if not 1 <= port <= 65535:
+            raise RuntimeError("target_port must be between 1 and 65535")
+        self.target_port = port
+        self.timeout = max(0.5, min(float(self.timeout or 3), 5.0))
+        self.profiles = self._validated_profiles(self.params.get("probe_profiles"))
         return True
 
+    @staticmethod
+    def _validated_profiles(value: Any) -> list[str]:
+        if isinstance(value, str):
+            try:
+                decoded = json.loads(value)
+                value = decoded if isinstance(decoded, list) else [value]
+            except json.JSONDecodeError:
+                value = [part.strip() for part in value.split(",")]
+        if not isinstance(value, list) or not value:
+            value = ["passive_banner"]
+        profiles = list(dict.fromkeys(str(item).strip() for item in value if str(item).strip()))
+        if len(profiles) > MAX_PROFILES or any(item not in ALLOWED_PROFILES for item in profiles):
+            raise RuntimeError("probe_profiles contains a non-allowlisted or excessive profile set")
+        return profiles
+
+    def _connect(self) -> socket.socket:
+        sock = socket.create_connection((self.target_ip, self.target_port), timeout=self.timeout)
+        sock.settimeout(self.timeout)
+        return sock
+
+    def _passive_banner(self) -> dict[str, Any]:
+        with self._connect() as sock:
+            try:
+                data = sock.recv(MAX_RESPONSE_BYTES)
+            except socket.timeout:
+                data = b""
+        return self._observation("passive_banner", data)
+
+    def _http_head(self) -> dict[str, Any]:
+        request = (
+            f"HEAD / HTTP/1.0\r\nHost: {self.target_ip}\r\n"
+            "User-Agent: AutoSec-ReadOnly-Probe/3.0\r\nConnection: close\r\n\r\n"
+        ).encode("ascii")
+        with self._connect() as sock:
+            sock.sendall(request)
+            data = sock.recv(MAX_RESPONSE_BYTES)
+        observation = self._observation("http_head", data)
+        first_line = data.splitlines()[0][:160] if data else b""
+        observation["protocol_match"] = first_line.startswith(b"HTTP/")
+        return observation
+
+    def _tls_handshake(self) -> dict[str, Any]:
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        with self._connect() as raw_sock:
+            with context.wrap_socket(raw_sock, server_hostname=self.target_ip) as tls_sock:
+                cert = tls_sock.getpeercert(binary_form=True) or b""
+                return {
+                    "profile": "tls_handshake",
+                    "protocol_match": True,
+                    "tls_version": tls_sock.version(),
+                    "cipher": list(tls_sock.cipher() or ()),
+                    "certificate_sha256": hashlib.sha256(cert).hexdigest() if cert else "",
+                    "certificate_bytes": len(cert),
+                }
+
+    @staticmethod
+    def _observation(profile: str, data: bytes) -> dict[str, Any]:
+        return {
+            "profile": profile,
+            "received_bytes": len(data),
+            "response_sha256": hashlib.sha256(data).hexdigest() if data else "",
+            "preview": _safe_preview(data),
+            "protocol_match": None,
+        }
+
     def exploit(self):
-        self.results["description"] = "未知服务动态指纹与异常响应探测"
-        target_ip = self.target_ip
-        target_port = self.target_port
-        try:
-            import socket
-            import struct
-            import time
-            import random
+        started = time.monotonic()
+        observations: list[dict[str, Any]] = []
+        for profile in self.profiles:
+            if time.monotonic() - started >= MAX_TOTAL_SECONDS:
+                observations.append({"profile": profile, "status": "budget_exhausted"})
+                break
+            try:
+                handler = getattr(self, f"_{profile}")
+                observations.append({"status": "completed", **handler()})
+            except (socket.timeout, TimeoutError):
+                observations.append({"profile": profile, "status": "timeout"})
+            except (ConnectionError, OSError, ssl.SSLError) as exc:
+                observations.append({
+                    "profile": profile,
+                    "status": "protocol_mismatch_or_connection_error",
+                    "error_type": type(exc).__name__,
+                })
 
-            # 目标IP地址
-            TARGET_IP = "192.168.31.158"
-            # 目标端口范围
-            PORT_RANGE = (1, 65535)
-            # 探测次数
-            PROBE_COUNT = 10
-            # 延迟时间（秒）
-            DELAY = 0.1
-
-            def create_socket():
-                """创建一个原始套接字"""
-                try:
-                    s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
-                    s.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
-                    return s
-                except socket.error as msg:
-                    print(f"Socket creation error: {msg}")
-                    return None
-
-            def send_probe(s, target_ip, port):
-                """发送探测包"""
-                ip_header = struct.pack('!BBHHHBBH4s4s',
-                                        69,  # Version, IHL
-                                        0,   # DSCP, ECN
-                                        20 + 8,  # Total Length
-                                        0,   # Identification
-                                        0,   # Flags, Fragment Offset
-                                        64,  # TTL
-                                        6,   # Protocol (TCP)
-                                        0,   # Header Checksum
-                                        socket.inet_aton(target_ip),  # Source IP
-                                        socket.inet_aton(target_ip))  # Destination IP
-
-                tcp_header = struct.pack('!HHLLBBHHH',
-                                         port,  # Source Port
-                                         80,    # Destination Port
-                                         0,     # Sequence Number
-                                         0,     # Acknowledgment Number
-                                         5 << 4,  # Data Offset, Reserved, Flags
-                                         2,     # Window Size
-                                         0,     # Checksum
-                                         0)     # Urgent Pointer
-
-                packet = ip_header + tcp_header
-                s.sendto(packet, (target_ip, 0))
-
-            def receive_response(s, timeout=1):
-                """接收响应包"""
-                s.settimeout(timeout)
-                try:
-                    response, addr = s.recvfrom(65535)
-                    return response
-                except socket.timeout:
-                    return None
-
-            def main():
-                s = create_socket()
-                if not s:
-                    return
-
-                normal_responses = []
-                for _ in range(PROBE_COUNT):
-                    port = random.randint(*PORT_RANGE)
-                    send_probe(s, TARGET_IP, port)
-                    time.sleep(DELAY)
-                    response = receive_response(s)
-                    if response:
-                        normal_responses.append(response)
-                        print(f"Received response from port {port}")
-
-                if not normal_responses:
-                    print("No responses received. Target may be unreachable or silent.")
-                    return
-
-                # 建立正常响应基线
-                baseline = set(normal_responses)
-
-                # 收集异常证据
-                vulnerable = False
-                for _ in range(PROBE_COUNT):
-                    port = random.randint(*PORT_RANGE)
-                    send_probe(s, TARGET_IP, port)
-                    time.sleep(DELAY)
-                    response = receive_response(s)
-                    if response and response not in baseline:
-                        print(f"Abnormal response received from port {port}")
-                        vulnerable = True
-                        break
-
-                if vulnerable:
-                    print("Vulnerable: True")
-                else:
-                    print("Vulnerable: False")
-
-                s.close()
-        except Exception as e:
-            self.logger.error(f"动态未知服务探测脚本执行异常: {e}")
-            self.results["vulnerable"] = False
-            self.results["evidence"] = f"Exception: {e}"
+        evidence = {
+            "evidence_type": "service_fingerprint",
+            "target": self.target_ip,
+            "target_port": self.target_port,
+            "transport": "tcp",
+            "profiles": self.profiles,
+            "observations": observations,
+            "budget": {
+                "max_profiles": MAX_PROFILES,
+                "max_response_bytes_per_profile": MAX_RESPONSE_BYTES,
+                "max_total_seconds": MAX_TOTAL_SECONDS,
+            },
+            "conclusion": "Fingerprint evidence only; no vulnerability conclusion is made.",
+        }
+        self.results.update({
+            "vulnerable": False,
+            "description": "授权目标单端口的受限服务指纹探测",
+            "evidence": json.dumps(evidence, ensure_ascii=False),
+            "verification_status": "fingerprint_collected",
+            "confidence": "informational",
+        })
         return self.results
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python3 network/15_CWE_200_Service_Probe_Active_Validation.py <target_ip>")
-        sys.exit(1)
-    plugin = DynamicUnknownServiceProbePlugin({"target_ip": sys.argv[1]})
-    plugin.run_verify()
+    if len(sys.argv) < 3:
+        print("Usage: python3 15_CWE_200_Service_Probe_Active_Validation.py <target_ip> <target_port>")
+        raise SystemExit(1)
+    DynamicUnknownServiceProbePlugin({
+        "target_ip": sys.argv[1],
+        "target_port": int(sys.argv[2]),
+    }).run_verify()

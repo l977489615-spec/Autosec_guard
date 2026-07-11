@@ -1,6 +1,6 @@
 # 在线可达性启发引导的攻击面探测规划器
 
-模块：`exploration_planner.py`　接口：`server.py` `POST /api/exploration/next-actions`
+模块：`exploration_planner.py`　接口：`server.py` `POST /api/v1/exploration/next-actions`
 依赖：`assessment_engine.py`（可达性转移模型、多跳攻击图、配置）
 
 ## 一、定位与 SOTA 关系
@@ -55,7 +55,7 @@ V(a) = w_reach·ReachGain(a) + w_info·InfoGain(a) − w_cost·Cost(a) − w_ris
 - `reachable_domains(confirmed_findings, cfg)` → 当前可达域集合
 - `score_action(poc, confirmed, executed, topology, ...)` → V(a) 及可审计明细
 - `next_exploration_actions(candidate_pocs, confirmed, executed, topology, top_k)` → 排序后的下一步探测动作
-- REST：`POST /api/exploration/next-actions`
+- REST：`POST /api/v1/exploration/next-actions`
 
 ## 四、测试与消融记录
 
@@ -74,7 +74,7 @@ V(a) = w_reach·ReachGain(a) + w_info·InfoGain(a) − w_cost·Cost(a) − w_ris
 - 结论：同等探测预算下，在线图引导覆盖更多攻击面并发现基线完全错失的物理杀伤链。
 
 接口/语法
-- `/api/exploration/next-actions` 已注册；无 token 访问返回 401（已接线）。
+- `/api/v1/exploration/next-actions` 已注册；无 token 访问返回 401（已接线）。
 - server.py / exploration_planner.py 语法 OK；确定性、无网络、无大模型，可单测可复现。
 
 分类缺陷修复（真机数据测试发现）

@@ -28,7 +28,6 @@ import json
 import logging
 import requests
 from flask import Flask, request, jsonify
-from flask_cors import CORS
 from config import get_config
 
 # 确保上级目录在 sys.path 中
@@ -43,10 +42,16 @@ logging.basicConfig(level=logging.INFO, format='[%(asctime)s][%(levelname)s] %(m
 CONFIG = get_config()
 
 app = Flask(__name__)
-CORS(app)
 
 # 主 AutoSec Flask API 地址
 AUTOSEC_API = CONFIG.autosec_api
+
+
+def _api_headers() -> dict:
+    token = str(os.environ.get('AUTOSEC_TOKEN') or '').strip()
+    if not token:
+        return {}
+    return {'Authorization': token if token.startswith('Bearer ') else f'Bearer {token}'}
 
 
 # ──────────────────────────────────────────────
@@ -79,7 +84,7 @@ MCP_TOOLS = [
         "parameters": {
             "type": "object",
             "properties": {
-                "poc_name": {"type": "string", "description": "PoC script name or path, e.g. '10_SSH_Weak_Creds.py'"},
+                "poc_name": {"type": "string", "description": "PoC script path, e.g. 'network/04_CWE_521_SSH_Weak_Credentials_Active_Validation.py'"},
                 "params": {
                     "type": "object",
                     "description": "PoC parameters dict (target_ip, target_port, interface, etc.)",
@@ -255,12 +260,13 @@ def _tool_run_poc(params: dict) -> dict:
     try:
         session_id = str(params.get("session_id") or "agent_auto")
         resp = requests.post(
-            f"{AUTOSEC_API}/api/run_poc",
+            f"{AUTOSEC_API}/api/v1/run_poc",
             json={
                 "filename": poc_name,
                 "params": poc_params,
                 "session_id": session_id,
             },
+            headers=_api_headers(),
             timeout=60,
         )
         if resp.ok:
@@ -321,7 +327,7 @@ def _tool_check_safety(params: dict) -> dict:
     # 尝试获取 PoC 详细信息以确定是否具有破坏性
     is_disruptive = False
     try:
-        resp = requests.get(f"{AUTOSEC_API}/api/list_pocs", timeout=5)
+        resp = requests.get(f"{AUTOSEC_API}/api/v1/list_pocs", headers=_api_headers(), timeout=5)
         if resp.ok:
             pocs = resp.json().get("pocs", [])
             for p in pocs:
@@ -343,7 +349,7 @@ def _tool_check_safety(params: dict) -> dict:
 def _tool_list_pocs(params: dict) -> dict:
     category_filter = params.get("category")
     try:
-        resp = requests.get(f"{AUTOSEC_API}/api/list_pocs", timeout=10)
+        resp = requests.get(f"{AUTOSEC_API}/api/v1/list_pocs", headers=_api_headers(), timeout=10)
         if resp.ok:
             pocs = resp.json().get("pocs", [])
             if category_filter:
@@ -364,4 +370,4 @@ if __name__ == "__main__":
     logger.info(f"[MCP Server] 主 API 地址: {AUTOSEC_API}")
     logger.info(f"[MCP Server] 工具列表: GET /mcp/tools")
     logger.info(f"[MCP Server] 工具调用: POST /mcp/call")
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host=os.environ.get('MCP_HOST', '127.0.0.1'), port=port, debug=False)

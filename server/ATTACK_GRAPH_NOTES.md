@@ -7,12 +7,12 @@
 
 | 能力 | 函数 | 接口 | 说明 |
 |------|------|------|------|
-| 语义展开图（每漏洞独立四元链） | `generate_attack_graph(session)` | `POST /api/attack-graph/generate` | 每个漏洞展开为 入口→漏洞→能力→物理影响 的 4 节点 3 边链；节点不跨漏洞共享 |
-| 增量更新 | `incremental_update_attack_graph(existing_graph, new_findings, target_name)` | `POST /api/attack-graph/update` | 仅对新增漏洞构建节点/边/路径并入既有图后重排序，不整体重建；按漏洞标签去重、节点序号防冲突 |
-| 多跳攻击图（跨漏洞杀伤链） | `generate_multihop_attack_graph(session, topology=None)` | `POST /api/attack-graph/multihop` | 语义去重节点 + 转移边，推导贯穿多个漏洞的攻击链 |
-| 网络-物理判级 | `assess_physical_impact(session)` | `POST /api/physical-impact/assess` | 汇总攻击域/物理影响判定整车安全等级（critical/high/medium/low） |
-| 修复仿真 | `simulate_remediation(session, graph=None)` | `POST /api/remediation/simulate` | 攻击域→加固动作映射，计算被阻断路径与修复前后评分 |
-| 结构化报告 | `build_structured_report(session)` | `POST /api/report/structured` | 绑定漏洞/路径/判级/修复并保留证据回溯 |
+| 语义展开图（每漏洞独立四元链） | `generate_attack_graph(session)` | `POST /api/v1/attack-graph/generate` | 每个漏洞展开为 入口→漏洞→能力→物理影响 的 4 节点 3 边链；节点不跨漏洞共享 |
+| 增量更新 | `incremental_update_attack_graph(existing_graph, new_findings, target_name)` | `POST /api/v1/attack-graph/update` | 仅对新增漏洞构建节点/边/路径并入既有图后重排序，不整体重建；按漏洞标签去重、节点序号防冲突 |
+| 多跳攻击图（跨漏洞杀伤链） | `generate_multihop_attack_graph(session, topology=None)` | `POST /api/v1/attack-graph/multihop` | 语义去重节点 + 转移边，推导贯穿多个漏洞的攻击链 |
+| 网络-物理判级 | `assess_physical_impact(session)` | `POST /api/v1/physical-impact/assess` | 汇总攻击域/物理影响判定整车安全等级（critical/high/medium/low） |
+| 修复仿真 | `simulate_remediation(session, graph=None)` | `POST /api/v1/remediation/simulate` | 攻击域→加固动作映射，计算被阻断路径与修复前后评分 |
+| 结构化报告 | `build_structured_report(session)` | `POST /api/v1/report/structured` | 绑定漏洞/路径/判级/修复并保留证据回溯 |
 
 ## 一、语义展开图与多跳攻击图的区别
 
@@ -105,7 +105,7 @@ gateway_protected_domains、physical_impacts、multihop_scoring。
 - 既有 3 路径并入 1 条 critical → 4 路径、最高分 95；重复并入同名漏洞 → 仍 4 路径（去重生效）。
 
 接口连通（Flask test_client）
-- `/api/attack-graph/multihop` 已注册；无 token 访问返回 401（已接线，非 404）。
+- `/api/v1/attack-graph/multihop` 已注册；无 token 访问返回 401（已接线，非 404）。
 
 前端
 - BFS 分层对含环真实图收敛，7 层，SVG 尺寸有限；最高链高亮边匹配 9/9。

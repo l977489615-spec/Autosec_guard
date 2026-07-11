@@ -172,7 +172,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc39CVE202649319ReplayAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-013'
+    meta_display_id = "POC-WIRELESS-039"
     meta_poc_name = 'CVE-2026-49319 重放攻击 Active Validation'
     meta_cve_id = 'CVE-2026-49319'
     meta_severity = 'High'

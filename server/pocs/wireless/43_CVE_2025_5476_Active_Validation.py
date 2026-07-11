@@ -175,7 +175,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc43CVE20255476AuthBypassAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-023'
+    meta_display_id = "POC-WIRELESS-043"
     meta_poc_name = 'CVE-2025-5476 Bluetooth认证绕过 Active Validation'
     meta_cve_id = 'CVE-2025-5476'
     meta_severity = 'High'

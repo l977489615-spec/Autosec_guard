@@ -143,7 +143,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc36CVE202532060SignatureVerificationAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-005'
+    meta_display_id = "POC-ADV-036"
     meta_poc_name = 'CVE-2025-32060 签名校验缺失 Active Validation'
     meta_cve_id = 'CVE-2025-32060'
     meta_severity = 'High'

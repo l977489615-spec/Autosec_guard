@@ -222,7 +222,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc64CVE202026558ExposureAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-079'
+    meta_display_id = "POC-WIRELESS-064"
     meta_poc_name = 'CVE-2020-26558 中间人 Active Validation'
     meta_cve_id = 'CVE-2020-26558'
     meta_severity = 'High'

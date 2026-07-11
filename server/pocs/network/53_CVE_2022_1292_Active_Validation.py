@@ -171,7 +171,7 @@ def _run_poc(plugin) -> dict:
 
 
 class Poc53CVE20221292InjectionAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-088'
+    meta_display_id = "POC-NET-053"
     meta_poc_name = 'CVE-2022-1292 命令注入 Active Validation'
     meta_cve_id = 'CVE-2022-1292'
     meta_severity = 'High'

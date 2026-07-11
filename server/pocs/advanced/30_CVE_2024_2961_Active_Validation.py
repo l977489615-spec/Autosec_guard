@@ -205,7 +205,7 @@ def _run_poc(plugin) -> dict:
 
 
 class Poc30CVE20242961ExposureAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-100'
+    meta_display_id = "POC-ADV-030"
     meta_poc_name = 'CVE-2024-2961 缓冲区溢出 Active Validation'
     meta_cve_id = 'CVE-2024-2961'
     meta_severity = 'High'

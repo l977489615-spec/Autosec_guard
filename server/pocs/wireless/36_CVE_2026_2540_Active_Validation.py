@@ -178,7 +178,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc36CVE20262540AuthBypassReplayAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-010'
+    meta_display_id = "POC-WIRELESS-036"
     meta_poc_name = 'CVE-2026-2540 重放 Active Validation'
     meta_cve_id = 'CVE-2026-2540'
     meta_severity = 'High'

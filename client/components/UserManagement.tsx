@@ -38,8 +38,9 @@ const UserManagement: React.FC<UserManagementProps> = ({ token, onUnauthorized }
 	const fetchUsers = async () => {
 		if (!token) return;
 		try {
-			const res = await fetch(`${getBackendUrl()}/api/admin/users`, {
-				headers: { 'Authorization': `Bearer ${token}` }
+			const res = await fetch(`${getBackendUrl()}/api/v1/admin/users`, {
+				headers: token !== 'cookie-session' ? { 'Authorization': `Bearer ${token}` } : undefined,
+				credentials: 'same-origin',
 			});
 			if (res.status === 401 || res.status === 403) {
 				onUnauthorized?.();
@@ -86,8 +87,8 @@ const UserManagement: React.FC<UserManagementProps> = ({ token, onUnauthorized }
 		if (!token) return;
 
 		const url = isEditing
-			? `${getBackendUrl()}/api/admin/users/${currentUserId}`
-			: `${getBackendUrl()}/api/admin/users`;
+			? `${getBackendUrl()}/api/v1/admin/users/${currentUserId}`
+			: `${getBackendUrl()}/api/v1/admin/users`;
 
 		const method = isEditing ? 'PUT' : 'POST';
 
@@ -100,8 +101,9 @@ const UserManagement: React.FC<UserManagementProps> = ({ token, onUnauthorized }
 				method,
 				headers: {
 					'Content-Type': 'application/json',
-					'Authorization': `Bearer ${token}`
+					...(token !== 'cookie-session' ? { 'Authorization': `Bearer ${token}` } : {}),
 				},
+				credentials: 'same-origin',
 				body: JSON.stringify(body)
 			});
 			const data = await res.json();
@@ -123,9 +125,10 @@ const UserManagement: React.FC<UserManagementProps> = ({ token, onUnauthorized }
 		if (!userToDelete || !token) return;
 
 		try {
-			const res = await fetch(`${getBackendUrl()}/api/admin/users/${userToDelete.id}`, {
+			const res = await fetch(`${getBackendUrl()}/api/v1/admin/users/${userToDelete.id}`, {
 				method: 'DELETE',
-				headers: { 'Authorization': `Bearer ${token}` }
+				headers: token !== 'cookie-session' ? { 'Authorization': `Bearer ${token}` } : undefined,
+				credentials: 'same-origin',
 			});
 			const data = await res.json();
 			if (!res.ok) throw new Error(data.message);

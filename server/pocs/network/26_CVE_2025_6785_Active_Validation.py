@@ -136,7 +136,7 @@ def _run_poc(plugin) -> dict:
     }
 
 class Poc26CVE20256785AccessControlInjectionAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-018'
+    meta_display_id = "POC-NET-026"
     meta_poc_name = 'CVE-2025-6785 物理访问控制不足 Active Validation'
     meta_cve_id = 'CVE-2025-6785'
     meta_severity = 'High'

@@ -75,6 +75,7 @@ class TelnetServicePlugin(IVIVulnerabilityPlugin):
     meta_target_os = ["all"]
     meta_required_params = ["target_ip"]
     meta_profiles = ["network"]
+    meta_grants_on_confirmed = ["service:telnet"]
     is_disruptive = False
     meta_destructive_level = "Safe"
 

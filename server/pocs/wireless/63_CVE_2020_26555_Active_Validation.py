@@ -177,7 +177,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc63CVE202026555AuthBypassAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-078'
+    meta_display_id = "POC-WIRELESS-063"
     meta_poc_name = 'CVE-2020-26555 认证绕过 Active Validation'
     meta_cve_id = 'CVE-2020-26555'
     meta_severity = 'High'

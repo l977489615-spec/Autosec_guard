@@ -178,7 +178,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc37CVE20262541WeakRandomAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-011'
+    meta_display_id = "POC-WIRELESS-037"
     meta_poc_name = 'CVE-2026-2541 熵不足 Active Validation'
     meta_cve_id = 'CVE-2026-2541'
     meta_severity = 'High'

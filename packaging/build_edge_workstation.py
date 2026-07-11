@@ -55,8 +55,9 @@ AUTOSEC_HOST=127.0.0.1
 AUTOSEC_PORT=5002
 AUTOSEC_DEBUG=false
 
-# Use a stable random value in production. Changing it invalidates existing login tokens.
-AUTOSEC_SECRET_KEY=change-me-before-delivery
+# Session and AI-encryption keys are generated once in AUTOSEC_DATA_DIR.
+# AUTOSEC_SECRET_KEY=
+# AUTOSEC_AI_CONFIG_KEY=
 
 # Optional. Defaults to a per-user application data directory.
 # AUTOSEC_DATA_DIR=/opt/autosec-guard-edge/data
@@ -100,8 +101,8 @@ http://127.0.0.1:5002
 - Built-in PoC code is embedded into the compiled workstation executable.
 - Logs and the SQLite database are written to `AUTOSEC_DATA_DIR` or the OS user data directory.
 
-For commercial delivery, replace `.env.template` with a customer-specific `.env`
-that sets a stable `AUTOSEC_SECRET_KEY`.
+The first launch creates durable per-installation session and AI-encryption keys
+inside the user data directory. Back up that directory with the database.
 """
     (release_dir / "README_RUNTIME.md").write_text(readme, encoding="utf-8")
 
@@ -162,6 +163,7 @@ def _build_with_nuitka(work_dir: Path, output_name: str) -> Path:
         f"--output-filename={output_name}",
         f"--include-data-dir={CLIENT_DIST}=web_dist",
         f"--include-data-dir={POC_WORDLISTS_DIR}=pocs/wordlists",
+        f"--include-data-dir={SERVER_DIR / 'migrations'}=migrations",
         "--include-module=sandbox_runner",
         "--include-module=local_capability_probe",
         "--include-module=poc_worker",
@@ -173,8 +175,8 @@ def _build_with_nuitka(work_dir: Path, output_name: str) -> Path:
         "--include-module=config",
         "--include-module=assessment_engine",
         "--include-module=benchmark_suite",
+        "--include-module=logging.config",
         "--include-module=poc_execution_service",
-        "--include-module=auth_service",
         "--include-module=agent_orchestrator",
         "--include-module=physical_safety_monitor",
         "--include-module=topology_scanner",
@@ -191,7 +193,6 @@ def _build_with_nuitka(work_dir: Path, output_name: str) -> Path:
         "--include-module=requests",
         "--include-module=cryptography",
         "--include-module=bcrypt",
-        "--include-module=jwt",
         "--nofollow-import-to=openai",
         "--nofollow-import-to=sqlalchemy.dialects.mysql",
         "--nofollow-import-to=sqlalchemy.dialects.postgresql",
@@ -280,6 +281,8 @@ def _build_with_pyinstaller(work_dir: Path, output_name: str) -> Path:
         f"{CLIENT_DIST}{sep}web_dist",
         "--add-data",
         f"{POC_WORDLISTS_DIR}{sep}pocs/wordlists",
+        "--add-data",
+        f"{SERVER_DIR / 'migrations'}{sep}migrations",
         "--hidden-import",
         "sandbox_runner",
         "--hidden-import",
@@ -303,17 +306,15 @@ def _build_with_pyinstaller(work_dir: Path, output_name: str) -> Path:
         "--hidden-import",
         "benchmark_suite",
         "--hidden-import",
-        "poc_execution_service",
+        "logging.config",
         "--hidden-import",
-        "auth_service",
+        "poc_execution_service",
         "--hidden-import",
         "agent_orchestrator",
         "--hidden-import",
         "physical_safety_monitor",
         "--hidden-import",
         "topology_scanner",
-        "--hidden-import",
-        "openai",
         "--hidden-import",
         "scapy.all",
         "--hidden-import",
@@ -346,8 +347,6 @@ def _build_with_pyinstaller(work_dir: Path, output_name: str) -> Path:
         "bcrypt",
         "--hidden-import",
         "_cffi_backend",
-        "--hidden-import",
-        "jwt",
         "--exclude-module",
         "torch",
         "--exclude-module",

@@ -31,6 +31,28 @@ DESTRUCTIVE_LEVEL_TO_RISK = {
     "brick": "BRICK",
 }
 
+DESTRUCTIVE_POLICIES = {"ALLOW_ALL", "CONFIRM_EACH", "DENY_ALL"}
+
+
+def normalize_destructive_policy(policy: str | None) -> str:
+    """Normalize the operator's decision policy independently of the risk ceiling."""
+    raw = str(policy or "").strip().lower().replace("-", "_")
+    aliases = {
+        "allow_all": "ALLOW_ALL",
+        "all_allow": "ALLOW_ALL",
+        "allow": "ALLOW_ALL",
+        "全部允许": "ALLOW_ALL",
+        "confirm_each": "CONFIRM_EACH",
+        "manual_confirm": "CONFIRM_EACH",
+        "confirm": "CONFIRM_EACH",
+        "人工确认": "CONFIRM_EACH",
+        "deny_all": "DENY_ALL",
+        "all_deny": "DENY_ALL",
+        "deny": "DENY_ALL",
+        "全部拒绝": "DENY_ALL",
+    }
+    return aliases.get(raw, "CONFIRM_EACH")
+
 
 def normalize_execution_mode(mode: str | None, approve_high_risk_batch: bool = False) -> str:
     raw = str(mode or "").strip().lower()

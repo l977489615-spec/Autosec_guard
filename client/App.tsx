@@ -1,17 +1,26 @@
-import React, { useEffect, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { LayoutDashboard, Radio, Database, Shield, Github, History, User, AlertTriangle, ServerCrash, Cpu } from 'lucide-react';
-import Dashboard from './components/Dashboard';
-import Scanner from './components/Scanner';
-import PocDatabase from './components/PocDatabase';
-import ScanHistory from './components/ScanHistory';
 import AuthPage from './components/AuthPage';
-import Profile from './components/Profile';
-import UserManagement from './components/UserManagement';
-import AgentScan from './components/AgentScan';
-import LocalRuntime from './components/LocalRuntime';
 import { ScanSession } from './types';
-import { fetchCurrentProfile, getBackendHealth, getBackendUrl, setUnauthorizedHandler } from './services/api';
+import { fetchCurrentProfile, getBackendHealth, getBackendUrl, logoutCurrentSession, setUnauthorizedHandler } from './services/api';
 import { sanitizeUserForStorage } from './utils/security';
+
+const Dashboard = lazy(() => import('./components/Dashboard'));
+const Scanner = lazy(() => import('./components/Scanner'));
+const PocDatabase = lazy(() => import('./components/PocDatabase'));
+const ScanHistory = lazy(() => import('./components/ScanHistory'));
+const Profile = lazy(() => import('./components/Profile'));
+const UserManagement = lazy(() => import('./components/UserManagement'));
+const LocalRuntime = lazy(() => import('./components/LocalRuntime'));
+
+const ViewLoading = () => (
+  <div className="h-full flex items-center justify-center text-sm text-cyan-300" role="status" aria-live="polite">
+    <div className="flex items-center gap-3 rounded-lg border border-cyan-900/60 bg-cyber-800/80 px-5 py-3">
+      <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-cyber-accent" />
+      正在加载工作区…
+    </div>
+  </div>
+);
 
 enum View {
   DASHBOARD = 'dashboard',
@@ -26,6 +35,21 @@ enum View {
 type ScannerMode = 'SELECTION' | 'GLOBAL' | 'MANUAL' | 'AGENT';
 const APP_UI_STATE_STORAGE_KEY = 'autosec_app_ui_state';
 const SCANNER_SESSION_STORAGE_KEY = 'autosec_scanner_session_state';
+const VIEW_PATHS: Record<View, string> = {
+  [View.DASHBOARD]: '/overview',
+  [View.SCANNER]: '/scans/new',
+  [View.DATABASE]: '/pocs',
+  [View.HISTORY]: '/sessions',
+  [View.EDGE]: '/capabilities',
+  [View.PROFILE]: '/settings/profile',
+  [View.USER_MANAGEMENT]: '/settings/users',
+};
+
+const readViewFromPath = (): View | undefined => {
+  if (typeof window === 'undefined') return undefined;
+  const entry = Object.entries(VIEW_PATHS).find(([, path]) => window.location.pathname === path);
+  return entry?.[0] as View | undefined;
+};
 
 const buildDefaultScannerSession = (): ScanSession => ({
   id: 'SESSION-INIT',
@@ -34,7 +58,7 @@ const buildDefaultScannerSession = (): ScanSession => ({
     ip: '',
     port: '5555',
     bluetoothMac: '',
-    canInterface: 'PCAN_USBBUS1',
+    canInterface: '',
     url: 'https://',
     frequency: '',
     interface: '',
@@ -84,7 +108,7 @@ const readStoredUiState = (): { currentView?: View; scannerMode?: ScannerMode } 
 const readStoredScannerSession = (): ScanSession | null => {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = window.localStorage.getItem(SCANNER_SESSION_STORAGE_KEY);
+    const raw = window.sessionStorage.getItem(SCANNER_SESSION_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     const fallback = buildDefaultScannerSession();
@@ -117,48 +141,13 @@ const App: React.FC = () => {
   const storedUiState = readStoredUiState();
   const storedScannerSession = readStoredScannerSession();
   const initialScannerMode = storedUiState.scannerMode || inferScannerModeFromSession(storedScannerSession);
-  const initialView = storedUiState.currentView || (initialScannerMode !== 'SELECTION' ? View.SCANNER : View.DASHBOARD);
+  const initialView = readViewFromPath() || storedUiState.currentView || (initialScannerMode !== 'SELECTION' ? View.SCANNER : View.DASHBOARD);
   const [currentView, setCurrentView] = useState<View>(initialView);
 
-  // 检查 JWT token 是否过期
-  const isTokenValid = (t: string | null): boolean => {
-    if (!t) return false;
-    try {
-      const payload = JSON.parse(atob(t.split('.')[1]));
-      return payload.exp * 1000 > Date.now();
-    } catch {
-      return false;
-    }
-  };
-
-  const parseStoredUser = (raw: string | null): any => {
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw);
-    } catch {
-      localStorage.removeItem('autosec_user');
-      return null;
-    }
-  };
-
-  const storedToken = localStorage.getItem('autosec_token');
-  const storedUser = localStorage.getItem('autosec_user');
-
-  // Auth State
-  const [token, setToken] = useState<string | null>(
-    isTokenValid(storedToken) ? storedToken : null
-  );
-  const [user, setUser] = useState<any>(
-    isTokenValid(storedToken) ? parseStoredUser(storedUser) : null
-  );
-
-  // token 无效时清除 localStorage（在 effect 中执行，避免渲染期副作用）
-  useEffect(() => {
-    if (!isTokenValid(storedToken) && storedToken) {
-      localStorage.removeItem('autosec_token');
-      localStorage.removeItem('autosec_user');
-    }
-  }, []);
+  // The browser session is held only in an HttpOnly cookie.
+  const [token, setToken] = useState<string | null>(null);
+  const [user, setUser] = useState<any>(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
   // Lifted state for history so it persists
   const [scanHistory, setScanHistory] = useState<ScanSession[]>([]);
@@ -180,19 +169,16 @@ const App: React.FC = () => {
   });
   const [scannerSession, setScannerSession] = useState<ScanSession>(storedScannerSession || buildDefaultScannerSession());
 
-  const handleLogin = (newToken: string, userData: any) => {
+  const handleLogin = (userData: any) => {
     const safeUser = sanitizeUserForStorage(userData);
-    localStorage.setItem('autosec_token', newToken);
-    localStorage.setItem('autosec_user', JSON.stringify(safeUser));
-    setToken(newToken);
+    setToken('cookie-session');
     setUser(safeUser);
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('autosec_token');
-    localStorage.removeItem('autosec_user');
+  const clearLocalSession = () => {
     localStorage.removeItem(APP_UI_STATE_STORAGE_KEY);
-    localStorage.removeItem(SCANNER_SESSION_STORAGE_KEY);
+    sessionStorage.removeItem(SCANNER_SESSION_STORAGE_KEY);
+    sessionStorage.removeItem('autosec_agent_scan_state');
     setToken(null);
     setUser(null);
     setCurrentView(View.DASHBOARD);
@@ -200,9 +186,14 @@ const App: React.FC = () => {
     setScannerSession(buildDefaultScannerSession());
   };
 
+  const handleLogout = async () => {
+    try { await logoutCurrentSession(); } catch { /* local cleanup still wins */ }
+    clearLocalSession();
+  };
+
   // 全局 401 处理： token 过期或失效自动登出
   const handleUnauthorized = () => {
-    handleLogout();
+    clearLocalSession();
   };
 
   const addToHistory = (session: ScanSession) => {
@@ -221,7 +212,8 @@ const App: React.FC = () => {
       };
     });
 
-    localStorage.setItem('autosec_agent_scan_state', JSON.stringify({
+    sessionStorage.setItem('autosec_agent_scan_state', JSON.stringify({
+      restoreRunState: true,
       targetIp: session.connection.ip || '',
       targetName: session.targetName || 'IVI System',
       phases,
@@ -230,10 +222,11 @@ const App: React.FC = () => {
       adaptiveCtx: null,
       scanTime: session.startTime ? new Date(session.startTime).toLocaleString('zh-CN', { hour12: false }) : '',
       activeStep: -1,
-      canInterface: session.connection.canInterface || 'PCAN_USBBUS1',
+      canInterface: session.connection.canInterface || '',
       bluetoothMac: session.connection.bluetoothMac || '',
       wifiInterface: session.connection.interface || '',
       rfFrequency: session.connection.frequency || '',
+      enableWeaponize: session.agentDraft?.enableWeaponize ?? true,
       riskScore: session.riskScore || 0,
       results: session.results || [],
       logs: session.logs || [],
@@ -264,14 +257,27 @@ const App: React.FC = () => {
     };
 
     refreshHealth();
+    const intervalId = window.setInterval(refreshHealth, 30_000);
     return () => {
       cancelled = true;
+      window.clearInterval(intervalId);
     };
   }, [engineUrl]);
 
   useEffect(() => {
     setUnauthorizedHandler(handleUnauthorized);
   }, []);
+
+  useEffect(() => {
+    const handlePopState = () => setCurrentView(readViewFromPath() || View.DASHBOARD);
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  useEffect(() => {
+    const nextPath = VIEW_PATHS[currentView];
+    if (window.location.pathname !== nextPath) window.history.pushState({}, '', nextPath);
+  }, [currentView]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -288,7 +294,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
-      window.localStorage.setItem(
+      window.sessionStorage.setItem(
         SCANNER_SESSION_STORAGE_KEY,
         JSON.stringify(compactScannerSessionForStorage(scannerSession))
       );
@@ -301,18 +307,18 @@ const App: React.FC = () => {
     let cancelled = false;
 
     const refreshProfile = async () => {
-      if (!token) return;
       try {
-        const latestUser = await fetchCurrentProfile(token);
+        const latestUser = await fetchCurrentProfile();
         if (cancelled || !latestUser) return;
         const safeUser = sanitizeUserForStorage(latestUser);
         setUser(safeUser);
-        localStorage.setItem('autosec_user', JSON.stringify(safeUser));
+        setToken('cookie-session');
       } catch (error: any) {
         if (cancelled) return;
-        if (/401|403|Could not verify|Invalid token/i.test(String(error?.message || ''))) {
-          handleUnauthorized();
-        }
+        setToken(null);
+        setUser(null);
+      } finally {
+        if (!cancelled) setAuthLoading(false);
       }
     };
 
@@ -320,88 +326,95 @@ const App: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, []);
+
+  if (authLoading) {
+    return <ViewLoading />;
+  }
 
   if (!token || !user) {
     return <AuthPage onLogin={handleLogin} />;
   }
 
   return (
-    <div className="flex h-screen w-full bg-cyber-900 text-gray-200 overflow-hidden font-sans">
+    <div className="flex h-screen w-full bg-cyber-900 text-slate-200 overflow-hidden font-sans">
       {/* Sidebar */}
-      <aside className="w-20 lg:w-64 flex-shrink-0 bg-cyber-800 border-r border-cyber-700 flex flex-col transition-all duration-300">
-        <div className="h-16 flex items-center justify-center lg:justify-start lg:px-6 border-b border-cyber-700">
-          <Shield className="w-8 h-8 text-cyber-accent" />
-          <span className="hidden lg:block ml-3 font-bold text-lg tracking-wider text-white">智驭<span className="text-cyber-accent">安盾</span></span>
+      <aside className="app-sidebar w-20 lg:w-64 flex-shrink-0 flex flex-col transition-all duration-300">
+        <div className="h-[72px] flex items-center justify-center lg:justify-start lg:px-5 border-b border-white/[0.07]">
+          <div className="brand-mark !h-10 !w-10 !rounded-xl"><Shield className="w-5 h-5" /></div>
+          <div className="hidden lg:block ml-3">
+            <span className="block font-semibold text-base tracking-[0.12em] text-white">智驭<span className="text-cyber-accent">安盾</span></span>
+            <span className="mt-0.5 block font-mono text-[8px] tracking-[0.18em] text-slate-600">EDGE SECURITY</span>
+          </div>
         </div>
 
         <nav className="flex-1 py-6 space-y-2 px-2">
           <button
             onClick={() => setCurrentView(View.DASHBOARD)}
-            className={`w-full flex items-center p-3 rounded-lg transition-colors ${currentView === View.DASHBOARD ? 'bg-cyber-700 text-cyber-accent border-l-4 border-cyber-accent' : 'text-gray-400 hover:bg-cyber-700 hover:text-white'}`}
+            className={`nav-control ${currentView === View.DASHBOARD ? 'nav-control-active' : ''}`}
           >
             <LayoutDashboard size={20} />
-            <span className="hidden lg:block ml-3 font-medium">Dashboard</span>
+            <span className="hidden lg:block ml-3 font-medium">态势概览</span>
           </button>
 
           <button
             onClick={() => setCurrentView(View.SCANNER)}
-            className={`w-full flex items-center p-3 rounded-lg transition-colors ${currentView === View.SCANNER ? 'bg-cyber-700 text-cyber-accent border-l-4 border-cyber-accent' : 'text-gray-400 hover:bg-cyber-700 hover:text-white'}`}
+            className={`nav-control ${currentView === View.SCANNER ? 'nav-control-active' : ''}`}
           >
             <Radio size={20} />
-            <span className="hidden lg:block ml-3 font-medium">Scan Engine</span>
+            <span className="hidden lg:block ml-3 font-medium">创建扫描</span>
           </button>
 
 
           <button
             onClick={() => setCurrentView(View.DATABASE)}
-            className={`w-full flex items-center p-3 rounded-lg transition-colors ${currentView === View.DATABASE ? 'bg-cyber-700 text-cyber-accent border-l-4 border-cyber-accent' : 'text-gray-400 hover:bg-cyber-700 hover:text-white'}`}
+            className={`nav-control ${currentView === View.DATABASE ? 'nav-control-active' : ''}`}
           >
             <Database size={20} />
-            <span className="hidden lg:block ml-3 font-medium">POC Database</span>
+            <span className="hidden lg:block ml-3 font-medium">PoC 目录</span>
           </button>
 
           <button
             onClick={() => setCurrentView(View.HISTORY)}
-            className={`w-full flex items-center p-3 rounded-lg transition-colors ${currentView === View.HISTORY ? 'bg-cyber-700 text-cyber-accent border-l-4 border-cyber-accent' : 'text-gray-400 hover:bg-cyber-700 hover:text-white'}`}
+            className={`nav-control ${currentView === View.HISTORY ? 'nav-control-active' : ''}`}
           >
             <History size={20} />
-            <span className="hidden lg:block ml-3 font-medium">Scan History</span>
+            <span className="hidden lg:block ml-3 font-medium">历史记录</span>
           </button>
 
           <button
             onClick={() => setCurrentView(View.EDGE)}
-            className={`w-full flex items-center p-3 rounded-lg transition-colors ${currentView === View.EDGE ? 'bg-cyber-700 text-cyber-accent border-l-4 border-cyber-accent' : 'text-gray-400 hover:bg-cyber-700 hover:text-white'}`}
+            className={`nav-control ${currentView === View.EDGE ? 'nav-control-active' : ''}`}
           >
             <Cpu size={20} />
-            <span className="hidden lg:block ml-3 font-medium">Local Runtime</span>
+            <span className="hidden lg:block ml-3 font-medium">本机能力</span>
           </button>
 
 
           <button
             onClick={() => setCurrentView(View.PROFILE)}
-            className={`w-full flex items-center p-3 rounded-lg transition-colors mt-auto ${currentView === View.PROFILE ? 'bg-cyber-700 text-cyber-accent border-l-4 border-cyber-accent' : 'text-gray-400 hover:bg-cyber-700 hover:text-white'}`}
+            className={`nav-control mt-auto ${currentView === View.PROFILE ? 'nav-control-active' : ''}`}
           >
             <User size={20} />
-            <span className="hidden lg:block ml-3 font-medium">Profile Settings</span>
+            <span className="hidden lg:block ml-3 font-medium">个人设置</span>
           </button>
 
           {user.role === 'admin' && (
             <button
               onClick={() => setCurrentView(View.USER_MANAGEMENT)}
-              className={`w-full flex items-center p-3 rounded-lg transition-colors ${currentView === View.USER_MANAGEMENT ? 'bg-cyber-700 text-red-500 border-l-4 border-red-500' : 'text-gray-400 hover:bg-cyber-700 hover:text-white'}`}
+              className={`nav-control ${currentView === View.USER_MANAGEMENT ? 'nav-control-active' : ''}`}
             >
               <Shield size={20} />
-              <span className="hidden lg:block ml-3 font-medium">System Admin</span>
+              <span className="hidden lg:block ml-3 font-medium">系统管理</span>
             </button>
           )}
 
         </nav>
 
-        <div className="p-4 border-t border-cyber-700 space-y-4">
+        <div className="p-3 lg:p-4 border-t border-white/[0.07] space-y-3">
           {/* Current User Info & Logout */}
           <div
-            className="hidden lg:flex items-center justify-between text-xs bg-black/40 p-2 rounded cursor-pointer hover:bg-black/60 transition-colors"
+            className="hidden lg:flex items-center justify-between text-xs border border-white/[0.06] bg-white/[0.025] p-3 rounded-xl cursor-pointer hover:border-cyan-300/15 transition-colors"
             onClick={() => setCurrentView(View.PROFILE)}
           >
             <div>
@@ -416,14 +429,14 @@ const App: React.FC = () => {
 
           <button
             onClick={handleLogout}
-            className="w-full flex items-center justify-center p-2 rounded bg-red-900/20 text-red-500 hover:bg-red-900/40 hover:text-red-400 transition-colors text-xs font-bold font-mono tracking-wider border border-red-900/50"
+            className="w-full flex items-center justify-center p-2.5 rounded-xl bg-rose-500/[0.05] text-rose-300/70 hover:bg-rose-500/10 hover:text-rose-200 transition-colors text-xs font-medium border border-rose-400/10"
           >
-            TERMINATE SESSION
+            退出登录
           </button>
 
           <div className="flex justify-center text-gray-500 text-xs mt-2">
             <Github size={14} className="mr-2" />
-            <span className="hidden lg:block">v2.5.0 (Prototype)</span>
+            <span className="hidden lg:block">v3.0 边缘工作站</span>
           </div>
         </div>
       </aside>
@@ -431,29 +444,29 @@ const App: React.FC = () => {
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden relative">
         {/* Header */}
-        <header className="h-16 bg-cyber-800/50 backdrop-blur-md border-b border-cyber-700 flex items-center justify-between px-6 z-10">
-          <h1 className="text-lg font-semibold text-white uppercase tracking-wide">
-            {currentView === View.DASHBOARD && 'Operational Overview'}
-            {currentView === View.SCANNER && 'Vulnerability Scanner'}
-            {currentView === View.DATABASE && 'Threat Intelligence Database'}
-            {currentView === View.HISTORY && 'Scan Records & Audit'}
-            {currentView === View.EDGE && 'Local Vehicle Runtime'}
-            {currentView === View.PROFILE && 'User Profile & Settings'}
-            {currentView === View.USER_MANAGEMENT && 'System Operators'}
+        <header className="h-[72px] bg-[#0A1C30]/88 backdrop-blur-xl border-b border-cyan-100/10 flex items-center justify-between px-6 lg:px-8 z-10 shadow-[0_10px_35px_rgba(0,5,15,.16)]">
+          <h1 className="text-base font-semibold text-white tracking-wide">
+            {currentView === View.DASHBOARD && '安全态势概览'}
+            {currentView === View.SCANNER && '创建与执行扫描'}
+            {currentView === View.DATABASE && 'PoC 运行时目录'}
+            {currentView === View.HISTORY && '扫描历史记录'}
+            {currentView === View.EDGE && '本机能力与连接'}
+            {currentView === View.PROFILE && '个人与 AI 设置'}
+            {currentView === View.USER_MANAGEMENT && '用户与权限'}
           </h1>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <span className={`w-2 h-2 rounded-full animate-pulse ${globalBackendHealth.ok ? 'bg-green-500' : 'bg-red-500'}`}></span>
               <span className={`text-xs font-mono ${globalBackendHealth.ok ? 'text-green-500' : 'text-red-400'}`}>
-                {globalBackendHealth.ok ? 'SYSTEM ONLINE' : 'BACKEND OFFLINE'}
+                {globalBackendHealth.ok ? '本机引擎在线' : '本机引擎离线'}
               </span>
             </div>
           </div>
         </header>
 
-        <div className={`px-6 py-2 border-b text-xs font-mono flex items-center gap-3 ${globalBackendHealth.ok ? 'bg-cyan-950/20 border-cyan-900/40 text-cyan-300' : 'bg-red-950/20 border-red-900/40 text-red-300'}`}>
+        <div className={`px-6 lg:px-8 py-2 border-b text-[10px] font-mono flex items-center gap-3 ${globalBackendHealth.ok ? 'bg-cyan-300/[0.035] border-white/[0.06] text-cyan-200/70' : 'bg-red-950/20 border-red-900/40 text-red-300'}`}>
           {globalBackendHealth.ok ? <Shield className="w-3.5 h-3.5" /> : <ServerCrash className="w-3.5 h-3.5" />}
-          <span>Local Engine: {globalBackendHealth.url}</span>
+          <span>执行面：本机</span>
           {globalBackendHealth.database && <span>DB: {globalBackendHealth.database}</span>}
           <span>AI: {globalBackendHealth.ai_reports_enabled ? 'user-configured' : 'unavailable'}</span>
           {!globalBackendHealth.ok && globalBackendHealth.error && (
@@ -465,13 +478,8 @@ const App: React.FC = () => {
         </div>
 
         {/* View Container */}
-        <div className="flex-1 overflow-auto bg-gradient-to-br from-cyber-900 to-black relative">
-          {/* Ambient Background Glow */}
-          <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
-            <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-cyber-500/5 rounded-full blur-[120px]"></div>
-            <div className="absolute bottom-[-10%] right-[-10%] w-[30%] h-[30%] bg-cyber-danger/5 rounded-full blur-[100px]"></div>
-          </div>
-
+        <div className="console-page flex-1 overflow-auto relative">
+          <Suspense fallback={<ViewLoading />}>
           <div className="relative z-10 h-full">
             {currentView === View.DASHBOARD && <Dashboard token={token} />}
             {currentView === View.SCANNER && (
@@ -515,7 +523,6 @@ const App: React.FC = () => {
                 onUpdateSuccess={(newUser) => {
                   const safeUser = sanitizeUserForStorage(newUser);
                   setUser(safeUser);
-                  localStorage.setItem('autosec_user', JSON.stringify(safeUser));
                 }}
               />
             )}
@@ -523,6 +530,7 @@ const App: React.FC = () => {
               <UserManagement token={token} onUnauthorized={handleUnauthorized} />
             )}
           </div>
+          </Suspense>
         </div>
       </main>
     </div>

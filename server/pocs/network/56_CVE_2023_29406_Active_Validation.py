@@ -231,7 +231,7 @@ def _run_poc(plugin) -> dict:
 
 
 class Poc56CVE202329406DoSAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-091'
+    meta_display_id = "POC-NET-056"
     meta_poc_name = 'CVE-2023-29406 DoS Active Validation'
     meta_cve_id = 'CVE-2023-29406'
     meta_severity = 'Medium'

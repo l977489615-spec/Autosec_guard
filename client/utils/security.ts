@@ -21,7 +21,7 @@ export function markdownToSafeHtml(raw: string): string {
     .replace(/\n/g, '<br/>');
 }
 
-/** 从 user 对象中剥离敏感字段后再存入 localStorage */
+/** 从服务端用户资料中剥离敏感字段，供内存态 UI 使用。 */
 export function sanitizeUserForStorage(user: any): any {
   if (!user || typeof user !== 'object') return user;
   const { ai_config, ...rest } = user;

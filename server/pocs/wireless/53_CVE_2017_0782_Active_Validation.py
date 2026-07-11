@@ -218,7 +218,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc53CVE20170782RCEBlueBorneAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-068'
+    meta_display_id = "POC-WIRELESS-053"
     meta_poc_name = 'CVE-2017-0782 BlueBorne RCE Active Validation'
     meta_cve_id = 'CVE-2017-0782'
     meta_severity = 'Critical'

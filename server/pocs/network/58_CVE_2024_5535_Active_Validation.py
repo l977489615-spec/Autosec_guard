@@ -178,7 +178,7 @@ def _run_poc(plugin) -> dict:
 
 
 class Poc58CVE20245535OutOfBoundsAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-096'
+    meta_display_id = "POC-NET-058"
     meta_poc_name = 'CVE-2024-5535 缓冲区越界 Active Validation'
     meta_cve_id = 'CVE-2024-5535'
     meta_severity = 'Medium'

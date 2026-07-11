@@ -508,7 +508,7 @@
       <h2>从本机能力识别到漏洞证据沉淀，形成闭环验证流程</h2>
       <div class="body">
         <div class="flow">
-          <div class="flow-step"><strong>注册登录</strong><span>本地账号、JWT、本地用户级 AI 配置</span></div>
+          <div class="flow-step"><strong>注册登录</strong><span>持久浏览器会话、Scoped API Token、本地用户级 AI 配置</span></div>
           <div class="flow-step"><strong>能力探测</strong><span>Local Runtime 刷新硬件与系统能力</span></div>
           <div class="flow-step"><strong>选择目标</strong><span>IP、蓝牙 MAC、CAN 接口、Wi-Fi 接口、RF 频点</span></div>
           <div class="flow-step"><strong>执行 PoC</strong><span>Manual Scan、Global Scan 或 Agent Scan</span></div>
@@ -541,7 +541,7 @@
             <div class="stack-title">⚙️ Local Flask Engine</div>
             <div class="pill-list">
               <div class="pill">server.py</div>
-              <div class="pill">auth_service.py</div>
+              <div class="pill">持久会话 / Scoped API Token</div>
               <div class="pill">local_capability_probe.py</div>
               <div class="pill">assessment_engine.py</div>
               <div class="pill">agent_orchestrator.py</div>
@@ -634,7 +634,7 @@
           <div class="phase">Recon</div><div class="phase-text">调用 scan_ports、get_topology，输出服务列表、拓扑和攻击向量。</div>
           <div class="phase">Planner</div><div class="phase-text">基于侦察结果生成无代码执行序列，避免直接进入破坏性动作。</div>
           <div class="phase">Decision</div><div class="phase-text">调用 list_pocs、check_safety，过滤可用资源并补齐参数与安全策略。</div>
-          <div class="phase">Weaponize</div><div class="phase-text">针对未知服务生成协议感知型动态探测插件，并包装成合规 PoC 类。</div>
+          <div class="phase">Probe Planner</div><div class="phase-text">针对未知服务选择受控协议配置，并交由注册的只读探测器执行，不生成代码。</div>
           <div class="phase">Execute / Reflect / Assess</div><div class="phase-text">沙箱执行、失败反思恢复、生成符合 ISO 21434 / UN R155 语境的安全评估报告。</div>
         </div>
       </div>
@@ -720,7 +720,7 @@
       <h2>建议演示路径：让评审看到“本机执行面”而不是概念叙述</h2>
       <div class="body">
         <div class="flow">
-          <div class="flow-step"><strong>1. 启动工作站</strong><span>打开本机 UI 和 /api/health</span></div>
+          <div class="flow-step"><strong>1. 启动工作站</strong><span>打开本机 UI 和 /health</span></div>
           <div class="flow-step"><strong>2. 刷新能力</strong><span>展示 Local Runtime 的硬件能力标志</span></div>
           <div class="flow-step"><strong>3. 选择 PoC</strong><span>展示 PoC Database 与分类矩阵</span></div>
           <div class="flow-step"><strong>4. 触发审批</strong><span>选择高风险 PoC 说明前后端双校验</span></div>
@@ -739,7 +739,7 @@
       <div class="body two-col">
         <div class="card">
           <h3>A 篇：多 Agent 车辆漏洞验证编排</h3>
-          <p>重点写 Recon → Planner → Decision → Weaponize → Execute → Reflector → Assessment 的阶段化协作，以及失败反思、动态探测插件包装、证据回流报告。</p>
+          <p>重点写 Recon → Planner → Decision → Probe Planner → Execute → Reflector → Assessment 的阶段化协作，以及失败反思、声明式未知服务探测、证据回流报告。</p>
         </div>
         <div class="card">
           <h3>B 篇：能力感知的本机 PoC 安全执行</h3>

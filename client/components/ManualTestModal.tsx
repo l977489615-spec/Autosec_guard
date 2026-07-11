@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { POC, ConnectionParams, ParamType } from '../types';
 import { X, Play, Terminal, AlertTriangle, ShieldCheck, ServerCrash, RotateCw, WifiOff, Cpu } from 'lucide-react';
-import { checkBackendHealth, getBackendUrl, runPocPlugin, submitPocManualVerdict, ExecutionResult } from '../services/api';
+import { approveV3SessionAction, checkBackendHealth, createV3Session, getBackendUrl, runPocPlugin, startV3SessionRun, submitPocManualVerdict, submitV3SessionReview, updateV3SessionRun, ExecutionResult } from '../services/api';
 
 interface ManualTestModalProps {
   poc: POC | null;
@@ -21,6 +21,7 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
   const [consoleOutput, setConsoleOutput] = useState<string[]>([]);
   const [testResult, setTestResult] = useState<'idle' | 'success' | 'fail' | 'error' | 'manual'>('idle');
   const [pendingManualResult, setPendingManualResult] = useState<ExecutionResult | null>(null);
+  const [durableSessionId, setDurableSessionId] = useState<string | null>(null);
   const [operatorNote, setOperatorNote] = useState('');
   const [evidenceFile, setEvidenceFile] = useState('');
   const [backendOnline, setBackendOnline] = useState<boolean>(false);
@@ -95,6 +96,7 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
     setPendingManualResult(null);
     setConsoleOutput(p => [...p, `[*] Initiating local vehicle runtime execution for ${poc.name}...`]);
 
+    let executionSessionId: string | null = null;
     try {
       if (poc.requiresDisruptiveApproval) {
         const confirmed = window.confirm(
@@ -118,12 +120,39 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
       executionParams.allow_lab_exp = poc.validationTier === 'LAB_EXP';
       executionParams.allow_auto_exp = poc.validationTier === 'AUTO_EXP';
 
-      const result = await runPocPlugin(poc.pocFile, executionParams as any, token);
+      const durableSession = await createV3Session('manual', {
+        ip: executionParams.ip,
+        bluetooth_mac: executionParams.bluetooth_mac,
+        can_interface: executionParams.can_interface,
+        wifi_interface: executionParams.interface,
+        frequency: executionParams.frequency,
+        usb_adb_serial: executionParams.usbAdbSerial,
+        usb_mount_point: executionParams.usbMountPoint,
+      }, {
+        validation_tier: poc.validationTier,
+      }, token);
+      setDurableSessionId(durableSession.id);
+      executionSessionId = durableSession.id;
+      await startV3SessionRun(durableSession.id, token);
+      if (poc.requiresDisruptiveApproval) {
+        executionParams.approval_token = await approveV3SessionAction(
+          durableSession.id,
+          poc.pocFile || poc.id,
+          String(executionParams.ip || executionParams.bluetooth_mac || executionParams.can_interface || 'local'),
+          token,
+        );
+      }
+
+      const result = await runPocPlugin(poc.pocFile, executionParams as any, token, null, durableSession.id);
 
       // Process Result
       if (result.success) {
         result.logs.forEach(l => setConsoleOutput(p => [...p, l]));
         if (result.requires_human_review || result.verification_status === 'pending_manual_review') {
+          await updateV3SessionRun(durableSession.id, 'await_review', {
+            trace_id: result.trace_id,
+            poc_id: result.poc_id || poc.id,
+          }, token);
           setTestResult('manual');
           setPendingManualResult(result);
           setConsoleOutput(p => [
@@ -138,14 +167,27 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
           setTestResult('success');
           setConsoleOutput(p => [...p, `[*] STATUS: Clean.`]);
         }
+        if (!(result.requires_human_review || result.verification_status === 'pending_manual_review')) {
+          await updateV3SessionRun(durableSession.id, 'complete', {
+            trace_id: result.trace_id,
+            verification_status: result.verification_status,
+            confirmed_findings: result.vulnerable === true ? 1 : 0,
+          }, token);
+        }
       } else {
         result.errors.forEach(e => setConsoleOutput(p => [...p, `[E] ${e}`]));
         setTestResult('error');
+        await updateV3SessionRun(durableSession.id, 'fail', {
+          error_code: result.errors?.[0] || 'POC_EXECUTION_FAILED',
+        }, token);
       }
 
     } catch (e) {
       setConsoleOutput(p => [...p, `[-] Critical Frontend Error: ${e}`]);
       setTestResult('error');
+      if (executionSessionId) {
+        await updateV3SessionRun(executionSessionId, 'fail', { error_code: 'FRONTEND_EXECUTION_ERROR' }, token).catch(() => undefined);
+      }
     }
 
     setIsRunning(false);
@@ -158,7 +200,7 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
     setIsSubmittingVerdict(true);
     const review = await submitPocManualVerdict({
       trace_id: pendingManualResult.trace_id,
-      session_id: 'manual',
+      session_id: durableSessionId || 'manual',
       poc_id: pendingManualResult.poc_id || poc.pocFile || poc.id,
       poc_name: poc.name,
       target_ip: (localParams as any).ip || (localParams as any).target_ip,
@@ -175,7 +217,26 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
       return;
     }
 
+    if (durableSessionId) {
+      await submitV3SessionReview(durableSessionId, {
+        trace_id: pendingManualResult.trace_id,
+        poc_id: pendingManualResult.poc_id || poc.pocFile || poc.id,
+        verdict,
+        operator_note: operatorNote,
+        evidence_file: evidenceFile,
+      }, token);
+    }
+
     setPendingManualResult(null);
+    if (durableSessionId) {
+      await updateV3SessionRun(durableSessionId, 'complete', {
+        trace_id: pendingManualResult.trace_id,
+        verification_status: review.verification_status || verdict,
+        confirmed_findings: review.vulnerable === true ? 1 : 0,
+      }, token).catch((error: any) => {
+        setConsoleOutput(p => [...p, `[E] Failed to finalize audit session: ${error?.message || 'unknown error'}`]);
+      });
+    }
     if (review.vulnerable === true) {
       setTestResult('fail');
       setConsoleOutput(p => [...p, `[!] MANUAL VERDICT: Vulnerability confirmed by operator.`]);
@@ -209,19 +270,19 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 font-mono">
-      <div className="bg-cyber-900 border border-cyber-500 w-full max-w-2xl rounded-lg shadow-[0_0_50px_rgba(59,130,246,0.2)] overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="bg-cyber-900 border border-cyber-500 w-full max-w-4xl rounded-lg shadow-[0_0_50px_rgba(59,130,246,0.2)] overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex justify-between items-center p-4 border-b border-cyber-700 bg-cyber-800">
-          <div className="flex items-center gap-2">
-            <Terminal className="text-cyber-accent" />
-            <h2 className="text-white font-bold">Real Execution: {poc.id}</h2>
+        <div className="flex justify-between items-center p-4 border-b border-cyber-700 bg-cyber-800 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <Terminal className="text-cyber-accent shrink-0" />
+            <h2 className="text-white font-bold truncate">Real Execution: {poc.id}</h2>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white"><X size={20} /></button>
+          <button onClick={onClose} className="text-gray-400 hover:text-white shrink-0"><X size={20} /></button>
         </div>
 
-        <div className="flex flex-col md:flex-row h-full overflow-hidden">
-          {/* Left: Params Input */}
-          <div className="w-full md:w-1/3 bg-cyber-800 p-4 border-r border-cyber-700 space-y-4 overflow-y-auto">
+        <div className="flex flex-col md:flex-row flex-1 min-h-0 overflow-hidden">
+          {/* Left: Params Input — fixed width, never squeezed by long console lines */}
+          <div className="w-full md:w-72 md:shrink-0 bg-cyber-800 p-4 border-r border-cyber-700 space-y-4 overflow-y-auto">
             {!backendOnline && (
               <div className="p-2 bg-red-900/50 border border-red-500 rounded text-xs text-red-300 flex items-center gap-2 mb-2">
                 <WifiOff size={16} /> Server Offline
@@ -270,26 +331,30 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
           </div>
 
           {/* Right: Console Output */}
-          <div className="flex-1 bg-black p-4 flex flex-col min-h-[300px]">
-            <div className="flex-1 overflow-y-auto font-mono text-xs space-y-1 text-green-500" ref={scrollRef}>
+          <div className="flex-1 min-w-0 bg-black p-4 flex flex-col min-h-[280px] overflow-hidden">
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden font-mono text-xs space-y-1 text-green-500" ref={scrollRef}>
               {consoleOutput.map((line, i) => (
-                <div key={i} className={`${line.includes('Error') || line.includes('VULNERABLE') || line.includes('fail') ? 'text-red-500' :
+                <div
+                  key={i}
+                  className={`break-all whitespace-pre-wrap leading-relaxed ${
+                    line.includes('Error') || line.includes('VULNERABLE') || line.includes('fail') ? 'text-red-500' :
                     line.includes('Online') ? 'text-cyber-accent' :
-                      'text-green-500'
-                  }`}>
+                    'text-green-500'
+                  }`}
+                >
                   {line.startsWith('[*]') ? '>' : ''} {line}
                 </div>
               ))}
               {isRunning && <div className="animate-pulse text-cyber-accent">_ Executing local payload...</div>}
             </div>
             {testResult !== 'idle' && (
-              <div className={`mt-2 p-2 border rounded flex items-center gap-2 ${testResult === 'fail' ? 'border-red-500 bg-red-900/20 text-red-500' : testResult === 'success' ? 'border-green-500 bg-green-900/20 text-green-500' : testResult === 'manual' ? 'border-amber-500 bg-amber-900/20 text-amber-300' : 'border-gray-500 text-gray-500'}`}>
+              <div className={`mt-2 p-2 border rounded flex items-center gap-2 shrink-0 ${testResult === 'fail' ? 'border-red-500 bg-red-900/20 text-red-500' : testResult === 'success' ? 'border-green-500 bg-green-900/20 text-green-500' : testResult === 'manual' ? 'border-amber-500 bg-amber-900/20 text-amber-300' : 'border-gray-500 text-gray-500'}`}>
                 {testResult === 'fail' ? <AlertTriangle size={16} /> : testResult === 'success' ? <ShieldCheck size={16} /> : testResult === 'manual' ? <AlertTriangle size={16} /> : <ServerCrash size={16} />}
                 <span className="font-bold uppercase">{testResult === 'fail' ? 'Vulnerability Confirmed' : testResult === 'success' ? 'Target Secure' : testResult === 'manual' ? 'Manual Verdict Required' : 'Execution Error'}</span>
               </div>
             )}
             {pendingManualResult && (
-              <div className="mt-3 rounded border border-amber-500/50 bg-cyber-900 p-3 text-xs text-gray-200 space-y-3">
+              <div className="mt-3 rounded border border-amber-500/50 bg-cyber-900 p-3 text-xs text-gray-200 space-y-3 shrink-0 max-h-56 overflow-y-auto">
                 <div className="font-bold text-amber-300">人工判定型 PoC</div>
                 <div>{pendingManualResult.manual_review?.prompt || '该 PoC 已完成执行，但需要人工确认目标侧效果。'}</div>
                 {pendingManualResult.manual_review?.required_observations?.length ? (

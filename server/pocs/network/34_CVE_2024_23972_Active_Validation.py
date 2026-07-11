@@ -139,7 +139,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc34CVE202423972StackOverflowRCEAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-040'
+    meta_display_id = "POC-NET-034"
     meta_poc_name = 'CVE-2024-23972 RCE Active Validation'
     meta_cve_id = 'CVE-2024-23972'
     meta_severity = 'Medium'

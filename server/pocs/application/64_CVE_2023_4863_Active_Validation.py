@@ -175,7 +175,7 @@ def _run_poc(plugin, vuln=None) -> dict:
 
 
 class Poc64CVE20234863RCEAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-092'
+    meta_display_id = "POC-APP-064"
     meta_poc_name = 'CVE-2023-4863 RCE Active Validation'
     meta_cve_id = 'CVE-2023-4863'
     meta_severity = 'Critical'

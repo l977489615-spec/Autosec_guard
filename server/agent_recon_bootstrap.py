@@ -35,7 +35,7 @@ PORT_POC_HEURISTIC: dict[int, str] = {
     22: "network/03_CWE_200_SSH_Service_Active_Validation.py",
     23: "network/06_CWE_319_Telnet_Service_Active_Validation.py",
     80: "reconnaissance/08_CWE_200_HTTP_Service_Enumeration_Reconnaissance.py",
-    443: "network/20_HTTPS_No_Cert_Pin.py",
+    443: "network/13_CWE_295_HTTPS_No_Cert_Pin_Active_Validation.py",
     554: "network/11_CWE_200_RTSP_Log_Leak_Active_Validation.py",
     1883: "network/09_CWE_306_MQTT_Unauth_Active_Validation.py",
     5555: "network/02_CVE_2018_6242_ADB_Debug_Port_Active_Validation.py",

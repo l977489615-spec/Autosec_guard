@@ -153,7 +153,7 @@ def _run_poc(plugin) -> dict:
     }
 
 class Poc28CVE202423922RCEAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-034'
+    meta_display_id = "POC-NET-028"
     meta_poc_name = 'CVE-2024-23922 RCE Active Validation'
     meta_cve_id = 'CVE-2024-23922'
     meta_severity = 'Medium'

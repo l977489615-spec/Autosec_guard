@@ -176,7 +176,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc60CVE202423205AccessControlAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-083'
+    meta_display_id = "POC-APP-060"
     meta_poc_name = 'CVE-2024-23205 访问控制缺陷 Active Validation'
     meta_cve_id = 'CVE-2024-23205'
     meta_severity = 'High'

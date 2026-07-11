@@ -144,7 +144,7 @@ def _run_poc(plugin) -> dict:
     }
 
 class Poc40CVE20246563OutOfBoundsAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-047'
+    meta_display_id = "POC-NET-040"
     meta_poc_name = 'CVE-2024-6563 缓冲区拷贝越界 Active Validation'
     meta_cve_id = 'CVE-2024-6563'
     meta_severity = 'High'

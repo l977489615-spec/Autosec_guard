@@ -206,7 +206,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc16CVE202532056WeakRandomAuthBypassAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-001'
+    meta_display_id = "POC-CAN-016"
     meta_poc_name = 'CVE-2025-32056 认证绕过 Active Validation'
     meta_cve_id = 'CVE-2025-32056'
     meta_severity = 'Medium'

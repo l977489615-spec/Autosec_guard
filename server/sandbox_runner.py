@@ -77,7 +77,7 @@ def _allowed_hosts_from_env():
 
 def _is_allowed_destination(host, allowed_hosts):
     if not allowed_hosts:
-        return True
+        return False
 
     host = str(host).strip()
     if not host:

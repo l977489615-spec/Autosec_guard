@@ -1,4 +1,4 @@
-"""为 Agent 决策阶段生成 PoC 元数据表与端口↔PoC 映射（对齐 poc_coverage.json）。"""
+"""为 Agent 决策阶段生成 PoC 元数据表与端口↔PoC 映射（默认读取运行时 server/pocs 目录）。"""
 from __future__ import annotations
 
 import json
@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from agent_recon_bootstrap import POC_FILENAME_PORT_HINTS, PORT_POC_HEURISTIC, PORT_SERVICE_LABELS
+from poc_catalog import list_available_poc_names, resolve_poc_source
+from poc_security import extract_poc_security_profile
 
 _SERVER_DIR = Path(__file__).resolve().parent
 _POCS_ROOT = _SERVER_DIR / "pocs"
@@ -77,15 +79,68 @@ def build_port_to_poc_map(pocs: list[dict[str, Any]]) -> dict[int, list[str]]:
     return index
 
 
-def load_poc_coverage_entries(coverage_path: str | Path | None = None) -> list[dict[str, Any]]:
-    candidates: list[Path] = []
+def _attack_surface_for_category(category: str) -> str:
+    mapping = {
+        "network": "网络服务",
+        "reconnaissance": "网络服务",
+        "wireless": "无线/外设接口",
+        "canbus": "CAN/UDS/OBD",
+        "application": "车机APP/应用",
+        "advanced": "固件/USB/OTA",
+    }
+    return mapping.get(category, "其他")
+
+
+def load_runtime_poc_catalog_entries(pocs_dir: str | None = None) -> list[dict[str, Any]]:
+    """Build PoC metadata from the live runtime catalog under server/pocs (no lab/ dependency)."""
+    root = Path(pocs_dir) if pocs_dir else _POCS_ROOT
+    entries: list[dict[str, Any]] = []
+    for name in list_available_poc_names(str(root)):
+        virtual_path, normalized, source = resolve_poc_source(str(root), name)
+        if not virtual_path or not normalized or not source:
+            continue
+        profile = extract_poc_security_profile(virtual_path, source_text=source)
+        category = normalized.replace("\\", "/").split("/", 1)[0]
+        required_params = profile.get("required_params") or []
+        if not isinstance(required_params, list):
+            required_params = []
+        profiles = profile.get("profiles") or profile.get("meta_profiles") or []
+        if not isinstance(profiles, list):
+            profiles = [profiles] if profiles else []
+        severity = str(profile.get("severity") or "")
+        destructive_level = str(profile.get("destructive_level") or "Safe")
+        is_disruptive = bool(profile.get("is_disruptive"))
+        entries.append({
+            "poc_file": normalized,
+            "display_id": profile.get("display_id") or Path(normalized).stem,
+            "poc_name": profile.get("poc_name") or Path(normalized).stem,
+            "category": category,
+            "cve_id": profile.get("cve_id") or "",
+            "severity": severity,
+            "protocol": profile.get("protocol") or category,
+            "target_os": profile.get("target_os") or ["all"],
+            "required_params": ",".join(required_params),
+            "profiles": profiles,
+            "destructive_level": destructive_level,
+            "is_disruptive": is_disruptive,
+            "attack_surface": _attack_surface_for_category(category),
+            "high_risk": severity in {"High", "Critical"} or is_disruptive,
+            "requires_capabilities": profile.get("requires_capabilities") or [],
+            "requires_any_capabilities": profile.get("requires_any_capabilities") or [],
+            "excludes_capabilities": profile.get("excludes_capabilities") or [],
+            "grants_on_confirmed": profile.get("grants_on_confirmed") or [],
+        })
+    return entries
+
+
+def load_poc_catalog_entries(coverage_path: str | Path | None = None) -> list[dict[str, Any]]:
+    """Load PoC metadata for runtime services.
+
+    Default: scan server/pocs directly.
+    Optional coverage_path: explicit lab/experiment override only (not used in production paths).
+    """
     if coverage_path:
-        candidates.append(Path(coverage_path))
-    candidates.extend([
-        _SERVER_DIR.parent / "lab" / "evidence" / "poc_coverage.json",
-        Path("lab/evidence/poc_coverage.json"),
-    ])
-    for path in candidates:
+        path = Path(coverage_path)
         if path.is_file():
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
@@ -93,8 +148,13 @@ def load_poc_coverage_entries(coverage_path: str | Path | None = None) -> list[d
                 if isinstance(pocs, list) and pocs:
                     return [p for p in pocs if isinstance(p, dict)]
             except Exception:
-                continue
-    return []
+                pass
+    return load_runtime_poc_catalog_entries()
+
+
+def load_poc_coverage_entries(coverage_path: str | Path | None = None) -> list[dict[str, Any]]:
+    """Backward-compatible alias; prefer load_poc_catalog_entries."""
+    return load_poc_catalog_entries(coverage_path)
 
 
 def _poc_allowed_by_resources(meta: dict[str, Any], available_params: dict[str, str]) -> bool:
@@ -184,7 +244,7 @@ def format_port_poc_mapping_section(
 
 def format_poc_metadata_table(pocs: list[dict[str, Any]], max_rows: int = 96) -> str:
     lines = [
-        "【PoC 元数据表（与 poc_coverage 对齐；poc_name 必须使用 poc_file 列原样）】",
+        "【PoC 元数据表（运行时目录 server/pocs；poc_name 必须使用 poc_file 列原样）】",
         "poc_file | protocol | required_params | profiles | category",
         "---|---|---|---|---",
     ]
@@ -209,9 +269,9 @@ def build_decision_poc_context(
     global_vulnerable_pocs: list[str] | None = None,
     coverage_path: str | Path | None = None,
 ) -> str:
-    all_pocs = load_poc_coverage_entries(coverage_path)
+    all_pocs = load_poc_catalog_entries(coverage_path)
     if not all_pocs:
-        return "【PoC 元数据】未加载 poc_coverage.json，请调用 list_pocs 获取清单。"
+        return "【PoC 元数据】运行时 PoC 目录为空，请调用 list_pocs 获取清单。"
     filtered = filter_pocs_for_decision(
         all_pocs,
         available_params,

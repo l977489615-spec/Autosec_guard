@@ -298,7 +298,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc67CVE202423206RCEAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-084'
+    meta_display_id = "POC-WIRELESS-067"
     meta_poc_name = 'CVE-2024-23206 网络邻近攻击 Active Validation'
     meta_cve_id = 'CVE-2024-23206'
     meta_severity = 'High'

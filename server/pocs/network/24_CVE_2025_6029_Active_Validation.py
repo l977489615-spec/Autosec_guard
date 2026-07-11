@@ -157,7 +157,7 @@ def _run_poc(plugin) -> dict:
     }
 
 class Poc24CVE20256029ReplayAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-016'
+    meta_display_id = "POC-NET-024"
     meta_poc_name = 'CVE-2025-6029 重放 Active Validation'
     meta_cve_id = 'CVE-2025-6029'
     meta_severity = 'Critical'

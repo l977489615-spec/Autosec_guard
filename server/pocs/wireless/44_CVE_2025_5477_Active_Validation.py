@@ -182,7 +182,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc44CVE20255477RCEAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-024'
+    meta_display_id = "POC-WIRELESS-044"
     meta_poc_name = 'CVE-2025-5477 RCE Active Validation'
     meta_cve_id = 'CVE-2025-5477'
     meta_severity = 'High'

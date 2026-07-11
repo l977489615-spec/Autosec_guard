@@ -113,6 +113,7 @@ jobs:
           import subprocess
           import sys
           import time
+          import http.cookiejar
           import urllib.request
 
           exe = os.path.abspath(os.path.normpath(os.environ["AUTOSEC_RELEASE_EXE"]))
@@ -147,7 +148,7 @@ jobs:
                       )
 
                   try:
-                      with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=2) as response:
+                      with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=2) as response:
                           result["health"] = json.loads(response.read().decode("utf-8"))
                           result["ok"] = True
                           break
@@ -161,11 +162,69 @@ jobs:
                       f"process still running={proc.poll() is None}"
                   )
 
-              with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/list_pocs", timeout=10) as response:
+              cookie_jar = http.cookiejar.CookieJar()
+              opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookie_jar))
+              def post_json(path, payload):
+                  request = urllib.request.Request(
+                      f"http://127.0.0.1:{port}{path}",
+                      data=json.dumps(payload).encode("utf-8"),
+                      headers={
+                          "Content-Type": "application/json",
+                          "Origin": f"http://127.0.0.1:{port}",
+                      },
+                      method="POST",
+                  )
+                  return opener.open(request, timeout=10)
+
+              with post_json("/api/v1/auth/register", {
+                  "username": "release-admin",
+                  "password": "release-smoke-password-3.0",
+              }):
+                  pass
+              with post_json("/api/v1/auth/login", {
+                  "username": "release-admin",
+                  "password": "release-smoke-password-3.0",
+              }):
+                  pass
+
+              with opener.open(f"http://127.0.0.1:{port}/api/v1/list_pocs", timeout=10) as response:
                   pocs = json.loads(response.read().decode("utf-8"))
                   result["poc_total"] = pocs.get("total")
                   if int(result["poc_total"] or 0) <= 0:
                       raise RuntimeError("packaged PoC registry is empty")
+
+              with opener.open(f"http://127.0.0.1:{port}/api/v1/local/capabilities", timeout=10) as response:
+                  capabilities = json.loads(response.read().decode("utf-8"))
+                  if "capabilities" not in capabilities:
+                      raise RuntimeError("local capability inventory is unavailable")
+
+              with post_json("/api/v1/sessions", {
+                  "mode": "manual",
+                  "target": {"name": "release-smoke", "ip": "127.0.0.1"},
+                  "policy": {"max_tier": "PASSIVE"},
+              }) as response:
+                  session_id = json.loads(response.read().decode("utf-8"))["session"]["id"]
+              with post_json(f"/api/v1/sessions/{session_id}/runs", {}):
+                  pass
+              with post_json(f"/api/v1/sessions/{session_id}/runs", {
+                  "action": "complete",
+                  "result": {"confirmed_findings": 0, "smoke_test": True},
+              }) as response:
+                  completed = json.loads(response.read().decode("utf-8"))["session"]
+                  if completed.get("status") != "completed":
+                      raise RuntimeError("durable session did not reach completed state")
+
+              with post_json("/api/v1/report/structured", {
+                  "session": {
+                      "id": session_id,
+                      "targetName": "release-smoke",
+                      "connection": {"ip": "127.0.0.1"},
+                      "results": [],
+                  }
+              }) as response:
+                  report = json.loads(response.read().decode("utf-8"))
+                  if not report:
+                      raise RuntimeError("structured report export returned no content")
 
               with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=10) as response:
                   result["home_status"] = response.status

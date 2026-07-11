@@ -245,7 +245,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc59CVE202423204ExposureAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-082'
+    meta_display_id = "POC-APP-059"
     meta_poc_name = 'CVE-2024-23204 协议缺陷 Active Validation'
     meta_cve_id = 'CVE-2024-23204'
     meta_severity = 'High'

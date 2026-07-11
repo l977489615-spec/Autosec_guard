@@ -145,7 +145,7 @@ def _run_poc(plugin) -> dict:
     }
 
 class Poc32CVE202423960SignatureVerificationAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-038'
+    meta_display_id = "POC-NET-032"
     meta_poc_name = 'CVE-2024-23960 签名校验不当 Active Validation'
     meta_cve_id = 'CVE-2024-23960'
     meta_severity = 'Medium'

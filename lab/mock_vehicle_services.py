@@ -3,12 +3,24 @@
 from __future__ import annotations
 
 import argparse
+import os
 import signal
 import socket
 import socketserver
 import struct
+import subprocess
 import threading
+import time
+from pathlib import Path
 from typing import Callable
+
+PID_FILE = Path(__file__).with_name(".mock_vehicle_services.pid")
+
+# 与本机开发栈冲突的端口：Mock 不抢占，避免与前端/后端抢端口。
+RESERVED_LOCAL_PORTS: dict[int, str] = {
+    3000: "Vite 前端 (npm run dev)",
+    5002: "AutoSec 后端 (server.py)",
+}
 
 
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
@@ -365,6 +377,7 @@ def _udp_someip_loop(host: str, port: int, stop: threading.Event) -> None:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind((host, port))
+    print(f"[mock] udp/someip-sd listening on {host}:{port}")
     offer = _build_someip_offer()
     while not stop.is_set():
         try:
@@ -387,6 +400,7 @@ def _udp_ssdp_loop(host: str, port: int, stop: threading.Event) -> None:
     except Exception:
         pass
     sock.bind((host, port))
+    print(f"[mock] udp/ssdp listening on {host}:{port}")
     location = f"http://{host}:8080/desc.xml"
     response = "\r\n".join([
         "HTTP/1.1 200 OK",
@@ -420,6 +434,7 @@ def _udp_mdns_loop(host: str, port: int, stop: threading.Event) -> None:
     except Exception:
         pass
     sock.bind((host, port))
+    print(f"[mock] udp/mdns listening on {host}:{port}")
     # 最小 mDNS 响应（足够触发 PoC 判定）
     response = b"\x00\x00\x84\x00\x00\x01\x00\x01\x00\x00\x00\x00"
     while not stop.is_set():
@@ -439,6 +454,7 @@ def _udp_snmp_loop(host: str, port: int, stop: threading.Event) -> None:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind((host, port))
+    print(f"[mock] udp/snmp listening on {host}:{port}")
     # 最小 SNMPv1 GetResponse
     response = bytes.fromhex(
         "302602010004067075626c6963a219020400000001020100020100"
@@ -455,6 +471,18 @@ def _udp_snmp_loop(host: str, port: int, stop: threading.Event) -> None:
         except Exception:
             break
     sock.close()
+
+
+def _run_udp_service(name: str, host: str, port: int, loop_fn: Callable[..., None], stop: threading.Event) -> bool:
+    try:
+        loop_fn(host, port, stop)
+        return True
+    except OSError as exc:
+        print(f"[mock] skip udp/{name} {host}:{port} ({exc})")
+        return False
+    except Exception as exc:
+        print(f"[mock] skip udp/{name} {host}:{port} ({exc})")
+        return False
 
 
 UDP_SERVICES = [
@@ -476,14 +504,69 @@ def start_tcp(host: str, port: int, name: str, handler_cls: type) -> tuple[Threa
         return None, f"{port}/{name}"
 
 
-def stop_existing_mock() -> int:
-    import subprocess
+def _find_mock_pids(exclude: int | None = None) -> list[int]:
     proc = subprocess.run(
-        ["pkill", "-f", "mock_vehicle_services.py"],
+        ["pgrep", "-f", "mock_vehicle_services.py"],
         capture_output=True,
         text=True,
     )
-    return proc.returncode
+    pids: list[int] = []
+    for line in (proc.stdout or "").splitlines():
+        try:
+            pid = int(line.strip())
+        except ValueError:
+            continue
+        if exclude and pid == exclude:
+            continue
+        pids.append(pid)
+    return pids
+
+
+def stop_existing_mock(wait_seconds: float = 1.5) -> list[int]:
+    """Stop prior mock instances and return the PIDs that were signalled."""
+    current = os.getpid()
+    stopped: list[int] = []
+
+    if PID_FILE.exists():
+        try:
+            pid = int(PID_FILE.read_text(encoding="utf-8").strip())
+            if pid > 0 and pid != current:
+                os.kill(pid, signal.SIGTERM)
+                stopped.append(pid)
+        except (OSError, ValueError):
+            pass
+        PID_FILE.unlink(missing_ok=True)
+
+    for pid in _find_mock_pids(exclude=current):
+        try:
+            os.kill(pid, signal.SIGTERM)
+            stopped.append(pid)
+        except OSError:
+            pass
+
+    deadline = time.time() + max(wait_seconds, 0)
+    while time.time() < deadline:
+        if not _find_mock_pids(exclude=current):
+            break
+        time.sleep(0.15)
+
+    for pid in _find_mock_pids(exclude=current):
+        try:
+            os.kill(pid, signal.SIGKILL)
+            stopped.append(pid)
+        except OSError:
+            pass
+
+    PID_FILE.unlink(missing_ok=True)
+    return sorted(set(stopped))
+
+
+def _write_pid_file() -> None:
+    PID_FILE.write_text(str(os.getpid()), encoding="utf-8")
+
+
+def _remove_pid_file() -> None:
+    PID_FILE.unlink(missing_ok=True)
 
 
 def main() -> int:
@@ -491,23 +574,46 @@ def main() -> int:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--list", action="store_true", help="列出端口后退出")
     parser.add_argument("--stop", action="store_true", help="停止已在运行的 mock 进程后退出")
+    parser.add_argument(
+        "--keep-existing",
+        action="store_true",
+        help="启动时不自动停止已有 mock 实例（默认会先停止旧实例）",
+    )
     args = parser.parse_args()
 
     if args.stop:
-        stop_existing_mock()
-        print("[mock] 已发送停止信号；若端口仍占用，请确认无其他 mock 终端在运行")
+        stopped = stop_existing_mock()
+        if stopped:
+            print(f"[mock] 已停止旧 mock 进程: {stopped}")
+        else:
+            print("[mock] 未发现运行中的 mock 进程")
+        print("[mock] 若端口仍占用，可检查: lsof -nP -iTCP:5555 -sTCP:LISTEN")
         return 0
 
     if args.list:
         for port, name, _ in TCP_SERVICES:
-            print(f"tcp  {port:5d}  {name}")
+            note = ""
+            if port in RESERVED_LOCAL_PORTS:
+                note = f"  (保留: {RESERVED_LOCAL_PORTS[port]})"
+            print(f"tcp  {port:5d}  {name}{note}")
         for port, name, _ in UDP_SERVICES:
             print(f"udp  {port:5d}  {name}")
         return 0
 
+    if not args.keep_existing:
+        stopped = stop_existing_mock()
+        if stopped:
+            print(f"[mock] 已清理旧 mock 实例: {stopped}")
+
+    _write_pid_file()
     tcp_servers: list[ThreadedTCPServer] = []
     skipped: list[str] = []
+    reserved: list[str] = []
     for port, name, handler in TCP_SERVICES:
+        if port in RESERVED_LOCAL_PORTS:
+            reserved.append(f"{port}/{name}")
+            print(f"[mock] skip tcp/{name} {args.host}:{port} (保留给 {RESERVED_LOCAL_PORTS[port]})")
+            continue
         server, skip = start_tcp(args.host, port, name, handler)
         if server:
             tcp_servers.append(server)
@@ -516,21 +622,22 @@ def main() -> int:
 
     stop = threading.Event()
     udp_threads: list[threading.Thread] = []
-    udp_failed: list[str] = []
     for port, name, loop_fn in UDP_SERVICES:
-        try:
-            thread = threading.Thread(target=loop_fn, args=(args.host, port, stop), daemon=True, name=f"udp-{port}")
-            thread.start()
-            udp_threads.append(thread)
-            print(f"[mock] udp/{name} listening on {args.host}:{port}")
-        except Exception as exc:
-            udp_failed.append(f"{port}/{name}")
-            print(f"[mock] skip udp/{name} {args.host}:{port} ({exc})")
+        thread = threading.Thread(
+            target=_run_udp_service,
+            args=(name, args.host, port, loop_fn, stop),
+            daemon=True,
+            name=f"udp-{port}",
+        )
+        thread.start()
+        udp_threads.append(thread)
 
-    print(f"[mock] started {len(tcp_servers)} tcp + {len(UDP_SERVICES) - len(udp_failed)} udp services on {args.host}")
+    print(f"[mock] started {len(tcp_servers)} tcp services on {args.host} (+ udp threads running)")
+    if reserved:
+        print(f"[mock] 保留端口 {len(reserved)} 个（避免与本机 dev 服务冲突）")
     if skipped:
-        print(f"[mock] 警告: {len(skipped)} 个 TCP 端口被占用（常见原因：已有一个 mock 在跑）")
-        print("[mock] 处理: 1) 在原 mock 终端按 Ctrl+C  2) 或执行: python3 lab/mock_vehicle_services.py --stop")
+        print(f"[mock] 警告: {len(skipped)} 个 TCP 端口被其他进程占用")
+        print("[mock] 处理: python3 lab/mock_vehicle_services.py --stop && python3 lab/mock_vehicle_services.py")
         print("[mock] 检查占用: lsof -nP -iTCP:5555 -sTCP:LISTEN")
     print("[mock] Ctrl+C to stop")
 
@@ -539,11 +646,14 @@ def main() -> int:
 
     signal.signal(signal.SIGINT, _stop)
     signal.signal(signal.SIGTERM, _stop)
-    stop.wait()
-    for server in tcp_servers:
-        server.shutdown()
-        server.server_close()
-    print("[mock] stopped")
+    try:
+        stop.wait()
+    finally:
+        for server in tcp_servers:
+            server.shutdown()
+            server.server_close()
+        _remove_pid_file()
+        print("[mock] stopped")
     return 0
 
 

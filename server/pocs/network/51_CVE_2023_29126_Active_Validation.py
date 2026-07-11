@@ -163,7 +163,7 @@ def _run_poc(plugin) -> dict:
     }
 
 class Poc51CVE202329126AuthBypassAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-059'
+    meta_display_id = "POC-NET-051"
     meta_poc_name = 'CVE-2023-29126 认证绕过 Active Validation'
     meta_cve_id = 'CVE-2023-29126'
     meta_severity = 'Medium'

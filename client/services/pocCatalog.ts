@@ -154,8 +154,6 @@ export const backendPocToCatalogPoc = (item: any): POC => {
     codeSnippet: item.content || '# PoC source is loaded from the backend registry.',
     requiredParams,
     pocFile: filename,
-    supportedExecutionPlanes: item.supported_execution_planes || ['cloud', 'edge'],
-    recommendedExecutionPlane: item.recommended_execution_plane || 'cloud',
     executionRequirements: item.execution_requirements,
     manualConfirmationRequired,
     requiresDisruptiveApproval,
@@ -184,7 +182,7 @@ export const fetchPocCatalog = async (token?: string | null): Promise<{ pocs: PO
   return {
     pocs: (data.pocs || []).map(backendPocToCatalogPoc),
     total: data.total || data.pocs?.length || 0,
-    error: data.error,
+    error: typeof data.error === 'string' ? data.error : (data.error as any)?.message,
   };
 };
 

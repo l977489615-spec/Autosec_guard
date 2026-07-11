@@ -1,11 +1,21 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
 import { Severity, Category } from '../types';
 import { Activity, Shield, AlertTriangle, Zap } from 'lucide-react';
 import { usePocCatalog } from '../hooks/usePocCatalog';
+import { getSessionSummary, SessionSummary } from '../services/api';
 
 const Dashboard: React.FC<{ token?: string | null }> = ({ token }) => {
   const { pocs, loading, error } = usePocCatalog(token);
+  const [summary, setSummary] = useState<SessionSummary | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getSessionSummary(token).then((value) => { if (!cancelled) setSummary(value); }).catch(() => {
+      if (!cancelled) setSummary(null);
+    });
+    return () => { cancelled = true; };
+  }, [token]);
   const totalPocs = pocs.length;
 
   const severityData = [
@@ -30,29 +40,31 @@ const Dashboard: React.FC<{ token?: string | null }> = ({ token }) => {
         <div className="bg-cyber-800 border border-cyber-700 p-4 rounded-lg flex items-center gap-4">
           <div className="p-3 bg-blue-500/20 rounded-full text-blue-400"><Shield size={24} /></div>
           <div>
-            <p className="text-gray-400 text-sm uppercase">Total Modules</p>
+            <p className="text-gray-400 text-sm">可执行 PoC</p>
             <p className="text-2xl font-bold text-white">{loading && totalPocs === 0 ? '...' : totalPocs}</p>
           </div>
         </div>
         <div className="bg-cyber-800 border border-cyber-700 p-4 rounded-lg flex items-center gap-4">
           <div className="p-3 bg-red-500/20 rounded-full text-red-400"><AlertTriangle size={24} /></div>
           <div>
-            <p className="text-gray-400 text-sm uppercase">Critical CVEs</p>
+            <p className="text-gray-400 text-sm">严重级 PoC</p>
             <p className="text-2xl font-bold text-white">{loading && totalPocs === 0 ? '...' : criticalCount}</p>
           </div>
         </div>
         <div className="bg-cyber-800 border border-cyber-700 p-4 rounded-lg flex items-center gap-4">
           <div className="p-3 bg-green-500/20 rounded-full text-green-400"><Activity size={24} /></div>
           <div>
-            <p className="text-gray-400 text-sm uppercase">System Status</p>
-            <p className="text-2xl font-bold text-white">READY</p>
+            <p className="text-gray-400 text-sm">运行中 / 待处理</p>
+            <p className="text-2xl font-bold text-white">
+              {summary ? `${summary.counts.running || 0} / ${(summary.counts.awaiting_approval || 0) + (summary.counts.awaiting_review || 0)}` : '…'}
+            </p>
           </div>
         </div>
         <div className="bg-cyber-800 border border-cyber-700 p-4 rounded-lg flex items-center gap-4">
           <div className="p-3 bg-yellow-500/20 rounded-full text-yellow-400"><Zap size={24} /></div>
           <div>
-            <p className="text-gray-400 text-sm uppercase">Active Scanners</p>
-            <p className="text-2xl font-bold text-white">{loading && totalPocs === 0 ? '...' : integratedPocs}</p>
+            <p className="text-gray-400 text-sm">已确认发现</p>
+            <p className="text-2xl font-bold text-white">{summary?.confirmed_findings ?? '…'}</p>
           </div>
         </div>
       </div>
@@ -99,9 +111,9 @@ const Dashboard: React.FC<{ token?: string | null }> = ({ token }) => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-96">
         <div className="bg-cyber-800 border border-cyber-700 p-6 rounded-lg flex flex-col">
-          <h3 className="text-lg font-bold text-white mb-4">Vulnerability Coverage by Severity</h3>
-          <div className="flex-1 w-full">
-            <ResponsiveContainer width="100%" height="100%">
+          <h3 className="text-lg font-semibold text-white mb-4">PoC 严重等级覆盖</h3>
+          <div className="flex-1 min-h-0 min-w-0 w-full">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} initialDimension={{ width: 520, height: 280 }}>
               <PieChart>
                 <Pie
                   data={severityData}
@@ -133,9 +145,9 @@ const Dashboard: React.FC<{ token?: string | null }> = ({ token }) => {
         </div>
 
         <div className="bg-cyber-800 border border-cyber-700 p-6 rounded-lg flex flex-col">
-          <h3 className="text-lg font-bold text-white mb-4">Module Distribution by Category</h3>
-          <div className="flex-1 w-full">
-            <ResponsiveContainer width="100%" height="100%">
+          <h3 className="text-lg font-semibold text-white mb-4">模块类别分布</h3>
+          <div className="flex-1 min-h-0 min-w-0 w-full">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} initialDimension={{ width: 520, height: 280 }}>
               <BarChart data={categoryData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#15253e" />
                 <XAxis dataKey="name" stroke="#6b7280" fontSize={12} />

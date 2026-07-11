@@ -139,7 +139,10 @@ cp lab/experiment_config.full.json lab/experiment_config.local.json
 ```bash
 python3 lab/mock_vehicle_services.py
 # 查看全部 mock 端口：python3 lab/mock_vehicle_services.py --list
+# 停止旧实例：python3 lab/mock_vehicle_services.py --stop
 ```
+
+启动时会**自动停止**上一次未退干净的 mock 进程；`3000`/`5002` 留给前端与后端，mock 不会抢占。
 
 **终端 B — 后端**（全程保持）：
 
@@ -150,7 +153,7 @@ cd server && python3 server.py
 验证：
 
 ```bash
-curl http://127.0.0.1:5002/api/health
+curl http://127.0.0.1:5002/health
 ```
 
 **REAL-CAR-01 额外（CAN）：**
@@ -359,7 +362,7 @@ bash lab/collect_can_passive.sh can0 15
 |------|------|
 | Agent Gate 拦截、0 PoC | `adb devices` 须**恰好 1 台** USB 设备；多台时请拔掉多余线，serial 可留空 |
 | Mock 扫描 0 检出 | 确认 `mock_vehicle_services.py` 在运行 |
-| Mock 大量 `Address already in use` | 已有 mock 实例：`python3 lab/mock_vehicle_services.py --stop`，或原终端 Ctrl+C 后再启动；应只保留 **1 个** mock 进程 |
+| Mock 大量 `Address already in use` | 执行 `python3 lab/mock_vehicle_services.py --stop` 后重新启动（新版默认会自动清理旧实例） |
 | DeepSeek 报错 | 检查 `base_url` 和 API Key；模型名用 `deepseek-chat` |
 | CAN 0 帧 | 检查 `ip link`、bitrate、接线 |
 | Excel 为空 | 确认 `lab/evidence/<TARGET>/scan_results.json` 存在后再跑 `build_paper_workbook.py` |

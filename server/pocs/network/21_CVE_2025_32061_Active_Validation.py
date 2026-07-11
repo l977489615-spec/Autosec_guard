@@ -150,7 +150,7 @@ def _run_poc(plugin) -> dict:
     }
 
 class Poc21CVE202532061StackOverflowRCEAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-006'
+    meta_display_id = "POC-NET-021"
     meta_poc_name = 'CVE-2025-32061 RCE Active Validation'
     meta_cve_id = 'CVE-2025-32061'
     meta_severity = 'High'

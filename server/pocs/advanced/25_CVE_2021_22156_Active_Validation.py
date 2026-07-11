@@ -156,7 +156,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc25CVE202122156RCEDoSAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-061'
+    meta_display_id = "POC-ADV-025"
     meta_poc_name = 'CVE-2021-22156 RCE或DoS Active Validation'
     meta_cve_id = 'CVE-2021-22156'
     meta_severity = 'Critical'

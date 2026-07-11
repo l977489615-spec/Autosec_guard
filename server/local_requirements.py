@@ -98,7 +98,6 @@ def infer_local_requirements(pocs_dir: str, profile: dict, poc_filename: str, pa
     return {
         "required_capabilities": required,
         "requires_edge": bool(required),
-        "cloud_only": not bool(required),
     }
 
 
@@ -124,12 +123,8 @@ def classify_poc_execution_mode(pocs_dir: str, poc_path: str, profile: dict, poc
     )
     manual_confirmation = any(hint in text for hint in manual_hints)
 
-    supported_planes = ["edge"] if requirements["requires_edge"] else ["cloud", "edge"]
-    recommended_plane = "edge" if requirements["requires_edge"] else "cloud"
-
     return {
-        "supported_execution_planes": supported_planes,
-        "recommended_execution_plane": recommended_plane,
+        "execution_plane": "edge",
         "execution_requirements": requirements,
         "manual_confirmation_required": manual_confirmation,
     }

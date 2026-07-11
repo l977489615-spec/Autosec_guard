@@ -1,17 +1,20 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { flushSync, createPortal } from 'react-dom';
 import { ScanSession, ScanLog, ScanResult, Severity, POC, Category, ConnectionParams, ValidationTier } from '../types';
 import ScanLogs from './ScanLogs';
-import { generateSecurityReport } from '../services/LLMService';
-import PocDetailModal from './PocDetailModal';
-import ManualTestModal from './ManualTestModal';
-import { checkBackendHealth, executePocScript, setBackendUrl, getBackendUrl, fingerprintOS, runPocPlugin, saveScanSession, submitPocManualVerdict, recordScanApprovalPolicy } from '../services/api';
-import { Play, RotateCw, FileText, AlertTriangle, ShieldCheck, Wifi, Cable, Bluetooth, Power, Crosshair, List, Server, ArrowRight, Settings, Save, WifiOff, Link, CheckCircle, Radio, Activity, Download, ChevronRight, Bot, Usb } from 'lucide-react';
-import AgentScan from './AgentScan';
+import { generateSecurityReport } from '../services/api';
+import { approveV3SessionAction, checkBackendHealth, createV3Session, executePocScript, getBackendUrl, fingerprintOS, runPocPlugin, saveScanSession, startV3SessionRun, submitPocManualVerdict, recordScanApprovalPolicy, updateV3SessionRun } from '../services/api';
+import { Play, RotateCw, FileText, AlertTriangle, ShieldCheck, Wifi, Cable, Bluetooth, Power, Crosshair, List, Server, ArrowRight, Settings, Save, WifiOff, Link, CheckCircle, Radio, Activity, Download, ChevronRight, Bot, Usb, Square, FileDown } from 'lucide-react';
 import { AgentScanErrorBoundary } from './AgentScanErrorBoundary';
 import { findPocInCatalog } from '../services/pocCatalog';
 import { usePocCatalog } from '../hooks/usePocCatalog';
 import { markdownToSafeHtml, escapeHtml } from '../utils/security';
+import { exportReportPdf, exportReportMarkdown } from '../utils/pdfExport';
+
+const AgentScan = React.lazy(() => import('./AgentScan'));
+const AgentVehicleScene = React.lazy(() => import('./AgentVehicleScene'));
+const PocDetailModal = React.lazy(() => import('./PocDetailModal'));
+const ManualTestModal = React.lazy(() => import('./ManualTestModal'));
 
 type ScannerMode = 'SELECTION' | 'GLOBAL' | 'MANUAL' | 'AGENT';
 
@@ -19,7 +22,7 @@ const EMPTY_CONNECTION: ConnectionParams = {
   ip: '',
   port: '',
   bluetoothMac: '',
-  canInterface: 'PCAN_USBBUS1',
+  canInterface: '',
   url: '',
   frequency: '',
   interface: '',
@@ -107,6 +110,9 @@ const MarkdownRenderer: React.FC<{ content: string }> = ({ content }) => {
   return (
     <div className="space-y-2">
       {lines.map((line, i) => {
+        if (line.startsWith('# ')) {
+          return <h2 key={i} className="text-xl font-bold text-white mt-6 mb-3 border-l-4 border-cyber-accent pl-3">{line.replace(/^#+\s*/, '')}</h2>;
+        }
         if (line.startsWith('### ')) {
           return <h3 key={i} className="text-lg font-bold text-cyber-accent mt-4 mb-2 border-b border-cyber-700/50 pb-1 uppercase tracking-wider">{line.replace('### ', '')}</h3>;
         }
@@ -147,6 +153,11 @@ const Scanner: React.FC<ScannerProps> = ({
   const { pocs: pocCatalog, refresh: refreshPocCatalog } = usePocCatalog(token);
   const [sessionSaveStatus, setSessionSaveStatus] = useState<'idle' | 'saved' | 'failed'>('idle');
   const [aiReportError, setAiReportError] = useState<string | null>(null);
+  const [selectionPreview, setSelectionPreview] = useState<'GLOBAL' | 'AGENT' | 'MANUAL'>('AGENT');
+  const [selectionWebglFailed, setSelectionWebglFailed] = useState(false);
+  const handleAgentDraftChange = useCallback((draft: NonNullable<ScanSession['agentDraft']>) => {
+    setSession((prev) => ({ ...prev, agentDraft: draft }));
+  }, [setSession]);
 
   // Contents of PoC scripts fetched from backend
   const [pocContents, setPocContents] = useState<Record<string, string>>({});
@@ -175,11 +186,9 @@ const Scanner: React.FC<ScannerProps> = ({
   const approvalTimeoutRef = React.useRef<number | null>(null);
   const approvalIntervalRef = React.useRef<number | null>(null);
   const pocCatalogRef = React.useRef<POC[]>([]);
-
-  // Effect to update API service when user types new URL
-  useEffect(() => {
-    setBackendUrl(engineUrl);
-  }, [engineUrl]);
+  const batchAbortControllerRef = React.useRef<AbortController | null>(null);
+  const batchCancelRequestedRef = React.useRef(false);
+  const batchSessionIdRef = React.useRef<string | null>(null);
 
   // Initial check on mount
   useEffect(() => {
@@ -216,8 +225,6 @@ const Scanner: React.FC<ScannerProps> = ({
     catalog.forEach((poc) => {
       contentsMap[poc.id] = poc.codeSnippet;
       metadataMap[poc.id] = {
-        supportedExecutionPlanes: poc.supportedExecutionPlanes,
-        recommendedExecutionPlane: poc.recommendedExecutionPlane,
         executionRequirements: poc.executionRequirements,
         manualConfirmationRequired: poc.manualConfirmationRequired,
         requiresDisruptiveApproval: poc.requiresDisruptiveApproval,
@@ -379,9 +386,37 @@ const Scanner: React.FC<ScannerProps> = ({
 
   const startBatchScan = async () => {
     if (!session.isConnected) return;
+    batchCancelRequestedRef.current = false;
+    batchAbortControllerRef.current?.abort('superseded');
+    batchAbortControllerRef.current = new AbortController();
+    const batchSignal = batchAbortControllerRef.current.signal;
 
-    // Reset report and ID for new run
-    const newSessionId = `SCAN-${Date.now().toString().slice(-6)}`;
+    // The server owns the durable session identifier and lifecycle.
+    let newSessionId: string;
+    try {
+      const durableSession = await createV3Session('batch', {
+        name: session.targetName,
+        ip: session.connection.ip,
+        bluetooth_mac: session.connection.bluetoothMac,
+        can_interface: session.connection.canInterface,
+        wifi_interface: session.connection.interface,
+        frequency: session.connection.frequency,
+        usb_adb_serial: session.connection.usbAdbSerial,
+        usb_mount_point: session.connection.usbMountPoint,
+      }, {
+        min_tier: 'RECON',
+        max_tier: DEFAULT_BATCH_MAX_TIER,
+        allow_lab_exp: allowLabExpBatch,
+        allow_auto_exp: allowAutoExpBatch,
+      }, token);
+      newSessionId = durableSession.id;
+      batchSessionIdRef.current = newSessionId;
+      await startV3SessionRun(newSessionId, token);
+    } catch (error: any) {
+      addLog(`无法创建可审计扫描会话：${error?.message || '未知错误'}`, 'error');
+      setSession(prev => ({ ...prev, status: 'idle' }));
+      return;
+    }
 
     setSession(prev => ({
       ...prev,
@@ -401,7 +436,8 @@ const Scanner: React.FC<ScannerProps> = ({
     const runtimeMetadata = pocRuntimeMetadataRef.current;
 
     if (!activePocs.length) {
-      addLog(`Error: PoC catalog is empty. Check backend /api/list_pocs.`, 'error');
+      addLog(`Error: PoC catalog is empty. Check backend /api/v1/list_pocs.`, 'error');
+      await updateV3SessionRun(newSessionId, 'fail', { error_code: 'EMPTY_POC_CATALOG' }, token).catch(() => undefined);
       setSession(prev => ({ ...prev, status: 'idle' }));
       return;
     }
@@ -439,6 +475,7 @@ const Scanner: React.FC<ScannerProps> = ({
     let errorCount = 0;
 
     for (let i = 0; i < activePocs.length; i++) {
+      if (batchCancelRequestedRef.current) break;
       const poc = activePocs[i];
       const progress = `[${i + 1}/${activePocs.length}]`;
 
@@ -514,6 +551,20 @@ const Scanner: React.FC<ScannerProps> = ({
         addLog(`${progress} ⇢ ${poc.name} → Post-execution operator verdict will be required.`, 'warning');
       }
 
+      if (requiresDisruptiveApproval) {
+        try {
+          executionParams.approval_token = await approveV3SessionAction(
+            newSessionId,
+            poc.pocFile || poc.id,
+            session.connection.ip || session.connection.bluetoothMac || session.connection.canInterface || 'local',
+            token,
+          );
+        } catch (error: any) {
+          addLog(`${progress} ⏭ ${poc.name} — 审批授权失败：${error?.message || '未知错误'}`, 'error');
+          continue;
+        }
+      }
+
       if (runtimeMeta.executionRequirements?.requires_edge) {
         addLog(`${progress} ⇢ ${poc.name} → Using local vehicle runtime for hardware-dependent PoC.`, 'info');
       }
@@ -526,14 +577,16 @@ const Scanner: React.FC<ScannerProps> = ({
         params.poc_id = poc.id;
         params.poc_name = poc.name;
 
-        // 破坏性执行：服务端会以 403 + approval_token 应答；用户已确认后透明携带令牌重试一次。
-        const runOnce = (extraParams: Record<string, any>, allowRetry: boolean) => {
+        // 破坏性执行令牌只能由显式会话审批端点签发。
+        const runOnce = (extraParams: Record<string, any>) => {
           const runParams = { ...params, ...extraParams };
           const body = JSON.stringify({ filename: poc.pocFile, params: runParams, stream: true, session_id: newSessionId });
 
-          fetch(`${engineUrl}/api/run_poc_stream`, {
+          fetch(`${engineUrl}/api/v1/run_poc_stream`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+            headers: { 'Content-Type': 'application/json', ...(token && token !== 'cookie-session' ? { 'Authorization': `Bearer ${token}` } : {}) },
+            credentials: 'same-origin',
+            signal: batchSignal,
             body,
           }).then(async (response) => {
             if (!response.ok) {
@@ -541,24 +594,18 @@ const Scanner: React.FC<ScannerProps> = ({
               let message = `Server returned ${response.status}`;
               try {
                 data = await response.json();
-                message = data.message || data.error || message;
+                message = data?.error?.message || data.message || data.error || message;
               } catch {
                 try {
                   const text = await response.text();
                   if (text.trim()) message = text.trim();
                 } catch { /* ignore */ }
               }
-              // 已获批但服务端要求令牌：携带令牌重试一次
-              if (allowRetry && response.status === 403 && data?.approval_token && executionParams.allow_disruptive) {
-                addLog(`${progress} ⇢ ${poc.name} → Presenting server approval token...`, 'info');
-                runOnce({ approval_token: data.approval_token }, false);
-                return;
-              }
               resolve({ success: false, logs: [], errors: [message], vulnerable: false });
               return;
             }
             if (!response.body) {
-              const fallback = await runPocPlugin(poc.pocFile, runParams, token, engineUrl);
+              const fallback = await runPocPlugin(poc.pocFile, runParams, token, engineUrl, newSessionId);
               resolve(fallback);
               return;
             }
@@ -587,14 +634,19 @@ const Scanner: React.FC<ScannerProps> = ({
               }
             }
             resolve(finalResult || { success: false, logs: [], errors: ['No result received'] });
-          }).catch(() => {
-            runPocPlugin(poc.pocFile, runParams, token, engineUrl).then(resolve);
+          }).catch((error: any) => {
+            if (batchSignal.aborted || error?.name === 'AbortError') {
+              resolve({ success: false, cancelled: true, logs: [], errors: ['operator_cancelled'], vulnerable: false });
+              return;
+            }
+            runPocPlugin(poc.pocFile, runParams, token, engineUrl, newSessionId).then(resolve);
           });
         };
 
-        runOnce({}, true);
+        runOnce({});
       });
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      if (batchCancelRequestedRef.current || result.cancelled) break;
 
       // Restore printing of batch logs in case it fell back to non-streaming or returned batched logs
       if (result.logs && result.logs.length > 0) {
@@ -687,8 +739,32 @@ const Scanner: React.FC<ScannerProps> = ({
       }
     }
 
+    if (batchCancelRequestedRef.current) {
+      addLog('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'info');
+      addLog('全局扫描已由操作员终止，当前 PoC 进程和剩余队列均已停止。', 'warning');
+      setSession(prev => ({
+        ...prev,
+        status: 'cancelled',
+        endTime: new Date().toISOString(),
+        results,
+        riskScore: Math.min(riskAccumulator, 100),
+      }));
+      batchAbortControllerRef.current = null;
+      return;
+    }
+
     addLog(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`, 'info');
     addLog(`Batch Scan Complete: ${vulnCount} Vulnerable | ${secureCount} Secure | ${errorCount} Errors`, vulnCount > 0 ? 'error' : 'success');
+
+    await updateV3SessionRun(newSessionId, 'complete', {
+      execution_count: results.length,
+      confirmed_findings: vulnCount,
+      secure_count: secureCount,
+      execution_errors: errorCount,
+      risk_score: Math.min(riskAccumulator, 100),
+    }, token).catch((error: any) => {
+      addLog(`权威会话结束状态保存失败：${error?.message || '未知错误'}`, 'error');
+    });
 
     // Use functional update to ensure we don't wipe out the accumulated logs
     setSession(prev => {
@@ -711,12 +787,34 @@ const Scanner: React.FC<ScannerProps> = ({
     });
   };
 
+  const stopBatchScan = async () => {
+    if (session.status !== 'running' || batchCancelRequestedRef.current) return;
+    batchCancelRequestedRef.current = true;
+    batchAbortControllerRef.current?.abort('operator-cancelled');
+    resolveDisruptiveApproval('skipped');
+    const manualResolver = manualVerdictResolverRef.current;
+    manualVerdictResolverRef.current = null;
+    setManualVerdictState(null);
+    manualResolver?.({ success: false, cancelled: true, vulnerable: null, errors: ['operator_cancelled'] });
+    addLog('正在终止全局扫描…', 'warning');
+    setSession(prev => ({ ...prev, status: 'cancelled', endTime: new Date().toISOString() }));
+    const sessionId = batchSessionIdRef.current;
+    if (sessionId) {
+      await updateV3SessionRun(sessionId, 'cancel', { reason: 'operator_cancelled' }, token).catch(() => undefined);
+    }
+  };
+
   const handleAiAnalysis = async () => {
     setIsAnalysing(true);
     setAiReportError(null);
     const result = await generateSecurityReport(session, token, currentUser?.ai_config);
     if (!result.success || !result.report) {
       setAiReportError(result.error || 'AI 报告生成失败');
+      setIsAnalysing(false);
+      return;
+    }
+    if (/本地确定性证据报告|本地证据引擎生成|远程评估模型未在时限内返回/.test(result.report)) {
+      setAiReportError('远程 AI 报告生成失败，已拒绝本地降级报告。请检查 Profile 中的 AI 配置与网络后重试。');
       setIsAnalysing(false);
       return;
     }
@@ -730,7 +828,83 @@ const Scanner: React.FC<ScannerProps> = ({
     setIsAnalysing(false);
   };
 
-  const handleDownloadPdf = () => {
+  const buildScanSummaryMarkdown = useCallback(() => {
+    const targetInfo = session.targetName || session.connection.ip || 'Unknown Target';
+    const scannedAt = new Date(session.endTime || session.startTime || Date.now()).toLocaleString('zh-CN', { hour12: false });
+    const vulns = session.results.filter((result) => result.vulnerable);
+    const secure = session.results.filter((result) => result.vulnerable === false);
+    const inconclusive = session.results.filter((result) => result.vulnerable !== true && result.vulnerable !== false);
+
+    const lines = [
+      '## 扫描概览',
+      `- 扫描目标：${targetInfo}`,
+      `- 目标 IP：${session.connection.ip || '未提供'}`,
+      `- 扫描时间：${scannedAt}`,
+      `- 风险评分：${session.riskScore}%`,
+      `- 检出威胁：${vulns.length} 项`,
+      `- 判定安全：${secure.length} 项`,
+      `- 异常/未决：${inconclusive.length} 项`,
+      '',
+      '## 威胁清单',
+    ];
+
+    if (!vulns.length) {
+      lines.push('- 未检出可直接确认的漏洞项。');
+    } else {
+      vulns.forEach((result, index) => {
+        const poc = findPocInCatalog(pocCatalogRef.current, result);
+        lines.push(`${index + 1}. **${poc?.name || result.pocId}** (${result.pocId})`);
+        if (result.details) lines.push(`   - 证据：${result.details}`);
+      });
+    }
+
+    if (session.aiReport?.trim()) {
+      lines.push('', '## AI 安全评估', session.aiReport.trim());
+    }
+
+    return lines.join('\n');
+  }, [session]);
+
+  const handleExportScanPdf = async () => {
+    if (session.status !== 'completed' || session.results.length === 0) return;
+
+    const targetInfo = session.targetName || session.connection.ip || 'Unknown Target';
+    const now = new Date(session.endTime || session.startTime || Date.now()).toLocaleString('zh-CN', { hour12: false });
+    const reportHtml = markdownToSafeHtml(buildScanSummaryMarkdown());
+
+    await exportReportPdf({
+      filename: `AutoSec-Scan-${targetInfo}-${new Date().toISOString().slice(0, 10)}.pdf`,
+      title: 'AutoSec Guard 批量扫描结果报告',
+      metadata: [
+        { label: '扫描目标', value: targetInfo },
+        { label: '扫描时间', value: now },
+        { label: '报告类型', value: '批量扫描结果导出' },
+        { label: '工具版本', value: '智驭安盾 v3.0 · 常规扫描引擎' },
+      ],
+      reportHtml,
+    });
+  };
+
+  const handleExportScanMarkdown = () => {
+    if (session.status !== 'completed' || session.results.length === 0) return;
+
+    const targetInfo = session.targetName || session.connection.ip || 'Unknown Target';
+    const now = new Date(session.endTime || session.startTime || Date.now()).toLocaleString('zh-CN', { hour12: false });
+
+    exportReportMarkdown({
+      filename: `AutoSec-Scan-${targetInfo}-${new Date().toISOString().slice(0, 10)}.md`,
+      title: 'AutoSec Guard 批量扫描结果报告',
+      metadata: [
+        { label: '扫描目标', value: targetInfo },
+        { label: '扫描时间', value: now },
+        { label: '报告类型', value: '批量扫描结果导出' },
+        { label: '工具版本', value: '智驭安盾 v3.0 · 常规扫描引擎' },
+      ],
+      reportMarkdown: buildScanSummaryMarkdown(),
+    });
+  };
+
+  const handleDownloadPdf = async () => {
     if (!session.aiReport) return;
 
     const now = new Date(session.startTime || Date.now()).toLocaleString('zh-CN', { hour12: false });
@@ -774,7 +948,7 @@ const Scanner: React.FC<ScannerProps> = ({
         <span><span class="label">扫描目标：</span>${escapeHtml(targetInfo)}</span>
         <span><span class="label">扫描时间：</span>${escapeHtml(now)}</span>
         <span><span class="label">报告类型：</span>常规扫描引擎报告</span>
-        <span><span class="label">工具版本：</span>AutoSec Guard v2.0 · ${escapeHtml(llmLabel)}</span>
+        <span><span class="label">工具版本：</span>智驭安盾 v3.0 · ${escapeHtml(llmLabel)}</span>
       </div>
     </div>
     <div class="section">
@@ -785,14 +959,17 @@ const Scanner: React.FC<ScannerProps> = ({
 </body>
 </html>`;
 
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert("Please allow popups to generate the PDF report.");
-      return;
-    }
-
-    printWindow.document.write(html);
-    printWindow.document.close();
+    await exportReportPdf({
+      filename: `AutoSec-Scan-${targetInfo}-${new Date().toISOString().slice(0, 10)}.pdf`,
+      title: 'AutoSec Guard 智能网联汽车安全评估报告',
+      metadata: [
+        { label: '扫描目标', value: targetInfo },
+        { label: '扫描时间', value: now },
+        { label: '报告类型', value: '常规扫描引擎报告' },
+        { label: '工具版本', value: `智驭安盾 v3.0 · ${llmLabel}` },
+      ],
+      reportHtml,
+    });
   };
 
   const handleLaunchManualTest = (poc: POC) => {
@@ -808,87 +985,151 @@ const Scanner: React.FC<ScannerProps> = ({
 
   // --- RENDER HELPERS ---
 
+  const batchSummaryStats = useMemo(() => {
+    const threats = session.results.filter((result) => result.vulnerable === true).length;
+    const secure = session.results.filter((result) => result.vulnerable === false).length;
+    const errors = session.results.filter((result) => result.vulnerable !== true && result.vulnerable !== false).length;
+    return {
+      threats,
+      secure,
+      errors,
+      risk: Number.isFinite(session.riskScore) ? session.riskScore : 0,
+    };
+  }, [session.results, session.riskScore]);
+
+  const showBatchSummary = session.status === 'completed' || session.results.length > 0;
+
+  const selectionModes = [
+    {
+      id: 'GLOBAL' as const,
+      icon: Server,
+      title: '全局批量扫描',
+      description: '批量编排全部已授权 PoC。',
+      meta: 'ALL INTERFACES / BATCH',
+      zones: ['network', 'wireless', 'execute'],
+    },
+    {
+      id: 'AGENT' as const,
+      icon: Bot,
+      title: 'Agent 自主扫描',
+      description: '自主完成侦察、决策与证据评估。',
+      meta: 'ADAPTIVE / AI ASSISTED',
+      zones: ['recon', 'network', 'wireless', 'assess'],
+      recommended: true,
+    },
+    {
+      id: 'MANUAL' as const,
+      icon: Crosshair,
+      title: '手动诊断',
+      description: '单个 PoC 精确配置与受控执行。',
+      meta: 'CONTROLLED / SINGLE POC',
+      zones: ['execute'],
+    },
+  ];
+
+  const selectScanningMode = (nextMode: 'GLOBAL' | 'AGENT' | 'MANUAL') => {
+    setMode(nextMode);
+    setSession((previous) => ({
+      ...previous,
+      mode: nextMode === 'GLOBAL' ? 'batch' : nextMode === 'AGENT' ? 'agent' : 'manual',
+    }));
+    if (nextMode !== 'AGENT') checkEngine();
+  };
+
   const renderSelectionScreen = () => (
-    <div className="flex flex-col items-center justify-center h-full p-8 space-y-8 animate-fade-in">
-      <div className="text-center space-y-2">
-        <h2 className="text-3xl font-bold text-white tracking-tight">Select Scanning Operation</h2>
-        <p className="text-gray-400">Choose the appropriate operational mode for your security assessment.</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 w-full max-w-6xl">
-        {/* Global Auto Option */}
-        <button
-          onClick={() => {
-            setMode('GLOBAL');
-            setSession(p => ({ ...p, mode: 'batch' }));
-            checkEngine(); // Re-check on mode switch
-          }}
-          className="group relative bg-cyber-800 border border-cyber-700 hover:border-cyber-accent p-8 rounded-xl text-left transition-all duration-300 hover:shadow-[0_0_30px_rgba(0,240,255,0.1)]"
-        >
-          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyber-500 to-cyber-accent opacity-0 group-hover:opacity-100 transition-opacity rounded-t-xl" />
-          <div className="mb-6 bg-cyber-900 w-16 h-16 rounded-lg flex items-center justify-center border border-cyber-700 group-hover:border-cyber-accent/50 group-hover:scale-110 transition-all">
-            <Server className="text-cyber-accent w-8 h-8" />
+    <div className="scan-launcher min-h-full p-5 md:p-6 xl:p-8 animate-fade-in">
+      <div className="mx-auto flex min-h-[calc(100vh-10rem)] w-full max-w-[1480px] flex-col">
+        <div className="mb-4 flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
+          <div>
+            <div className="section-kicker"><Radio size={14} /> SCAN ORCHESTRATION</div>
+            <h2 className="mt-2 font-display text-3xl font-semibold tracking-[-0.035em] text-white md:text-4xl">选择执行方式</h2>
           </div>
-          <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
-            Global Auto Scan <ArrowRight size={16} className="opacity-0 group-hover:opacity-100 transition-opacity -translate-x-2 group-hover:translate-x-0" />
-          </h3>
-          <p className="text-gray-400 text-sm leading-relaxed mb-4">
-            Perform a comprehensive batch scan of the entire vehicle ecosystem.
+          <p className="max-w-lg text-sm leading-6 text-slate-300/70">
+            三种模式共享授权、执行与证据链；将指针移至模式上，可预览对应攻击面。
           </p>
-          <div className="flex gap-2">
-            <span className="text-xs bg-cyber-900 border border-cyber-700 px-2 py-1 rounded text-gray-400 font-mono">ALL INTERFACES</span>
-            <span className="text-xs bg-cyber-900 border border-cyber-700 px-2 py-1 rounded text-gray-400 font-mono">BATCH</span>
-          </div>
-        </button>
+        </div>
 
-        {/* Autonomous Agent Option */}
-        <button
-          onClick={() => {
-            setMode('AGENT');
-            setSession(p => ({ ...p, mode: 'agent' }));
-          }}
-          className="group relative bg-cyber-800 border border-cyber-700 hover:border-emerald-400 p-8 rounded-xl text-left transition-all duration-300 hover:shadow-[0_0_30px_rgba(16,185,129,0.15)]"
-        >
-          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-teal-500 opacity-0 group-hover:opacity-100 transition-opacity rounded-t-xl" />
-          <div className="mb-6 bg-cyber-900 w-16 h-16 rounded-lg flex items-center justify-center border border-cyber-700 group-hover:border-emerald-400/50 group-hover:scale-110 transition-all">
-            <Bot className="text-emerald-400 w-8 h-8" />
-          </div>
-          <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
-            Autonomous Agent <ArrowRight size={16} className="opacity-0 group-hover:opacity-100 transition-opacity -translate-x-2 group-hover:translate-x-0" />
-          </h3>
-          <p className="text-gray-400 text-sm leading-relaxed mb-4">
-            Multi-agent system for adaptive reconnaissance and intelligent pentesting.
-          </p>
-          <div className="flex gap-2">
-            <span className="text-xs bg-cyber-900 border border-cyber-700 px-2 py-1 rounded text-gray-400 font-mono">ADAPTIVE</span>
-            <span className="text-xs bg-cyber-900 border border-cyber-700 px-2 py-1 rounded text-gray-400 font-mono">AI DRIVEN</span>
-          </div>
-        </button>
+        <div className="grid flex-1 overflow-hidden rounded-[1.6rem] border border-cyan-200/20 bg-[#071625]/80 shadow-[0_32px_90px_rgba(0,3,12,.42),inset_0_1px_0_rgba(190,247,255,.08)] lg:grid-cols-[minmax(350px,.82fr)_minmax(0,1.55fr)]">
+          <div className="relative z-10 flex flex-col border-b border-cyan-100/10 bg-[#091B2C]/82 p-4 backdrop-blur-xl lg:border-b-0 lg:border-r">
+            <div className="px-2 pb-2 pt-1">
+              <div className="font-mono text-[10px] tracking-[.2em] text-cyan-200/45">MISSION CONTROL</div>
+            </div>
 
-        {/* Manual Option */}
-        <button
-          onClick={() => {
-            setMode('MANUAL');
-            setSession(p => ({ ...p, mode: 'manual' }));
-            checkEngine(); // Re-check on mode switch
-          }}
-          className="group relative bg-cyber-800 border border-cyber-700 hover:border-cyber-danger p-8 rounded-xl text-left transition-all duration-300 hover:shadow-[0_0_30px_rgba(255,51,102,0.1)]"
-        >
-          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-500 to-cyber-danger opacity-0 group-hover:opacity-100 transition-opacity rounded-t-xl" />
-          <div className="mb-6 bg-cyber-900 w-16 h-16 rounded-lg flex items-center justify-center border border-cyber-700 group-hover:border-cyber-danger/50 group-hover:scale-110 transition-all">
-            <Crosshair className="text-cyber-danger w-8 h-8" />
+            <div className="divide-y divide-cyan-100/10 border-y border-cyan-100/10">
+              {selectionModes.map((option) => {
+                const Icon = option.icon;
+                const isPreviewed = selectionPreview === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onMouseEnter={() => setSelectionPreview(option.id)}
+                    onFocus={() => setSelectionPreview(option.id)}
+                    onClick={() => selectScanningMode(option.id)}
+                    className={`scan-mode-row group relative flex w-full items-center gap-3 px-2 py-4 text-left ${isPreviewed ? 'scan-mode-row-active' : ''}`}
+                  >
+                    <span className="scan-mode-icon"><Icon size={19} /></span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-2">
+                        <span className="font-display text-base font-semibold text-white">{option.title}</span>
+                        {option.recommended && <span className="rounded-full border border-cyan-200/25 bg-cyan-300/10 px-2 py-0.5 text-[9px] text-cyan-100">推荐</span>}
+                      </span>
+                      <span className="mt-1 block text-xs leading-5 text-slate-400">{option.description}</span>
+                      <span className="mt-2 block font-mono text-[8px] tracking-[.16em] text-cyan-200/40">{option.meta}</span>
+                    </span>
+                    <ArrowRight size={17} className="text-slate-600 transition-all group-hover:translate-x-1 group-hover:text-cyan-200" />
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-auto hidden grid-cols-3 gap-2 px-2 pt-4 text-center 2xl:grid">
+              <div><div className="font-display text-lg font-semibold text-cyan-100">{pocCatalog.length || '—'}</div><div className="text-[9px] tracking-wider text-slate-500">PoC</div></div>
+              <div><div className="font-display text-lg font-semibold text-emerald-300">LOCAL</div><div className="text-[9px] tracking-wider text-slate-500">执行面</div></div>
+              <div><div className="font-display text-lg font-semibold text-amber-300">ON</div><div className="text-[9px] tracking-wider text-slate-500">授权门禁</div></div>
+            </div>
           </div>
-          <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
-            Manual Diagnostic <ArrowRight size={16} className="opacity-0 group-hover:opacity-100 transition-opacity -translate-x-2 group-hover:translate-x-0" />
-          </h3>
-          <p className="text-gray-400 text-sm leading-relaxed mb-4">
-            Select and execute specific POC modules individually.
-          </p>
-          <div className="flex gap-2">
-            <span className="text-xs bg-cyber-900 border border-cyber-700 px-2 py-1 rounded text-gray-400 font-mono">CONTROLLED</span>
-            <span className="text-xs bg-cyber-900 border border-cyber-700 px-2 py-1 rounded text-gray-400 font-mono">SINGLE</span>
+
+          <div className="relative min-h-[380px] overflow-hidden lg:min-h-[400px] 2xl:min-h-[500px]">
+            <div className="pointer-events-none absolute left-5 right-5 top-5 z-20 flex items-center justify-between">
+              <div className="flex items-center gap-2 rounded-full border border-cyan-200/20 bg-[#061522]/70 px-3 py-2 font-mono text-[9px] tracking-[.16em] text-cyan-100 backdrop-blur-xl">
+                <span className="status-orb" /> DIGITAL TWIN / LIVE PREVIEW
+              </div>
+              <div className="hidden items-center gap-2 rounded-full border border-blue-300/15 bg-blue-400/10 px-3 py-2 font-mono text-[9px] text-blue-100 md:flex">
+                GPU ACCELERATED · GLSL
+              </div>
+            </div>
+
+            {selectionWebglFailed ? (
+              <div className="grid h-full place-items-center text-sm text-slate-400">WebGL 不可用，请启用浏览器硬件加速。</div>
+            ) : (
+              <React.Suspense fallback={<div className="grid h-full place-items-center text-sm text-cyan-200">正在构建数字孪生…</div>}>
+                <AgentVehicleScene
+                  compact
+                  activeZones={selectionModes.find((option) => option.id === selectionPreview)?.zones || []}
+                  autoRotate
+                  onFailure={() => setSelectionWebglFailed(true)}
+                />
+              </React.Suspense>
+            )}
+
+            <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-[#06121f] via-[#06121f]/75 to-transparent px-6 pb-5 pt-16 md:px-8">
+              <div className="flex flex-wrap items-end justify-between gap-4 border-t border-cyan-100/15 pt-4">
+                <div>
+                  <div className="font-mono text-[9px] tracking-[.18em] text-cyan-200/45">ACTIVE PROFILE</div>
+                  <div className="mt-1 font-display text-xl font-semibold text-white">
+                    {selectionModes.find((option) => option.id === selectionPreview)?.title}
+                  </div>
+                </div>
+                <div className="flex items-center gap-5 text-xs text-slate-300/70">
+                  <span><b className="mr-1 text-cyan-200">05</b> 攻击面</span>
+                  <span><b className="mr-1 text-blue-300">TLS</b> 同源连接</span>
+                  <span><b className="mr-1 text-amber-300">L3</b> 风险门禁</span>
+                </div>
+              </div>
+            </div>
           </div>
-        </button>
+        </div>
       </div>
     </div>
   );
@@ -994,7 +1235,7 @@ const Scanner: React.FC<ScannerProps> = ({
     : null;
 
   return (
-    <div className="h-full relative overflow-hidden">
+    <div className="min-h-full relative">
       {/* Detail Modal for Result Inspection */}
       <PocDetailModal
         poc={selectedResultPoc ? { ...selectedResultPoc, ...pocRuntimeMetadata[selectedResultPoc.id], codeSnippet: pocContents[selectedResultPoc.id] || selectedResultPoc.codeSnippet } : null}
@@ -1033,12 +1274,12 @@ const Scanner: React.FC<ScannerProps> = ({
             }}
             className="text-xs font-bold text-gray-400 hover:text-white flex items-center gap-2"
           >
-            ← CHANGE MODE
+            ← 切换模式
           </button>
           <div className="flex items-center gap-2">
             <span className={`w-2 h-2 rounded-full ${mode === 'GLOBAL' ? 'bg-cyber-accent' : mode === 'AGENT' ? 'bg-emerald-400' : 'bg-cyber-danger'}`}></span>
-            <span className="text-xs font-mono font-bold text-white uppercase">
-              {mode === 'GLOBAL' ? 'GLOBAL AUTO SCAN' : mode === 'AGENT' ? 'AUTONOMOUS AGENT SCAN' : 'MANUAL DIAGNOSTIC'}
+            <span className="text-xs font-mono font-semibold text-white">
+              {mode === 'GLOBAL' ? '全局批量扫描' : mode === 'AGENT' ? 'Agent 自主扫描' : '手动诊断'}
             </span>
           </div>
         </div>
@@ -1057,35 +1298,34 @@ const Scanner: React.FC<ScannerProps> = ({
 
         {mode === 'AGENT' && token && (
           <div className="h-full flex flex-col min-h-0">
-            <AgentScanErrorBoundary>
+            <AgentScanErrorBoundary resetKey={`${mode}:${session.agentDraft?.targetIp || 'new'}:${session.status}`}>
               <AgentScan
                 token={token}
                 currentUser={currentUser}
                 onSessionComplete={onAddToHistory}
                 engineUrl={engineUrl}
                 draft={session.agentDraft}
-                onDraftChange={(draft) => setSession((prev) => ({ ...prev, agentDraft: draft }))}
+                onDraftChange={handleAgentDraftChange}
               />
             </AgentScanErrorBoundary>
           </div>
         )}
 
         {mode === 'GLOBAL' && (
-          // Modified grid container to handle scrolling columns correctly
-          <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 h-full overflow-hidden">
-            {/* Global Config Panel - Made scrollable independent of main layout */}
-            <div className="lg:col-span-1 space-y-6 flex flex-col h-full overflow-y-auto pb-24 pr-2 custom-scrollbar">
+          <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+            {/* Global Config Panel */}
+            <div className="lg:col-span-1 space-y-6 flex flex-col lg:sticky lg:top-0 lg:max-h-[calc(100vh-6rem)] overflow-y-auto pb-6 pr-2 custom-scrollbar">
               <div className="bg-cyber-800 border border-cyber-700 p-6 rounded-lg shadow-lg shrink-0">
                 <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
                   <Settings className="text-cyber-400" />
-                  Global Configuration
+                  扫描配置
                 </h2>
 
                 {/* Engine Configuration Section */}
                 <div className="mb-6 pb-6 border-b border-cyber-700 space-y-3">
                   <div className="flex justify-between items-center">
                     <label className="text-xs text-cyber-400 uppercase font-bold flex items-center gap-1">
-                      <Link size={12} /> Execution Engine URL
+                      <Link size={12} /> 本机执行引擎
                     </label>
                     <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${engineStatus === 'online' ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'}`}>
                       {engineStatus}
@@ -1094,9 +1334,8 @@ const Scanner: React.FC<ScannerProps> = ({
                   <div className="flex gap-2">
                     <input
                       type="text"
-                      value={engineUrl}
-                      onChange={(e) => setEngineUrl(e.target.value)}
-                      placeholder="http://<server-ip>:5002"
+                      value="同源本机引擎 (/api/v1)"
+                      readOnly
                       className="flex-1 bg-cyber-900 border border-cyber-700 text-white p-2 text-sm rounded focus:border-cyber-accent outline-none font-mono"
                     />
                     <button
@@ -1109,7 +1348,7 @@ const Scanner: React.FC<ScannerProps> = ({
                   </div>
                   {engineStatus === 'offline' && (
                     <p className="text-[10px] text-red-400">
-                      * Cannot reach server. Run <code>python server.py</code> and check URL.
+                      无法连接本机引擎，请确认 <code>server.py</code> 已启动。
                     </p>
                   )}
                 </div>
@@ -1159,7 +1398,7 @@ const Scanner: React.FC<ScannerProps> = ({
                           value={session.connection.canInterface}
                           onChange={(e) => setSession(p => ({ ...p, connection: { ...p.connection, canInterface: e.target.value } }))}
                           placeholder="PCAN_USBBUS1"
-                          className="w-full mt-1 bg-cyber-900 border border-cyber-600 text-white p-1.5 text-sm rounded font-mono focus:border-cyber-accent outline-none"
+                           className="w-full mt-1 bg-cyber-900 border border-cyber-600 text-white p-1.5 text-sm rounded font-mono focus:border-cyber-accent outline-none"
                           disabled={session.isConnected}
                         />
                       </div>
@@ -1267,6 +1506,15 @@ const Scanner: React.FC<ScannerProps> = ({
                         <Play size={18} fill="currentColor" />
                         {session.status === 'running' ? 'BATCH SCANNING...' : 'EXECUTE FULL SCAN'}
                       </button>
+                      {session.status === 'running' && (
+                        <button
+                          onClick={stopBatchScan}
+                          className="w-full rounded border border-red-400/70 bg-red-500/15 px-4 py-3 font-bold text-red-200 transition-colors hover:bg-red-500/25 flex items-center justify-center gap-2"
+                        >
+                          <Square size={17} fill="currentColor" />
+                          停止扫描
+                        </button>
+                      )}
                       <button
                         onClick={() => setSession(p => ({ ...p, isConnected: false, status: 'idle', logs: [], results: [] }))}
                         className="w-full px-4 py-2 bg-red-900/20 border border-red-500/50 text-red-400 rounded hover:bg-red-900/40 text-sm"
@@ -1279,39 +1527,69 @@ const Scanner: React.FC<ScannerProps> = ({
               </div>
             </div>
 
-            {/* Global Mode: Logs & Results - Structured for no-overlap Dashboard layout */}
-            <div className="lg:col-span-2 flex flex-col gap-6 h-full overflow-hidden">
-              <div className="h-[480px] shrink-0">
-                <ScanLogs logs={session.logs} onClearLogs={() => setSession(prev => ({ ...prev, logs: [] }))} />
-              </div>
+            {/* Global Mode: Logs & Results — natural document flow, no viewport stretch gap */}
+            <div className="lg:col-span-2 flex flex-col gap-4">
+              <ScanLogs logs={session.logs} onClearLogs={() => setSession(prev => ({ ...prev, logs: [] }))} />
 
-              <div className="flex-1 flex flex-col gap-6 overflow-y-auto pb-12 custom-scrollbar pr-1">
-                <div className="flex flex-col xl:flex-row gap-6 shrink-0 h-fit">
-                  {/* Results Column moved to center/right */}
-                  {session.status === 'completed' && (
-                    <div className="flex-1 bg-cyber-800 border border-cyber-700 p-6 rounded-lg shadow-lg animate-slide-up">
+              {showBatchSummary && (
+                <div className="flex flex-col gap-4">
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    <div className="bg-cyber-800 border border-cyber-700 p-6 rounded-lg shadow-lg">
                       <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                         <ShieldCheck className="text-cyber-accent" /> Scan Summary
                       </h3>
                       <div className="grid grid-cols-2 gap-4 mb-4">
                         <div className="bg-cyber-900/50 p-3 rounded border border-cyber-700">
                           <span className="text-[10px] text-gray-500 block uppercase">Threats Detected</span>
-                          <span className="font-mono text-2xl font-bold text-cyber-danger">
-                            {session.results.filter(r => r.vulnerable).length}
+                          <span className="font-mono text-2xl font-bold text-red-400">
+                            {batchSummaryStats.threats}
                           </span>
                         </div>
                         <div className="bg-cyber-900/50 p-3 rounded border border-cyber-700">
                           <span className="text-[10px] text-gray-500 block uppercase">Risk Factor</span>
-                          <span className="font-mono text-2xl font-bold text-orange-500">
-                            {session.riskScore}%
+                          <span className="font-mono text-2xl font-bold text-orange-400">
+                            {batchSummaryStats.risk}%
                           </span>
                         </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 mb-4 text-center">
+                        <div className="rounded border border-cyber-700 bg-cyber-900/40 px-2 py-2">
+                          <div className="text-[10px] uppercase text-gray-500">Secure</div>
+                          <div className="font-mono text-lg text-emerald-400">{batchSummaryStats.secure}</div>
+                        </div>
+                        <div className="rounded border border-cyber-700 bg-cyber-900/40 px-2 py-2">
+                          <div className="text-[10px] uppercase text-gray-500">Errors</div>
+                          <div className="font-mono text-lg text-amber-300">{batchSummaryStats.errors}</div>
+                        </div>
+                        <div className="rounded border border-cyber-700 bg-cyber-900/40 px-2 py-2">
+                          <div className="text-[10px] uppercase text-gray-500">Total</div>
+                          <div className="font-mono text-lg text-cyan-300">{session.results.length}</div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+                        <button
+                          onClick={handleExportScanPdf}
+                          disabled={session.results.length === 0}
+                          className="py-2.5 bg-cyber-900 border border-cyber-700 hover:border-cyber-accent disabled:opacity-40 text-white rounded font-semibold transition-all flex justify-center items-center gap-2 text-xs uppercase tracking-wide"
+                        >
+                          <Download size={14} className="text-cyber-accent" />
+                          导出扫描报告 PDF
+                        </button>
+                        <button
+                          onClick={handleExportScanMarkdown}
+                          disabled={session.results.length === 0}
+                          className="py-2.5 bg-cyber-900 border border-cyber-700 hover:border-cyan-400 disabled:opacity-40 text-white rounded font-semibold transition-all flex justify-center items-center gap-2 text-xs uppercase tracking-wide"
+                        >
+                          <FileDown size={14} className="text-cyan-300" />
+                          导出 Markdown
+                        </button>
                       </div>
 
                       <button
                         onClick={handleAiAnalysis}
-                        disabled={isAnalysing}
-                        className="w-full py-3 bg-cyber-accent/10 border border-cyber-accent text-cyber-accent hover:bg-cyber-accent hover:text-black rounded font-bold transition-all flex justify-center items-center gap-2 uppercase tracking-widest text-sm shadow-[0_0_15px_rgba(0,240,255,0.1)]"
+                        disabled={isAnalysing || session.results.length === 0}
+                        className="w-full py-3 bg-cyber-accent/10 border border-cyber-accent text-cyber-accent hover:bg-cyber-accent hover:text-black disabled:opacity-40 rounded font-bold transition-all flex justify-center items-center gap-2 uppercase tracking-widest text-sm shadow-[0_0_15px_rgba(0,240,255,0.1)]"
                       >
                         {isAnalysing ? <RotateCw className="animate-spin" size={16} /> : <FileText size={16} />}
                         {session.aiReport ? 'Re-Generate AI Intelligence' : 'Generate AI Security Report'}
@@ -1322,23 +1600,24 @@ const Scanner: React.FC<ScannerProps> = ({
                         <span className="text-[10px] font-mono text-gray-500 uppercase tracking-tighter">Session Archive Synchronized</span>
                       </div>
                     </div>
-                  )}
 
-                  {/* Detected Threats (Brief List) */}
-                  {session.status === 'completed' && !session.aiReport && (
-                    <div className="flex-1 bg-cyber-800 border border-cyber-700 rounded-lg p-6 max-h-[300px] overflow-y-auto custom-scrollbar">
+                    <div className="bg-cyber-800 border border-cyber-700 rounded-lg p-6 max-h-[360px] overflow-y-auto custom-scrollbar">
                       <h3 className="text-md font-bold text-white mb-4 flex items-center gap-2">
                         <AlertTriangle className="text-yellow-500" size={18} /> Found Vectors
+                        <span className="ml-auto text-[10px] font-mono text-gray-500">{batchSummaryStats.threats} items</span>
                       </h3>
                       <div className="space-y-2">
                         {session.results.filter(r => r.vulnerable).map((res) => {
                           const poc = findPocInCatalog(pocCatalogRef.current, res);
                           return (
                             <div key={res.pocId} onClick={() => poc && setSelectedResultPoc(poc)} className="bg-cyber-900/80 border-l-2 border-cyber-danger p-2 rounded cursor-pointer hover:bg-cyber-700 transition-colors group">
-                              <div className="flex justify-between items-center">
-                                <span className="text-gray-200 font-bold text-xs truncate">{poc?.name}</span>
-                                <ChevronRight size={12} className="text-gray-600 group-hover:text-cyber-accent transition-colors" />
+                              <div className="flex justify-between items-center gap-2">
+                                <span className="text-gray-200 font-bold text-xs truncate">{poc?.name || res.pocId}</span>
+                                <ChevronRight size={12} className="text-gray-600 group-hover:text-cyber-accent transition-colors shrink-0" />
                               </div>
+                              {res.details ? (
+                                <p className="mt-1 text-[10px] text-gray-500 line-clamp-2">{res.details}</p>
+                              ) : null}
                             </div>
                           );
                         })}
@@ -1347,31 +1626,41 @@ const Scanner: React.FC<ScannerProps> = ({
                         )}
                       </div>
                     </div>
+                  </div>
+
+                  {aiReportError && (
+                    <div className="rounded-lg border border-red-500/40 bg-red-950/30 px-4 py-3 text-sm text-red-200">
+                      AI 报告生成失败：{aiReportError}
+                    </div>
+                  )}
+
+                  {session.aiReport && (
+                    <div className="bg-cyber-800 border border-cyber-accent/30 rounded-lg p-6 flex flex-col relative shadow-2xl">
+                      <div className="flex justify-between items-center mb-6 border-b border-cyber-700/50 pb-4 gap-3 flex-wrap">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded bg-cyber-accent/10 flex items-center justify-center border border-cyber-accent/30">
+                            <Activity size={18} className="text-cyber-accent" />
+                          </div>
+                          <h4 className="text-sm font-bold text-white tracking-[0.2em] uppercase">Tactical Security Assessment</h4>
+                        </div>
+                        <button
+                          onClick={handleDownloadPdf}
+                          className="text-xs flex items-center gap-2 bg-cyber-900 border border-cyber-700 hover:border-cyber-accent text-white px-4 py-2 rounded-lg transition-all shadow-inner"
+                        >
+                          <Download size={14} className="text-cyber-accent" /> EXPORT AI REPORT PDF
+                        </button>
+                      </div>
+                      <div id="ai-report-content" className="prose prose-invert max-w-none text-sm text-gray-400 font-sans p-6 bg-black/40 rounded-xl border border-cyber-800 break-words pb-6 max-h-[480px] overflow-y-auto custom-scrollbar">
+                        {session.aiReport.trim() ? (
+                          <MarkdownRenderer content={session.aiReport} />
+                        ) : (
+                          <p className="text-gray-500 italic">AI 报告为空，请重新生成或检查 Profile 中的 AI 配置。</p>
+                        )}
+                      </div>
+                    </div>
                   )}
                 </div>
-
-                {session.aiReport && (
-                  <div className="bg-cyber-800 border border-cyber-accent/30 rounded-lg p-6 flex flex-col relative shadow-2xl shrink-0 h-auto min-h-max">
-                    <div className="flex justify-between items-center mb-6 border-b border-cyber-700/50 pb-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded bg-cyber-accent/10 flex items-center justify-center border border-cyber-accent/30">
-                          <Activity size={18} className="text-cyber-accent" />
-                        </div>
-                        <h4 className="text-sm font-bold text-white tracking-[0.2em] uppercase">Tactical Security Assessment</h4>
-                      </div>
-                      <button
-                        onClick={handleDownloadPdf}
-                        className="text-xs flex items-center gap-2 bg-cyber-900 border border-cyber-700 hover:border-cyber-accent text-white px-4 py-2 rounded-lg transition-all shadow-inner"
-                      >
-                        <Download size={14} className="text-cyber-accent" /> EXPORT DECISION PDF
-                      </button>
-                    </div>
-                    <div id="ai-report-content" className="prose prose-invert max-w-none text-sm text-gray-400 font-sans p-6 bg-black/40 rounded-xl border border-cyber-800 break-words h-auto min-h-max pb-12">
-                      <MarkdownRenderer content={session.aiReport} />
-                    </div>
-                  </div>
-                )}
-              </div>
+              )}
             </div>
           </div>
         )}

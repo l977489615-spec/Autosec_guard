@@ -143,7 +143,7 @@ def _run_poc(plugin) -> dict:
     }
 
 class Poc35CVE20241633AccessControlInputValidationAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-041'
+    meta_display_id = "POC-NET-035"
     meta_poc_name = 'CVE-2024-1633 输入校验 Active Validation'
     meta_cve_id = 'CVE-2024-1633'
     meta_severity = 'Medium'

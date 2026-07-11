@@ -146,7 +146,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc17CVE202532057CertificateValidationAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-002'
+    meta_display_id = "POC-NET-017"
     meta_poc_name = 'CVE-2025-32057 证书校验缺失 Active Validation'
     meta_cve_id = 'CVE-2025-32057'
     meta_severity = 'Medium'

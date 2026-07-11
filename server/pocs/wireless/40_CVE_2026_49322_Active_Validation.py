@@ -169,7 +169,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc40CVE202649322ReplayCryptoAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-014'
+    meta_display_id = "POC-WIRELESS-040"
     meta_poc_name = 'CVE-2026-49322 重放 Active Validation'
     meta_cve_id = 'CVE-2026-49322'
     meta_severity = 'High'

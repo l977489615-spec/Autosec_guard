@@ -185,7 +185,7 @@ def _run_poc(plugin) -> dict:
 
 
 class Poc61CVE20240727DoSAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-099'
+    meta_display_id = "POC-NET-061"
     meta_poc_name = 'CVE-2024-0727 DoS Active Validation'
     meta_cve_id = 'CVE-2024-0727'
     meta_severity = 'Medium'

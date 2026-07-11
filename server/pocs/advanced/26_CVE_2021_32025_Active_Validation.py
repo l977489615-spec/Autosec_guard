@@ -160,7 +160,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc26CVE202132025PrivilegeEscalationAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-062'
+    meta_display_id = "POC-ADV-026"
     meta_poc_name = 'CVE-2021-32025 权限提升 Active Validation'
     meta_cve_id = 'CVE-2021-32025'
     meta_severity = 'High'

@@ -32,33 +32,50 @@ SANDBOX_RUNNER = SERVER_DIR / "sandbox_runner.py"
 
 
 MANUAL_REVIEW_FILENAME_KEYWORDS = {
-    "replay",
-    "injection",
-    "inject",
-    "spoof",
-    "control",
-    "ctrl",
-    "deauth",
-    "dos",
-    "flood",
-    "reset",
-    "overflow",
     "keyfob",
-    "evil_twin",
+    "key_fob",
+    "gps_spoof",
+    "tpms",
+    "v2x_bsm",
+    "mirror_hijack",
+    "vehicle_ctrl",
+    "unauth_vehicle",
+    "keystroke_injection",
+    "rf_replay",
+    "replay_attack",
+    "can_replay",
+    "ecu_reset",
+    "routing_activation",
 }
 
-MANUAL_REVIEW_PROTOCOLS = {"can", "uds", "obd", "rf", "sdr", "v2x", "tpms", "rtsp"}
+# 仅当协议层结果无法由程序直接判定、需观察车端/射频/总线物理现象时才默认人工复核。
+HARDWARE_REVIEW_PROTOCOLS = {"can", "uds", "obd", "rf", "sdr", "tpms", "v2x", "bluetooth", "ble"}
+HARDWARE_PARAM_HINTS = {
+    "can_interface", "can_bitrate", "bluetooth_mac", "bd_addr", "target_mac",
+    "wifi_interface", "interface", "frequency", "usb_device_serial", "expected_usb_serial",
+}
+
+# CAN/UDS 中会影响车辆状态、需肉眼确认的动作类 PoC（被动嗅探/读内存等不在此列）。
+MANUAL_REVIEW_CAN_KEYWORDS = {
+    "replay",
+    "message_injection",
+    "ecu_reset",
+    "routing_activation",
+    "dos_flood",
+}
 
 MANUAL_REVIEW_EVIDENCE_KEYWORDS = {
     "requires manual",
     "manual confirmation",
     "operator confirmation",
     "operator confirmed",
-    "no operator confirmation",
+    "observe the target",
+    "observe vehicle",
+    "physical effect",
     "vehicle unlock",
-    "physical",
+    "door lock",
+    "visible response",
     "replay transmitted",
-    "sent malicious",
 }
 
 
@@ -117,6 +134,9 @@ def _extract_security_profile_from_source(source_text: str, poc_name: str) -> di
         "profiles": [],
         "destructive_level": "Safe",
         "is_disruptive": False,
+        "requires_operator_observation": None,
+        "requires_manual_review": None,
+        "capability_dependencies": [],
     }
 
     try:
@@ -132,6 +152,9 @@ def _extract_security_profile_from_source(source_text: str, poc_name: str) -> di
             "meta_profiles",
             "meta_destructive_level",
             "is_disruptive",
+            "requires_operator_observation",
+            "requires_manual_review",
+            "meta_capability_dependencies",
         }
         for node in ast.walk(tree):
             if not isinstance(node, ast.ClassDef):
@@ -157,6 +180,9 @@ def _extract_security_profile_from_source(source_text: str, poc_name: str) -> di
                 profile["profiles"] = class_meta.get("meta_profiles") or profile["profiles"]
                 profile["destructive_level"] = class_meta.get("meta_destructive_level") or profile["destructive_level"]
                 profile["is_disruptive"] = bool(class_meta.get("is_disruptive", profile["is_disruptive"]))
+                profile["requires_operator_observation"] = class_meta.get("requires_operator_observation")
+                profile["requires_manual_review"] = class_meta.get("requires_manual_review")
+                profile["capability_dependencies"] = class_meta.get("meta_capability_dependencies") or []
                 break
     except Exception as exc:
         profile["parse_error"] = str(exc)
@@ -175,26 +201,66 @@ def _requires_disruptive_approval(profile: dict, params: dict) -> bool:
 
 
 def poc_requires_human_review(poc_filename: str, profile: dict, plugin_results: Optional[dict] = None) -> bool:
+    """Return True only when operator observation is required to judge exploit effect.
+
+    Network banner/login/log-leak style PoCs should auto-confirm via plugin_results.
+    Physical/RF/CAN vehicle-effect PoCs may opt in explicitly or match narrow heuristics.
+    """
     plugin_results = plugin_results or {}
     explicit = plugin_results.get("requires_human_review")
     if explicit is None:
         explicit = plugin_results.get("requires_manual_review")
     if explicit is None:
         explicit = plugin_results.get("manual_confirmation_required")
-    if explicit in {True, "true", "True", "1", 1}:
-        return True
     if explicit in {False, "false", "False", "0", 0}:
         return False
 
-    protocol = str(profile.get("protocol") or "").strip().lower()
-    if protocol in MANUAL_REVIEW_PROTOCOLS:
-        return True
-
+    poc_path = str(poc_filename or "").replace("\\", "/").lower()
     name_text = " ".join([
-        str(poc_filename or ""),
+        poc_path,
         str(profile.get("poc_name") or ""),
         str(profile.get("cve_id") or ""),
     ]).lower().replace("-", "_")
+
+    # A descriptor-level decision is authoritative. In particular, explicit False
+    # prevents protocol/name heuristics from creating unnecessary operator work.
+    profile_explicit = profile.get("requires_operator_observation")
+    if profile_explicit is None:
+        profile_explicit = profile.get("requires_manual_review")
+    if profile_explicit in {False, "false", "False", "0", 0}:
+        return False
+
+    protocol = str(profile.get("protocol") or "").strip().lower()
+    required_params = {
+        str(value).strip().lower() for value in (profile.get("required_params") or []) if str(value).strip()
+    }
+    capability_dependencies = {
+        str(value).strip().lower() for value in (profile.get("capability_dependencies") or []) if str(value).strip()
+    }
+    hardware_dependent = (
+        protocol in HARDWARE_REVIEW_PROTOCOLS
+        or bool(required_params & HARDWARE_PARAM_HINTS)
+        or bool(capability_dependencies & {"can", "sdr", "rf", "bluetooth", "ble", "usb", "vehicle"})
+    )
+
+    if not hardware_dependent:
+        return False
+
+    if explicit in {True, "true", "True", "1", 1}:
+        return True
+
+    if profile_explicit in {True, "true", "True", "1", 1}:
+        return True
+
+    # A machine-verifiable verdict is final unless the descriptor explicitly says
+    # the physical effect itself must still be observed by an operator.
+    if plugin_results.get("vulnerable") in (True, False):
+        return False
+
+    if poc_path.startswith("canbus/") or protocol in {"can", "uds", "obd"}:
+        if any(keyword in name_text for keyword in MANUAL_REVIEW_CAN_KEYWORDS):
+            return True
+
     if any(keyword in name_text for keyword in MANUAL_REVIEW_FILENAME_KEYWORDS):
         return True
 
@@ -203,7 +269,10 @@ def poc_requires_human_review(poc_filename: str, profile: dict, plugin_results: 
         str(plugin_results.get("details") or ""),
         str(plugin_results.get("description") or ""),
     ]).lower()
-    return any(keyword in evidence_text for keyword in MANUAL_REVIEW_EVIDENCE_KEYWORDS)
+    if evidence_text and any(keyword in evidence_text for keyword in MANUAL_REVIEW_EVIDENCE_KEYWORDS):
+        return True
+
+    return False
 
 
 def build_manual_review_prompt(poc_filename: str, profile: dict) -> dict:
@@ -418,8 +487,16 @@ class LocalSandboxPocWorker:
             poc_code=poc_code if poc_code and not os.path.exists(poc_path) else None,
         )
         allowed_hosts = []
-        if params.get("target_ip"):
-            allowed_hosts.append(str(params["target_ip"]))
+        target_host = str(params.get('target_ip') or '').strip()
+        if target_host:
+            try:
+                allowed_hosts.append(str(ipaddress.ip_address(target_host)))
+            except ValueError:
+                infos = socket.getaddrinfo(target_host, None, type=socket.SOCK_STREAM)
+                allowed_hosts.extend(sorted({str(info[4][0]).split('%')[0] for info in infos}))
+                params = dict(params)
+                params['target_hostname'] = target_host
+                params['target_ip'] = allowed_hosts[0]
 
         sandbox_profile = {
             "cpu_seconds": int(params.get("sandbox_cpu_seconds", _parse_int_env("SANDBOX_CPU_SECONDS", 60))),
@@ -466,6 +543,7 @@ class LocalSandboxPocWorker:
                 env=env_override,
                 start_new_session=True,
             )
+            plan._proc = proc
             try:
                 stdout_text, _ = proc.communicate(timeout=plan.timeout_seconds)
             except subprocess.TimeoutExpired:
@@ -513,6 +591,8 @@ class LocalSandboxPocWorker:
         }
 
     def iter_stream(self, plan: PocWorkerPlan) -> Iterator[dict]:
+        import select
+
         env_override = dict(plan.env)
         if plan.poc_code:
             env_override["AUTOSEC_POC_INLINE_CODE_B64"] = base64.b64encode(
@@ -533,10 +613,45 @@ class LocalSandboxPocWorker:
         result_chunks: list[str] = []
         collecting_result = False
         start_time = time.time()
+        deadline = start_time + max(1, int(plan.timeout_seconds))
+
+        def _emit_timeout_result() -> dict:
+            elapsed = round(time.time() - start_time, 2)
+            return {
+                "type": "result",
+                "success": False,
+                "timeout": True,
+                "vulnerable": False,
+                "evidence": "",
+                "cve_id": "",
+                "elapsed_seconds": elapsed,
+                "errors": [f"PoC execution exceeded {plan.timeout_seconds}s sandbox timeout"],
+                "trace_id": plan.trace_id,
+                "security_profile": plan.security_profile,
+                "sandbox_profile": plan.sandbox_profile,
+                "plugin_results": {"error": "sandbox_timeout"},
+                "worker_mode": plan.worker_mode,
+            }
 
         try:
             assert proc.stdout is not None
-            for line in proc.stdout:
+            while True:
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    self.cancel(plan)
+                    yield _emit_timeout_result()
+                    return
+
+                ready, _, _ = select.select([proc.stdout], [], [], min(1.0, remaining))
+                if not ready:
+                    if proc.poll() is not None:
+                        break
+                    continue
+
+                line = proc.stdout.readline()
+                if not line:
+                    break
+
                 if "===RESULT_TOKEN===" in line:
                     before, after = line.split("===RESULT_TOKEN===", 1)
                     if before.strip():
@@ -551,7 +666,13 @@ class LocalSandboxPocWorker:
                 else:
                     yield {"type": "log", "message": line.strip()}
 
-            proc.wait(timeout=plan.timeout_seconds)
+            try:
+                proc.wait(timeout=max(0.1, deadline - time.time()))
+            except subprocess.TimeoutExpired:
+                self.cancel(plan)
+                yield _emit_timeout_result()
+                return
+
             try:
                 result_json = "".join(result_chunks)
                 plugin_results = _loads_last_json_object(result_json) if result_json.strip() else {}

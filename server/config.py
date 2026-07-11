@@ -46,6 +46,7 @@ load_environment()
 @dataclass(frozen=True)
 class AppConfig:
     secret_key: str
+    ai_config_key: str
     database_uri: str
     autosec_api: str
     mcp_server: str
@@ -100,13 +101,45 @@ def get_runtime_data_dir() -> Path:
     return path
 
 
+_WEAK_SECRETS = {
+    'change-me-before-delivery',
+    'replace_with_a_long_random_secret',
+    'secret',
+    'changeme',
+}
+
+
+def _load_or_create_secret(env_name: str, filename: str) -> str:
+    """Return a durable secret without shipping a shared default credential."""
+    configured = str(os.environ.get(env_name) or '').strip()
+    if configured:
+        if configured.lower() in _WEAK_SECRETS or len(configured) < 32:
+            raise RuntimeError(f'{env_name} must be at least 32 characters and must not use a documented placeholder.')
+        return configured
+
+    secret_path = get_runtime_data_dir() / filename
+    if secret_path.exists():
+        value = secret_path.read_text(encoding='utf-8').strip()
+        if len(value) >= 32:
+            return value
+
+    value = secrets.token_urlsafe(48)
+    secret_path.write_text(value + '\n', encoding='utf-8')
+    try:
+        secret_path.chmod(0o600)
+    except OSError:
+        pass
+    return value
+
+
 def get_config() -> AppConfig:
     # AUTOSEC_HOST 默认 127.0.0.1（仅本机访问，最小暴露面）。
     # 若需要跨网络访问（如在实验室局域网中共享），显式设置 AUTOSEC_HOST=0.0.0.0，
-    # 并同时启用 AUTOSEC_REQUIRE_AUTH=true 和配置 AUTOSEC_CORS_ORIGINS。
+    # 并同时配置 TLS 反向代理和精确的 AUTOSEC_CORS_ORIGINS 白名单。
     flask_host = os.environ.get('AUTOSEC_HOST', '127.0.0.1')
     return AppConfig(
-        secret_key=os.environ.get('AUTOSEC_SECRET_KEY') or secrets.token_urlsafe(32),
+        secret_key=_load_or_create_secret('AUTOSEC_SECRET_KEY', '.session-secret'),
+        ai_config_key=_load_or_create_secret('AUTOSEC_AI_CONFIG_KEY', '.ai-config-secret'),
         database_uri=_normalize_database_uri(os.environ.get('AUTOSEC_DB_URI')),
         autosec_api=os.environ.get('AUTOSEC_API', 'http://localhost:5002'),
         mcp_server=os.environ.get('MCP_SERVER', 'http://localhost:5003'),
@@ -120,24 +153,20 @@ def get_runtime_warnings(config: AppConfig) -> List[str]:
     warnings: List[str] = []
 
     if 'AUTOSEC_SECRET_KEY' not in os.environ:
-        warnings.append('AUTOSEC_SECRET_KEY not set; using an ephemeral development key.')
+        warnings.append('AUTOSEC_SECRET_KEY not set; using the durable per-installation session key.')
+
+    if 'AUTOSEC_AI_CONFIG_KEY' not in os.environ:
+        warnings.append('AUTOSEC_AI_CONFIG_KEY not set; using the durable per-installation AI encryption key.')
 
     if 'AUTOSEC_DB_URI' not in os.environ:
         warnings.append('AUTOSEC_DB_URI not set; using local SQLite database.')
 
     # 网络暴露面警告
     if config.flask_host == '0.0.0.0':
-        require_auth = os.environ.get('AUTOSEC_REQUIRE_AUTH', 'false').strip().lower()
         cors_origins = os.environ.get('AUTOSEC_CORS_ORIGINS', '').strip()
-        if require_auth not in ('true', '1', 'yes'):
-            warnings.append(
-                'SECURITY WARNING: AUTOSEC_HOST=0.0.0.0 exposes the API to all network interfaces. '
-                'Set AUTOSEC_REQUIRE_AUTH=true or restrict to AUTOSEC_HOST=127.0.0.1 for local-only access.'
-            )
         if not cors_origins:
             warnings.append(
-                'SECURITY WARNING: AUTOSEC_CORS_ORIGINS not set; CORS allows all origins (*). '
-                'Set AUTOSEC_CORS_ORIGINS to specific allowed domains for network deployments.'
+                'CORS is disabled because AUTOSEC_CORS_ORIGINS is empty; use the same-origin UI or configure an explicit allowlist.'
             )
 
     warnings.append('Edge-local product mode: PoC execution and hardware capability probing run on this workstation.')

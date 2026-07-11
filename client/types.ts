@@ -34,12 +34,9 @@ export interface POC {
   codeSnippet: string; // The static display version
   requiredParams: ParamType[];
   pocFile?: string; // Reference to the actual Python file in Pocs/
-  supportedExecutionPlanes?: ('cloud' | 'edge')[];
-  recommendedExecutionPlane?: 'cloud' | 'edge';
   executionRequirements?: {
     required_capabilities: string[];
     requires_edge: boolean;
-    cloud_only: boolean;
   };
   manualConfirmationRequired?: boolean;
   requiresDisruptiveApproval?: boolean;
@@ -267,7 +264,7 @@ export interface ScanSession {
   isConnected: boolean;
   startTime: string;
   endTime?: string;
-  status: 'idle' | 'connecting' | 'running' | 'completed' | 'failed';
+  status: 'idle' | 'connecting' | 'draft' | 'ready' | 'running' | 'awaiting_approval' | 'awaiting_review' | 'completed' | 'failed' | 'cancelled';
   mode: 'batch' | 'manual' | 'agent';
   logs: ScanLog[];
   results: ScanResult[];
@@ -287,7 +284,9 @@ export interface ScanSession {
     rfFrequency: string;
     usbAdbSerial: string;
     executionMode: 'safe_only' | 'progressive_auto' | 'full_auto_lab';
+    destructivePolicy: 'allow_all' | 'confirm_each' | 'deny_all';
     enableReflectionReentry: boolean;
+    enableWeaponize: boolean;
     lowResourceMode: boolean;
   };
 }

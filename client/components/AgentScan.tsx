@@ -1,19 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Bot, Shield, Network, Cpu, FileText, Play, Loader, CheckCircle, XCircle, Key, Sliders, Download, RotateCcw, AlertTriangle, ShieldCheck, Zap } from 'lucide-react';
-import { saveScanSession, submitPocManualVerdict } from '../services/api';
+import { Bot, Shield, Network, Cpu, FileText, Play, Loader, CheckCircle, XCircle, Key, Sliders, Download, RotateCcw, AlertTriangle, ShieldCheck, Zap, Square, FileDown } from 'lucide-react';
+import { approveV3SessionAction, createV3Session, fetchWithEngineRecovery, saveScanSession, startV3SessionRun, submitPocManualVerdict, submitV3SessionReview, updateV3SessionRun } from '../services/api';
 import ScanLogs from './ScanLogs';
 import { PhaseRecord, PlannerStep, ScanSession, Severity, SupervisorAdjustment, SupervisorEvent, SupervisorMetrics } from '../types';
-import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Environment, ContactShadows } from '@react-three/drei';
-import { CarModel } from './CarModel';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import AttackGraph from './AttackGraph';
-import { assessPhysicalImpact, generateAttackGraph, generateMultiHopAttackGraph, generateStructuredReport, simulateRemediation, getBackendUrl, setBackendUrl } from '../services/api';
+import { assessPhysicalImpact, generateAttackGraph, generateMultiHopAttackGraph, generateStructuredReport, simulateRemediation, getBackendUrl } from '../services/api';
 import { AssessmentArtifacts } from '../types';
 import { findPocInCatalog } from '../services/pocCatalog';
 import { usePocCatalog } from '../hooks/usePocCatalog';
 import { markdownToSafeHtml, escapeHtml } from '../utils/security';
+import { exportReportMarkdown, exportReportPdf } from '../utils/pdfExport';
+
+const AgentVehicleScene = React.lazy(() => import('./AgentVehicleScene'));
 
 interface AgentPhase {
   name: string;
@@ -59,6 +59,10 @@ type AgentManualReviewDecision = {
   evidenceFile: string;
 } | null;
 
+type DestructivePolicy = 'allow_all' | 'confirm_each' | 'deny_all';
+type DestructiveApprovalDecision = 'approved' | 'rejected' | 'expired';
+type DestructiveApprovalState = { item: any; expiresAt: number } | null;
+
 interface AdaptiveContext {
   detected_services: string[];
   auth_contexts: Array<{ service: string; auth_type: string; recommended_strategy: string }>;
@@ -87,7 +91,7 @@ const diagnosePhaseFailure = ({
   errorMessage?: string;
   payload?: any;
 }) => {
-  const serverMessage = payload?.error || payload?.message || '';
+  const serverMessage = payload?.error?.message || payload?.error || payload?.message || '';
   const combined = `${errorMessage || ''} ${serverMessage}`.trim();
 
   if (!status && /failed to fetch|networkerror|load failed|network request failed/i.test(combined)) {
@@ -205,7 +209,12 @@ const compactForBrowserStorage = (value: any, depth = 0): any => {
   if (value == null) return value;
   if (typeof value === 'string') return truncateText(value);
   if (typeof value !== 'object') return value;
-  if (depth >= 4) return '[truncated-depth]';
+  // Runtime contract fields such as structured.attack_plan.items[].parameters
+  // live below depth 4. Truncating by depth corrupted authoritative objects
+  // into strings and made the backend call dict("[truncated-depth]"). Arrays,
+  // keys and strings are already bounded, so a higher structural limit remains
+  // safe for sessionStorage without changing field types.
+  if (depth >= 8) return '[truncated-depth]';
   if (Array.isArray(value)) {
     return value.slice(0, MAX_STORED_ARRAY_ITEMS).map(item => compactForBrowserStorage(item, depth + 1));
   }
@@ -250,25 +259,15 @@ const getResumablePhase = (records: PhaseRecord[] = []) => {
   return null;
 };
 
-const detectLowResourceMode = () => {
-  if (typeof navigator === 'undefined') return false;
-  const nav = navigator as Navigator & { deviceMemory?: number };
-  const ua = navigator.userAgent.toLowerCase();
-  const isLinux = ua.includes('linux');
-  const isFirefox = ua.includes('firefox');
-  const cpuCores = typeof nav.hardwareConcurrency === 'number' ? nav.hardwareConcurrency : 8;
-  const deviceMemory = typeof nav.deviceMemory === 'number' ? nav.deviceMemory : 8;
-  return (isLinux && isFirefox) || cpuCores <= 4 || deviceMemory <= 4;
-};
-
 const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComplete, engineUrl, draft, onDraftChange }) => {
   const { pocs: pocCatalog } = usePocCatalog(token);
   const [targetIp, setTargetIp] = useState(draft?.targetIp || '');
   const [targetName, setTargetName] = useState(draft?.targetName || 'IVI System');
   const [isFullMode, setIsFullMode] = useState(true);
   const [showAdvanced, setShowAdvanced] = useState(true);
-  const [lowResourceMode, setLowResourceMode] = useState(() => draft?.lowResourceMode ?? detectLowResourceMode());
+  const [lowResourceMode, setLowResourceMode] = useState(() => draft?.lowResourceMode ?? false);
   const [webglFailed, setWebglFailed] = useState(false);
+  const [vehicleSceneGeneration, setVehicleSceneGeneration] = useState(0);
 
   // 可选参数 — 控制 Agent 选择哪类 PoC
   const [canInterface, setCanInterface] = useState(draft?.canInterface || '');
@@ -277,6 +276,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
   const [rfFrequency, setRfFrequency] = useState(draft?.rfFrequency || '');
   const [usbAdbSerial, setUsbAdbSerial] = useState(draft?.usbAdbSerial || '');
   const [executionMode, setExecutionMode] = useState<'safe_only' | 'progressive_auto' | 'full_auto_lab'>(draft?.executionMode || 'progressive_auto');
+  const [destructivePolicy, setDestructivePolicy] = useState<DestructivePolicy>(draft?.destructivePolicy || 'confirm_each');
 
   const [topology, setTopology] = useState<TopologyData | null>(null);
   const [adaptiveCtx, setAdaptiveCtx] = useState<AdaptiveContext | null>(null);
@@ -296,8 +296,16 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
   const [structuredState, setStructuredState] = useState<Record<string, any>>({});
   const [findings, setFindings] = useState<any[]>([]);
   const [enableReflectionReentry, setEnableReflectionReentry] = useState(draft?.enableReflectionReentry || false);
+  const [enableWeaponize, setEnableWeaponize] = useState(draft?.enableWeaponize ?? true);
   const [manualReviewState, setManualReviewState] = useState<AgentManualReviewState>(null);
   const manualReviewResolverRef = React.useRef<((decision: AgentManualReviewDecision) => void) | null>(null);
+  const [destructiveApprovalState, setDestructiveApprovalState] = useState<DestructiveApprovalState>(null);
+  const [destructiveApprovalSeconds, setDestructiveApprovalSeconds] = useState(60);
+  const destructiveApprovalResolverRef = React.useRef<((decision: DestructiveApprovalDecision) => void) | null>(null);
+  const destructiveApprovalTimeoutRef = React.useRef<number | null>(null);
+  const agentAbortControllerRef = React.useRef<AbortController | null>(null);
+  const cancelRequestedRef = React.useRef(false);
+  const durableSessionIdRef = React.useRef<string | null>(null);
   const resourceParamsRef = React.useRef({
     canInterface,
     bluetoothMac,
@@ -335,7 +343,9 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
       payload.usb_adb_serial = usbSerial;
     }
     payload.execution_mode = executionMode;
+    payload.destructive_policy = destructivePolicy;
     payload.enable_reflection_reentry = enableReflectionReentry ? 'true' : 'false';
+    payload.enable_weaponize = enableWeaponize ? 'true' : 'false';
     payload.risk_ceiling =
       executionMode === 'full_auto_lab'
         ? 'DATALOSS'
@@ -348,23 +358,33 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
 
   const STORAGE_KEY = 'autosec_agent_scan_state';
 
-  useEffect(() => {
-    if (engineUrl) {
-      setBackendUrl(engineUrl);
-    }
-  }, [engineUrl]);
-  const resolveBackendUrl = () => (engineUrl ? engineUrl.replace(/\/$/, '') : getBackendUrl());
+  const resolveBackendUrl = () => getBackendUrl();
 
-  // ── 从 localStorage 恢复状态 ──
+  // ── 从当前标签页 sessionStorage 恢复非敏感草稿状态 ──
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
+      const saved = sessionStorage.getItem(STORAGE_KEY);
       if (saved) {
         const s = JSON.parse(saved);
         if (s.targetIp) setTargetIp(s.targetIp);
         if (s.targetName) setTargetName(s.targetName);
         if (typeof s.lowResourceMode === 'boolean') setLowResourceMode(s.lowResourceMode);
-        else setLowResourceMode(detectLowResourceMode());
+        else setLowResourceMode(false);
+        if (s.canInterface) setCanInterface(s.canInterface);
+        if (s.bluetoothMac) setBluetoothMac(s.bluetoothMac);
+        if (s.wifiInterface) setWifiInterface(s.wifiInterface);
+        if (s.rfFrequency) setRfFrequency(s.rfFrequency);
+        if (s.usbAdbSerial) setUsbAdbSerial(s.usbAdbSerial);
+        if (s.executionMode) setExecutionMode(s.executionMode);
+        if (s.destructivePolicy) setDestructivePolicy(s.destructivePolicy);
+        if (typeof s.enableReflectionReentry === 'boolean') setEnableReflectionReentry(s.enableReflectionReentry);
+        if (typeof s.enableWeaponize === 'boolean') setEnableWeaponize(s.enableWeaponize);
+        // Runtime snapshots are restored only through the explicit History
+        // "resume" flow. Ordinary route remounts hydrate draft fields only.
+        if (s.restoreRunState !== true) {
+          setActiveStep(-1);
+          return;
+        }
         const restoredPhaseRecords = compactPhaseRecords(Array.isArray(s.phaseRecords) ? s.phaseRecords : []);
         setPhaseRecords(restoredPhaseRecords);
         setStructuredState(compactForBrowserStorage(s.structuredState || {}));
@@ -384,6 +404,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
         if (s.rfFrequency) setRfFrequency(s.rfFrequency);
         if (s.usbAdbSerial) setUsbAdbSerial(s.usbAdbSerial);
         if (s.executionMode) setExecutionMode(s.executionMode);
+        if (s.destructivePolicy) setDestructivePolicy(s.destructivePolicy);
         if (typeof s.enableReflectionReentry === 'boolean') setEnableReflectionReentry(s.enableReflectionReentry);
         setActiveStep(-1);
         if (s.riskScore) setRiskScore(s.riskScore);
@@ -391,19 +412,36 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
         if (s.logs) setLogs(compactLogs(s.logs));
         if (s.assessment) setAssessment(compactForBrowserStorage(s.assessment));
         if (typeof s.activeStep === 'number') setActiveStep(s.activeStep);
+        // Explicit history restoration is one-shot. The live React state keeps
+        // the snapshot for this mount; subsequent route entries start clean.
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+          schemaVersion: 2,
+          targetIp: s.targetIp || '',
+          targetName: s.targetName || 'IVI System',
+          canInterface: s.canInterface || '',
+          bluetoothMac: s.bluetoothMac || '',
+          wifiInterface: s.wifiInterface || '',
+          rfFrequency: s.rfFrequency || '',
+          usbAdbSerial: s.usbAdbSerial || '',
+          executionMode: s.executionMode || 'progressive_auto',
+          destructivePolicy: s.destructivePolicy || 'confirm_each',
+          enableReflectionReentry: Boolean(s.enableReflectionReentry),
+          enableWeaponize: s.enableWeaponize !== false,
+          lowResourceMode: Boolean(s.lowResourceMode),
+        }));
       } else {
-        setLowResourceMode(detectLowResourceMode());
+        setLowResourceMode(false);
       }
     } catch { }
   }, []);
 
-  // ── 保存状态到 localStorage ──
+  // ── 保存状态到当前标签页 sessionStorage ──
   const saveState = (override: Record<string, unknown> = {}) => {
     try {
       const current: any = {
         targetIp, targetName, phases, finalReport,
         topology, adaptiveCtx, scanTime, activeStep,
-        canInterface, bluetoothMac, wifiInterface, rfFrequency, usbAdbSerial, executionMode, enableReflectionReentry, lowResourceMode,
+        canInterface, bluetoothMac, wifiInterface, rfFrequency, usbAdbSerial, executionMode, destructivePolicy, enableReflectionReentry, enableWeaponize, lowResourceMode,
         riskScore, results, logs, assessment, phaseRecords, structuredState, findings,
         ...override,
       };
@@ -417,15 +455,15 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
       current.phaseRecords = compactPhaseRecords(current.phaseRecords);
       current.structuredState = compactForBrowserStorage(current.structuredState);
       current.findings = compactForBrowserStorage(current.findings);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(current));
     } catch { }
   };
 
   const saveConfigState = (override: Record<string, unknown> = {}) => {
     try {
-      const existingRaw = localStorage.getItem(STORAGE_KEY);
+      const existingRaw = sessionStorage.getItem(STORAGE_KEY);
       const existing = existingRaw ? JSON.parse(existingRaw) : {};
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
         ...existing,
         targetIp,
         targetName,
@@ -435,11 +473,33 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
         rfFrequency,
         usbAdbSerial,
         executionMode,
+        destructivePolicy,
         enableReflectionReentry,
+        enableWeaponize,
         lowResourceMode,
         ...override,
       }));
     } catch { }
+  };
+
+  const replaceStoredStateWithDraft = () => {
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+        schemaVersion: 2,
+        targetIp,
+        targetName,
+        canInterface,
+        bluetoothMac,
+        wifiInterface,
+        rfFrequency,
+        usbAdbSerial,
+        executionMode,
+        destructivePolicy,
+        enableReflectionReentry,
+        enableWeaponize,
+        lowResourceMode,
+      }));
+    } catch { /* storage is an optional draft cache */ }
   };
 
   useEffect(() => {
@@ -453,7 +513,9 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
     rfFrequency,
     usbAdbSerial,
     executionMode,
+    destructivePolicy,
     enableReflectionReentry,
+    enableWeaponize,
     lowResourceMode,
   ]);
 
@@ -467,7 +529,9 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
       rfFrequency,
       usbAdbSerial,
       executionMode,
+      destructivePolicy,
       enableReflectionReentry,
+      enableWeaponize,
       lowResourceMode,
     });
   }, [
@@ -479,21 +543,23 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
     rfFrequency,
     usbAdbSerial,
     executionMode,
+    destructivePolicy,
     enableReflectionReentry,
+    enableWeaponize,
     lowResourceMode,
     onDraftChange,
   ]);
 
   const authHeaders = {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`,
+    ...(token && token !== 'cookie-session' ? { 'Authorization': `Bearer ${token}` } : {}),
   };
   // AI 配置由服务端从加密存储加载，前端不再传输 api_key
 
 
   const fetchAdaptiveContext = async (ip: string, openPorts: number[] = []) => {
     try {
-      const r = await fetch(`${resolveBackendUrl()}/api/adaptive-context`, {
+      const r = await fetch(`${resolveBackendUrl()}/api/v1/adaptive-context`, {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ target_ip: ip, open_ports: openPorts, reset: true }),
@@ -539,7 +605,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
 
   const fetchTopology = async (ip: string) => {
     try {
-      const r = await fetch(`${resolveBackendUrl()}/api/topology`, {
+      const r = await fetch(`${resolveBackendUrl()}/api/v1/topology`, {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ target_ip: ip }),
@@ -578,7 +644,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
     setPhaseRecords([]);
     setStructuredState({});
     setFindings([]);
-    localStorage.removeItem(STORAGE_KEY);
+    sessionStorage.removeItem(STORAGE_KEY);
   };
 
   const updatePhase = (idx: number, update: Partial<PhaseResult>) => {
@@ -636,12 +702,84 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
     resolver?.(decision);
   };
 
+  const resolveDestructiveApproval = (decision: DestructiveApprovalDecision) => {
+    if (destructiveApprovalTimeoutRef.current !== null) {
+      window.clearTimeout(destructiveApprovalTimeoutRef.current);
+      destructiveApprovalTimeoutRef.current = null;
+    }
+    const resolver = destructiveApprovalResolverRef.current;
+    destructiveApprovalResolverRef.current = null;
+    setDestructiveApprovalState(null);
+    resolver?.(decision);
+  };
+
+  const requestDestructiveApproval = (item: any): Promise<DestructiveApprovalDecision> => new Promise((resolve) => {
+    destructiveApprovalResolverRef.current = resolve;
+    const expiresAt = Date.now() + 60_000;
+    setDestructiveApprovalSeconds(60);
+    setDestructiveApprovalState({ item, expiresAt });
+    destructiveApprovalTimeoutRef.current = window.setTimeout(() => resolveDestructiveApproval('expired'), 60_000);
+  });
+
+  useEffect(() => {
+    if (!destructiveApprovalState) return;
+    const interval = window.setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((destructiveApprovalState.expiresAt - Date.now()) / 1000));
+      setDestructiveApprovalSeconds(remaining);
+      // Background-tab timer throttling can make the 60s timeout callback late.
+      // The visible deadline is authoritative and must close the dialog as well.
+      if (remaining === 0) resolveDestructiveApproval('expired');
+    }, 250);
+    return () => window.clearInterval(interval);
+  }, [destructiveApprovalState]);
+
+  useEffect(() => () => {
+    if (destructiveApprovalTimeoutRef.current !== null) window.clearTimeout(destructiveApprovalTimeoutRef.current);
+  }, []);
+
   const runAssessment = async (resumeFrom?: string) => {
     if (!targetIp.trim()) return;
+    cancelRequestedRef.current = false;
+    agentAbortControllerRef.current?.abort('superseded');
+    agentAbortControllerRef.current = new AbortController();
+    const runSignal = agentAbortControllerRef.current.signal;
     const now = new Date().toLocaleString('zh-CN', { hour12: false });
     setScanTime(now);
     setIsRunning(true);
     const isResume = Boolean(resumeFrom);
+    const durableSessionStorageKey = `autosec.agent.session.${targetIp.trim()}`;
+    let durableSessionId = isResume ? sessionStorage.getItem(durableSessionStorageKey) : null;
+    try {
+      if (!durableSessionId) {
+        const durableSession = await createV3Session('agent', {
+          name: targetName,
+          ip: targetIp.trim(),
+          bluetooth_mac: resourceParamsRef.current.bluetoothMac,
+          can_interface: resourceParamsRef.current.canInterface,
+          wifi_interface: resourceParamsRef.current.wifiInterface,
+          frequency: resourceParamsRef.current.rfFrequency,
+          usb_adb_serial: resourceParamsRef.current.usbAdbSerial,
+        }, {
+          execution_mode: executionMode,
+          destructive_policy: destructivePolicy,
+          reflection_reentry: enableReflectionReentry,
+          weaponize: enableWeaponize,
+          low_resource_mode: lowResourceMode,
+        }, token);
+        durableSessionId = durableSession.id;
+        await startV3SessionRun(durableSessionId, token);
+        sessionStorage.setItem(durableSessionStorageKey, durableSessionId);
+      }
+    } catch (error: any) {
+      setLogs(previous => compactLogs([...previous, {
+        timestamp: new Date().toLocaleTimeString(),
+        type: 'error',
+        message: `[!] 无法创建权威 Agent 会话：${error?.message || '未知错误'}`,
+      }]));
+      setIsRunning(false);
+      return;
+    }
+    durableSessionIdRef.current = durableSessionId;
     const resetPhases = buildIdlePhases();
     const initialPhaseRecords = isResume ? [...phaseRecords] : [];
     const initialStructured = isResume ? { ...structuredState } : {};
@@ -707,12 +845,17 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
     try {
       if (isResume) {
         const activeBackendUrl = resolveBackendUrl();
-        const r = await fetch(`${activeBackendUrl}/api/agent-scan`, {
+        const phaseRequestId = `${durableSessionId}:resume:${resumeFrom}:${Date.now()}`;
+        const resumeRequest = () => fetch(`${activeBackendUrl}/api/v1/agent-scan`, {
           method: 'POST',
           headers: authHeaders,
+          credentials: 'same-origin',
+          signal: runSignal,
             body: JSON.stringify({
               target_ip: targetIp,
               target_name: targetName,
+              session_id: durableSessionId,
+              phase_request_id: phaseRequestId,
               resume_from: resumeFrom,
               ...buildAgentResourcePayload(),
               state: {
@@ -723,17 +866,36 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
             },
           }),
         });
+        const r = resumeFrom === 'execute'
+          ? await resumeRequest()
+          : await fetchWithEngineRecovery(`${activeBackendUrl}/api/v1/agent-scan`, {
+              method: 'POST', headers: authHeaders, credentials: 'same-origin', signal: runSignal,
+              body: JSON.stringify({
+                target_ip: targetIp, target_name: targetName, session_id: durableSessionId,
+                phase_request_id: phaseRequestId,
+                resume_from: resumeFrom, ...buildAgentResourcePayload(),
+                state: { logs: collectedLogs, findings: collectedFindings, phase_records: collectedPhaseRecords, structured: structuredPhases },
+              }),
+            });
         const data = await r.json();
         if (!r.ok) {
           throw new Error(diagnosePhaseFailure({
             backendUrl: activeBackendUrl,
             status: r.status,
             payload: data,
-            errorMessage: data?.error || data?.message,
+            errorMessage: data?.error?.message || data?.error || data?.message,
           }));
         }
 
         currentFinalReport = data?.phases?.assessment_report || currentFinalReport;
+        if (data?.assessment_error) {
+          collectedLogs = compactLogs([...collectedLogs, {
+            timestamp: new Date().toLocaleTimeString(),
+            type: 'error',
+            message: `[评估Agent] ${data.assessment_error}`,
+          }]);
+          currentFinalReport = '';
+        }
         collectedLogs = compactLogs(Array.isArray(data.logs) ? data.logs : collectedLogs);
         collectedFindings = Array.isArray(data.findings) ? data.findings : collectedFindings;
         collectedPhaseRecords = Array.isArray(data.phase_records) ? data.phase_records : collectedPhaseRecords;
@@ -770,18 +932,24 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
       let prevContext = '';
       let reflectorRerouteCount = 0;
       for (let i = 0; i < PHASES.length; i++) {
+        if (cancelRequestedRef.current) break;
         setActiveStep(i);
         updatePhase(i, { status: 'running', output: '执行中...' });
         persistRunState({ nextActiveStep: i });
 
         try {
           const activeBackendUrl = resolveBackendUrl();
-          const r = await fetch(`${activeBackendUrl}/api/agent-scan`, {
+          const phaseRequestId = `${durableSessionId}:${PHASES[i].name}:${Date.now()}`;
+          const requestInit: RequestInit = {
             method: 'POST',
             headers: authHeaders,
+            credentials: 'same-origin',
+            signal: runSignal,
             body: JSON.stringify({
               target_ip: targetIp,
               target_name: targetName,
+              session_id: durableSessionId,
+              phase_request_id: phaseRequestId,
               phase: PHASES[i].name,
               context: prevContext,
               ...buildAgentResourcePayload(),
@@ -792,9 +960,14 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
                 structured: structuredPhases,
               },
             }),
-          });
-          const data = await r.json();
-          const rawOutput = data.result || data.error || data.message || JSON.stringify(data);
+          };
+          // Execute may contain destructive one-shot actions and is never replayed
+          // automatically. All other phases are deterministic for the supplied state.
+          const r = PHASES[i].name === 'execute'
+            ? await fetch(`${activeBackendUrl}/api/v1/agent-scan`, requestInit)
+            : await fetchWithEngineRecovery(`${activeBackendUrl}/api/v1/agent-scan`, requestInit);
+          let data = await r.json();
+          const rawOutput = data.result || data?.error?.message || data.error || data.message || JSON.stringify(data);
           const diagnosed = diagnosePhaseOutput(String(rawOutput));
           const backendPhaseRecord = Array.isArray(data.phase_records)
             ? data.phase_records.find((record: any) => record.phase === PHASES[i].name)
@@ -811,6 +984,19 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
                 errorMessage: rawOutput,
               });
           updatePhase(i, { status: phaseStatus, output });
+
+          if (data.assessment_error) {
+            updatePhase(i, { status: 'error', output: String(data.assessment_error) });
+            throw new Error(String(data.assessment_error));
+          }
+          if (
+            PHASES[i].name === 'assess'
+            && /本地确定性证据报告|本地证据引擎生成|远程评估模型未在时限内返回/.test(String(output))
+          ) {
+            const rejected = '远程 AI 报告生成失败，已拒绝本地降级报告。请检查 Profile 中的 AI 配置与网络后重试。';
+            updatePhase(i, { status: 'error', output: rejected });
+            throw new Error(rejected);
+          }
 
           // 集成后端返回的所有详细日志 (工具调用、PoC 详情及 Agent 步骤)
           if (data.logs && Array.isArray(data.logs)) {
@@ -838,6 +1024,9 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
           }
 
           if (data.structured && typeof data.structured === 'object') {
+            if (PHASES[i].name === 'weaponize' && data.structured.attack_plan) {
+              structuredPhases.decision = data.structured.attack_plan;
+            }
             const mergedStructured = compactForBrowserStorage({
               ...structuredPhases,
               ...data.structured,
@@ -846,6 +1035,23 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
             setStructuredState(mergedStructured);
           } else if (data.structured_result) {
             setStructuredState(compactForBrowserStorage({ ...structuredPhases }));
+          }
+
+          const reentryHistory = Array.isArray(structuredPhases.reflector_reentry_history)
+            ? structuredPhases.reflector_reentry_history
+            : [];
+          const pendingReentry = [...reentryHistory].reverse().find((event: any) => (
+            event?.status === 'scheduled' && event?.next_phase === PHASES[i].name
+          ));
+          if (pendingReentry && phaseStatus === 'done') {
+            pendingReentry.status = 'completed';
+            pendingReentry.completed_at = new Date().toISOString();
+            structuredPhases.reflector_reentry_history = [...reentryHistory];
+            setStructuredState(compactForBrowserStorage({ ...structuredPhases }));
+          }
+
+          if (phaseStatus === 'error') {
+            throw new Error(output);
           }
 
           if (
@@ -877,17 +1083,38 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
             }
           }
 
-          if (PHASES[i].name === 'reflector' && data.reroute?.next_phase) {
-	            const targetIndex = PHASES.findIndex(phase => phase.name === data.reroute.next_phase);
+          const reflectorReroute = PHASES[i].name === 'reflector'
+            ? (data.reroute || (data.structured_result?.reentry_required === true ? {
+              next_phase: data.structured_result.next_phase || 'execute',
+              next_action: data.structured_result.next_action || 'retry',
+              reason: data.structured_result.reentry_reason || data.structured_result.reason || '反思结果判定证据不足',
+            } : null))
+            : null;
+          if (reflectorReroute?.next_phase) {
+	            const targetIndex = PHASES.findIndex(phase => phase.name === reflectorReroute.next_phase);
 	            if (targetIndex >= 0 && targetIndex < i && reflectorRerouteCount < 2) {
 	              reflectorRerouteCount += 1;
+	              const reentryEvent = {
+	                count: reflectorRerouteCount,
+	                from_phase: 'reflector',
+	                next_phase: reflectorReroute.next_phase,
+	                next_action: reflectorReroute.next_action || 'retry',
+	                reason: reflectorReroute.reason || '未提供',
+	                status: 'scheduled',
+	                timestamp: new Date().toISOString(),
+	              };
+	              structuredPhases.reflector_reentry_history = [
+	                ...(Array.isArray(structuredPhases.reflector_reentry_history) ? structuredPhases.reflector_reentry_history : []),
+	                reentryEvent,
+	              ];
 	              collectedLogs.push({
 	                timestamp: new Date().toLocaleTimeString(),
 	                type: 'warning',
-	                message: `[Reflector] 检测到流程无效或证据不足，回跳到 ${data.reroute.next_phase} 重新执行。原因: ${data.reroute.reason || '未提供'}`,
+	                message: `[Reflector] 已调度第 ${reflectorRerouteCount} 次重入：回跳到 ${reflectorReroute.next_phase}。原因: ${reflectorReroute.reason || '未提供'}`,
 	              });
 	              collectedLogs = compactLogs(collectedLogs);
 	              setLogs(collectedLogs);
+	              setStructuredState(compactForBrowserStorage({ ...structuredPhases }));
 	              persistRunState({
 	                nextLogs: collectedLogs,
 	                nextPhaseRecords: [...collectedPhaseRecords],
@@ -910,7 +1137,84 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
 	          }
 
           if (PHASES[i].name === 'execute') {
-            const executionItems = Array.isArray(data.structured_result?.items) ? data.structured_result.items : [];
+            let executionItems = Array.isArray(data.structured_result?.items) ? data.structured_result.items : [];
+            const approvalRequests = executionItems.filter((item: any) => item.requires_approval === true);
+            if (approvalRequests.length && destructivePolicy === 'confirm_each' && durableSessionId) {
+              const approvalTokens: Record<string, string> = {};
+              let approvalWindowExpired = false;
+              for (const item of approvalRequests) {
+                // One unattended 60-second window rejects the remainder of this
+                // batch. Otherwise the next item would immediately open a new
+                // dialog and look like the expired dialog never closed.
+                const approvalDecision = approvalWindowExpired
+                  ? 'expired'
+                  : await requestDestructiveApproval(item);
+                if (approvalDecision === 'expired') approvalWindowExpired = true;
+                if (approvalDecision !== 'approved') {
+                  item.requires_approval = false;
+                  item.approval_state = approvalDecision;
+                  item.skip_reason = item.approval_state === 'expired' ? 'approval-timeout-60s' : 'operator-rejected';
+                  collectedLogs.push({
+                    timestamp: new Date().toLocaleTimeString(),
+                    type: 'warning',
+                    message: `[Execution Approval] ${item.poc_name}: ${item.approval_state === 'expired' ? '审批窗口已超时，已自动拒绝' : '操作员拒绝执行'}`,
+                  });
+                  continue;
+                }
+                approvalTokens[item.poc_name] = await approveV3SessionAction(
+                  durableSessionId,
+                  item.poc_name,
+                  targetIp,
+                  token,
+                  item.risk_level || 'RESTART',
+                );
+                collectedLogs.push({
+                  timestamp: new Date().toLocaleTimeString(),
+                  type: 'info',
+                  message: `[Execution Approval] ${item.poc_name}: 已授权本次单次执行`,
+                });
+              }
+
+              const approvedPocs = Object.keys(approvalTokens);
+              if (approvedPocs.length) {
+                const retryResponse = await fetch(`${activeBackendUrl}/api/v1/agent-scan`, {
+                  method: 'POST',
+                  headers: authHeaders,
+                  credentials: 'same-origin',
+                  signal: runSignal,
+                  body: JSON.stringify({
+                    target_ip: targetIp,
+                    target_name: targetName,
+                    session_id: durableSessionId,
+                    phase: 'execute',
+                    context: prevContext,
+                    ...buildAgentResourcePayload(),
+                    approval_tokens: approvalTokens,
+                    approval_only_pocs: approvedPocs,
+                    state: {
+                      logs: collectedLogs,
+                      findings: collectedFindings,
+                      phase_records: collectedPhaseRecords,
+                      structured: structuredPhases,
+                    },
+                  }),
+                });
+                const retryData = await retryResponse.json();
+                if (!retryResponse.ok) {
+                  throw new Error(retryData?.error?.message || retryData?.error || '审批后恢复执行失败');
+                }
+                const retriedItems = Array.isArray(retryData.structured_result?.items) ? retryData.structured_result.items : [];
+                const retriedByPoc = new Map(retriedItems.map((item: any) => [item.poc_name, item]));
+                executionItems = executionItems.map((item: any) => retriedByPoc.get(item.poc_name) || item);
+                data.structured_result = { ...(data.structured_result || {}), items: executionItems };
+                structuredPhases.execute = compactForBrowserStorage(data.structured_result);
+                if (Array.isArray(retryData.logs)) {
+                  collectedLogs = compactLogs([...collectedLogs, ...retryData.logs]);
+                  setLogs(collectedLogs);
+                }
+                if (Array.isArray(retryData.findings)) collectedFindings = retryData.findings;
+              }
+            }
             for (const item of executionItems) {
               if (!(item.requires_human_review || item.status === 'pending_manual_review')) continue;
               // 弹出人工判定 UI，等待操作员确认（不自动伪造审计结论）
@@ -928,7 +1232,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
               }
               const review = await submitPocManualVerdict({
                 trace_id: item.trace_id || item.branch_results?.[0]?.trace_id,
-                session_id: `AGENT-${Date.now().toString().slice(-6)}`,
+                session_id: durableSessionId || `AGENT-${Date.now().toString().slice(-6)}`,
                 poc_id: item.poc_id || item.poc_name,
                 poc_name: item.poc_name,
                 target_ip: targetIp,
@@ -937,6 +1241,16 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
                 operator_note: decision.note || `Operator verdict: ${decision.verdict}`,
                 evidence_file: decision.evidenceFile || '',
               }, token, activeBackendUrl);
+
+              if (durableSessionId) {
+                await submitV3SessionReview(durableSessionId, {
+                  trace_id: item.trace_id || item.branch_results?.[0]?.trace_id,
+                  poc_id: item.poc_id || item.poc_name,
+                  verdict: decision.verdict,
+                  operator_note: decision.note,
+                  evidence_file: decision.evidenceFile,
+                }, token);
+              }
 
               item.requires_human_review = false;
               item.manual_review = review.manual_review || {
@@ -1019,6 +1333,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
             nextFinalReport: currentFinalReport,
           });
         } catch (e: any) {
+          if (cancelRequestedRef.current || e?.name === 'AbortError') break;
           const errorMessage = diagnosePhaseFailure({
             backendUrl: resolveBackendUrl(),
             errorMessage: e?.message,
@@ -1033,11 +1348,25 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
           collectedLogs = compactLogs(collectedLogs);
           setLogs(collectedLogs);
           persistRunState({ nextLogs: collectedLogs });
+          break;
         }
       }
       }
     } finally {
       setIsRunning(false);
+      agentAbortControllerRef.current = null;
+
+      if (cancelRequestedRef.current) {
+        collectedLogs = compactLogs([...collectedLogs, {
+          timestamp: new Date().toLocaleTimeString(),
+          type: 'warning',
+          message: '[!] 扫描已由操作员终止，未执行后续 Agent 阶段。',
+        }]);
+        setLogs(collectedLogs);
+        setActiveStep(-1);
+        persistRunState({ nextLogs: collectedLogs, nextActiveStep: -1 });
+        return;
+      }
 
       let calculatedRisk = 0;
 
@@ -1107,8 +1436,13 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
         collectedLogs = compactLogs(collectedLogs);
       }
 
+      const assessmentOutput = diagnosePhaseOutput(currentFinalReport || '');
+      const assessmentCompleted = Boolean(currentFinalReport)
+        && !assessmentOutput.isError
+        && !collectedPhaseRecords.some(record => record.phase === 'assess' && record.status === 'error');
+      const finalStatus = assessmentCompleted ? 'completed' : 'failed';
       const sessionObj = {
-        id: `SCAN-AGENT-${Date.now().toString().slice(-6)}`,
+        id: durableSessionId || `SCAN-AGENT-${Date.now().toString().slice(-6)}`,
         targetName: targetName,
         connection: {
           ip: targetIp,
@@ -1122,7 +1456,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
         isConnected: true,
         startTime: now,
         endTime: new Date().toISOString(),
-        status: 'completed',
+        status: finalStatus,
         mode: 'agent',
         logs: collectedLogs,
         results: collectedResults,
@@ -1133,27 +1467,81 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
         phase_records: collectedPhaseRecords,
         structured: structuredPhases,
       };
-      saveScanSession(sessionObj, token);
+      let lifecyclePersisted = !durableSessionId;
+      if (durableSessionId) {
+        await updateV3SessionRun(
+          durableSessionId,
+          assessmentCompleted ? 'complete' : 'fail',
+          {
+            confirmed_findings: collectedFindings.filter(item => item?.vulnerable === true).length,
+            execution_results: collectedResults.length,
+            risk_score: calculatedRisk,
+            phase_count: collectedPhaseRecords.length,
+            error_code: assessmentCompleted ? undefined : 'AGENT_ASSESSMENT_INCOMPLETE',
+          },
+          token,
+        ).then(() => {
+          lifecyclePersisted = true;
+        }).catch((error: any) => {
+          collectedLogs.push({
+            timestamp: new Date().toLocaleTimeString(),
+            type: 'error',
+            message: `[!] 权威 Agent 会话结束状态保存失败：${error?.message || '未知错误'}`,
+          });
+        });
+      }
+
+      const archiveResult = await saveScanSession(sessionObj, token);
+      if (!archiveResult.success) {
+        collectedLogs = compactLogs([...collectedLogs, {
+          timestamp: new Date().toLocaleTimeString(),
+          type: 'error',
+          message: `[!] 扫描历史归档失败：${archiveResult.error || '未知错误'}`,
+        }]);
+        setLogs(collectedLogs);
+      }
+      if (lifecyclePersisted && archiveResult.success) {
+        sessionStorage.removeItem(durableSessionStorageKey);
+      } else {
+        collectedLogs = compactLogs([...collectedLogs, {
+          timestamp: new Date().toLocaleTimeString(),
+          type: 'warning',
+          message: '[!] 收尾数据已保留在当前标签页；执行引擎恢复后可从该会话继续归档。',
+        }]);
+        setLogs(collectedLogs);
+        persistRunState({ nextLogs: collectedLogs });
+      }
       onSessionComplete?.(sessionObj);
 
-      // 完成后保存所有状态到 localStorage
+      // 完成后保存当前标签页的非敏感展示状态
       setPhaseRecords(compactPhaseRecords(collectedPhaseRecords));
       setStructuredState(compactForBrowserStorage(structuredPhases));
       setFindings(compactForBrowserStorage(collectedFindings));
-      persistRunState({
-        nextActiveStep: PHASES.length - 1,
-        nextAssessment: artifacts,
-        nextLogs: collectedLogs,
-        nextResults: collectedResults,
-        nextFindings: collectedFindings,
-        nextPhaseRecords: collectedPhaseRecords,
-        nextStructured: structuredPhases,
-        nextFinalReport: currentFinalReport,
-      });
+      // Completed runs are authoritative on the backend. Keep only a clean,
+      // non-sensitive draft so route remounts never hydrate truncated runtime objects.
+      replaceStoredStateWithDraft();
     }
   };
 
   const runFullAssessment = async () => runAssessment();
+  const stopAssessment = async () => {
+    if (!isRunning || cancelRequestedRef.current) return;
+    cancelRequestedRef.current = true;
+    agentAbortControllerRef.current?.abort('operator-cancelled');
+    resolveDestructiveApproval('rejected');
+    resolveAgentManualVerdict(null);
+    setIsRunning(false);
+    setActiveStep(-1);
+    setLogs(previous => compactLogs([...previous, {
+      timestamp: new Date().toLocaleTimeString(),
+      type: 'warning',
+      message: '[!] 正在终止 Agent 扫描…',
+    }]));
+    const sessionId = durableSessionIdRef.current;
+    if (sessionId) {
+      await updateV3SessionRun(sessionId, 'cancel', { reason: 'operator_cancelled' }, token).catch(() => undefined);
+    }
+  };
   const resumeAssessment = async () => {
     const resumeFrom = getResumablePhase(phaseRecords);
     if (!resumeFrom || isRunning) return;
@@ -1161,7 +1549,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
   };
 
   // ── PDF 导出 ──
-  const exportToPdf = () => {
+  const exportToPdf = async () => {
     const now = scanTime || new Date().toLocaleString('zh-CN', { hour12: false });
     const reportHtml = markdownToSafeHtml(finalReport);
     const llmLabel = currentUser?.ai_config?.reportModel
@@ -1200,7 +1588,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
         <span><span class="label">扫描目标：</span>${escapeHtml(targetName)}&#8203;(${escapeHtml(targetIp)})</span>
         <span><span class="label">扫描时间：</span>${escapeHtml(now)}</span>
         <span><span class="label">报告类型：</span>Agent 自动化验证报告</span>
-        <span><span class="label">工具版本：</span>AutoSec Guard v2.0 · ${escapeHtml(llmLabel)}</span>
+        <span><span class="label">工具版本：</span>智驭安盾 v3.0 · ${escapeHtml(llmLabel)}</span>
       </div>
     </div>
     <div class="section">
@@ -1211,11 +1599,38 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
 </body>
 </html>`;
 
-    const win = window.open('', '_blank', 'width=900,height=700');
-    if (win) {
-      win.document.write(html);
-      win.document.close();
-    }
+    await exportReportPdf({
+      filename: `AutoSec-Agent-${targetName || targetIp}-${new Date().toISOString().slice(0, 10)}.pdf`,
+      title: 'AutoSec Guard 智能网联汽车安全评估报告',
+      metadata: [
+        { label: '扫描目标', value: `${targetName} (${targetIp})` },
+        { label: '扫描时间', value: now },
+        { label: '测试人', value: currentUser?.username || '当前用户' },
+        { label: '报告类型', value: 'Agent 自动化验证报告' },
+        { label: '工具版本', value: `智驭安盾 v3.0 · ${llmLabel}` },
+      ],
+      reportHtml,
+    });
+  };
+
+  const exportToMarkdown = () => {
+    const now = scanTime || new Date().toLocaleString('zh-CN', { hour12: false });
+    const llmLabel = currentUser?.ai_config?.reportModel
+      || currentUser?.ai_config?.strongModel
+      || currentUser?.ai_config?.fastModel
+      || 'LLM';
+    exportReportMarkdown({
+      filename: `AutoSec-Agent-${targetName || targetIp}-${new Date().toISOString().slice(0, 10)}.md`,
+      title: 'AutoSec Guard 智能网联汽车安全评估报告',
+      metadata: [
+        { label: '扫描目标', value: `${targetName} (${targetIp})` },
+        { label: '扫描时间', value: now },
+        { label: '测试人', value: currentUser?.username || '当前用户' },
+        { label: '报告类型', value: 'Agent 自动化验证报告' },
+        { label: '工具版本', value: `智驭安盾 v3.0 · ${llmLabel}` },
+      ],
+      reportMarkdown: finalReport,
+    });
   };
 
   const statusIcon = (status: PhaseResult['status']) => {
@@ -1237,7 +1652,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
   const handleAutoDiscovery = async () => {
     try {
       const activeBackendUrl = resolveBackendUrl();
-      const resp = await fetch(`${activeBackendUrl}/api/auto_discovery`, {
+      const resp = await fetch(`${activeBackendUrl}/api/v1/auto_discovery`, {
         headers: authHeaders,
       });
       const data = await resp.json();
@@ -1312,6 +1727,40 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
               </button>
               <button onClick={() => resolveAgentManualVerdict(null)} className="col-span-2 rounded-md border border-gray-600 px-4 py-2 text-sm text-gray-400 hover:border-gray-400 hover:text-white">
                 跳过（保持 pending，不提交判定）
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {destructiveApprovalState && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/85 p-4 backdrop-blur-md">
+          <div role="alertdialog" aria-modal="true" aria-labelledby="destructive-approval-title" className="w-full max-w-xl overflow-hidden rounded-2xl border border-orange-400/50 bg-slate-950 shadow-[0_24px_100px_rgba(249,115,22,0.25)]">
+            <div className="flex items-center justify-between border-b border-orange-400/20 bg-orange-500/10 px-6 py-4">
+              <div className="flex items-center gap-3 text-orange-200">
+                <AlertTriangle size={21} />
+                <h3 id="destructive-approval-title" className="text-lg font-semibold">破坏性脚本执行确认</h3>
+              </div>
+              <span className="rounded-full border border-orange-400/40 bg-orange-400/10 px-3 py-1 font-mono text-sm text-orange-200">
+                {destructiveApprovalSeconds}s
+              </span>
+            </div>
+            <div className="space-y-4 px-6 py-5 text-sm text-slate-300">
+              <p className="break-all font-mono text-cyan-200">{destructiveApprovalState.item?.poc_name}</p>
+              <div className="grid grid-cols-2 gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-xs">
+                <span className="text-slate-500">风险等级</span>
+                <span className="text-right font-semibold text-orange-200">{destructiveApprovalState.item?.risk_level || '高风险'}</span>
+                <span className="text-slate-500">审批范围</span>
+                <span className="text-right">仅本 PoC · 仅本目标 · 单次有效</span>
+              </div>
+              <p>确认后才会执行。60 秒内没有选择将自动拒绝，不会把“执行成功”当作“漏洞成立”。</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3 border-t border-white/10 px-6 py-4">
+              <button autoFocus onClick={() => resolveDestructiveApproval('rejected')} className="rounded-lg border border-slate-600 px-4 py-2.5 text-slate-200 hover:border-slate-400 hover:bg-white/5">
+                拒绝执行
+              </button>
+              <button onClick={() => resolveDestructiveApproval('approved')} className="rounded-lg bg-orange-400 px-4 py-2.5 font-semibold text-slate-950 hover:bg-orange-300">
+                允许本次执行
               </button>
             </div>
           </div>
@@ -1422,6 +1871,15 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
               {isRunning ? <Loader className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
               {isRunning ? '运行中...' : '启动评估'}
             </button>
+            {isRunning && (
+              <button
+                onClick={stopAssessment}
+                className="flex items-center justify-center gap-2 rounded border border-red-400/70 bg-red-500/15 px-4 py-2 text-sm font-semibold text-red-200 transition-colors hover:bg-red-500/25"
+              >
+                <Square className="h-4 w-4" fill="currentColor" />
+                停止扫描
+              </button>
+            )}
             {resumablePhase && (
               <button
                 onClick={resumeAssessment}
@@ -1520,6 +1978,42 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
                     : '允许到 DataLoss，仅限实验环境。'}
               </div>
             </div>
+            <div className="md:col-span-2">
+              <label className="text-[10px] text-gray-500 uppercase font-bold mb-1.5 block">破坏性脚本许可</label>
+              <div className="grid grid-cols-3 gap-1 rounded-lg border border-cyan-900/40 bg-black/40 p-1" role="radiogroup" aria-label="破坏性脚本许可">
+                {([
+                  ['allow_all', '全部允许'],
+                  ['confirm_each', '人工确认'],
+                  ['deny_all', '全部拒绝'],
+                ] as Array<[DestructivePolicy, string]>).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={destructivePolicy === value}
+                    onClick={() => setDestructivePolicy(value)}
+                    className={`rounded-md px-3 py-2 text-xs font-semibold transition-colors ${
+                      destructivePolicy === value
+                        ? value === 'deny_all'
+                          ? 'bg-red-500/20 text-red-200 ring-1 ring-red-400/60'
+                          : value === 'allow_all'
+                            ? 'bg-orange-400/20 text-orange-100 ring-1 ring-orange-300/60'
+                            : 'bg-cyan-400/20 text-cyan-100 ring-1 ring-cyan-300/60'
+                        : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-1.5 text-[10px] text-gray-500">
+                {destructivePolicy === 'allow_all'
+                  ? '在风险上限、授权目标与实验室策略内自动签发单次许可；BRICK 仍禁止。'
+                  : destructivePolicy === 'confirm_each'
+                    ? '每个破坏性 PoC 执行前逐项确认，60 秒无操作自动拒绝。'
+                    : '安全/探测脚本照常执行，所有破坏性 PoC 均拒绝。'}
+              </div>
+            </div>
             <div>
               <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">反思-重入</label>
               <button
@@ -1539,6 +2033,25 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
                   : '完成执行后直接生成报告，不进行反思与回跳。'}
               </div>
             </div>
+            <div>
+              <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">探测生成 Agent</label>
+              <button
+                type="button"
+                onClick={() => setEnableWeaponize(value => !value)}
+                className={`w-full rounded px-3 py-1.5 text-xs font-semibold transition-colors border ${
+                  enableWeaponize
+                    ? 'border-fuchsia-400/70 bg-fuchsia-950/30 text-fuchsia-200'
+                    : 'border-cyan-900/40 bg-black/40 text-gray-300'
+                }`}
+              >
+                {enableWeaponize ? '已启用' : '未启用'}
+              </button>
+              <div className="mt-1 text-[10px] text-gray-500">
+                {enableWeaponize
+                  ? '未知服务尝试生成受限只读探测器；失败时自动使用确定性模板。'
+                  : '跳过模型生成，未知服务直接使用内置安全探测模板。'}
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -1546,11 +2059,11 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
       {/* ========================================================= */}
       {/* 3D Digital Twin GUI (Phase 1 Hackathon Upgrade) */}
       {/* ========================================================= */}
-      <div className="bg-black/30 border border-cyan-900/40 rounded-lg p-0 relative h-72 overflow-hidden mt-2 flex items-center justify-center shrink-0 shadow-[inset_0_0_20px_rgba(0,255,255,0.05)]">
-        <div className="absolute top-3 left-4 z-10 flex items-center gap-2 bg-black/50 px-3 py-1.5 rounded-full border border-cyan-900/50 backdrop-blur-md">
+      <div className="surface-panel relative h-[26rem] overflow-hidden mt-2 flex items-center justify-center shrink-0 border-cyan-300/25 shadow-[0_24px_70px_rgba(0,8,20,.35),0_0_45px_rgba(57,231,255,.06)]">
+        <div className="absolute top-4 left-4 z-10 flex items-center gap-2 bg-[#06111c]/70 px-3 py-2 rounded-full border border-cyan-300/15 backdrop-blur-md">
           <Shield className="w-4 h-4 text-cyan-400" />
-          <span className="text-xs font-bold text-cyan-300 tracking-widest uppercase">
-            DIGITAL TWIN SANDBOX // TARGET: {targetName}
+          <span className="text-[10px] font-semibold text-cyan-200 tracking-[0.12em]">
+            3D 数字孪生 · {targetName}
           </span>
           {activeZones.length > 0 && (
              <span className="ml-2 w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
@@ -1584,37 +2097,30 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
                   </div>
                 </div>
               </div>
+              {webglFailed && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWebglFailed(false);
+                    setLowResourceMode(false);
+                    setVehicleSceneGeneration(value => value + 1);
+                  }}
+                  className="mt-4 w-full rounded-lg border border-cyan-300/40 bg-cyan-300/10 px-4 py-2.5 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-300/20"
+                >
+                  重新启用 3D 模型
+                </button>
+              )}
             </div>
           </div>
         ) : (
-          <Canvas
-            camera={{ position: [3, 2, 5], fov: 45 }}
-            className="w-full h-full"
-            onCreated={({ gl }) => {
-              try {
-                const ctx = gl.getContext();
-                if (!ctx || (typeof ctx.isContextLost === 'function' && ctx.isContextLost())) {
-                  setWebglFailed(true);
-                }
-              } catch {
-                setWebglFailed(true);
-              }
-            }}
-            onError={() => setWebglFailed(true)}
-          >
-            <ambientLight intensity={0.5} />
-            <pointLight position={[10, 10, 10]} intensity={1} />
-            <OrbitControls
-              enableZoom={false}
-              enablePan={false}
+          <React.Suspense fallback={<div className="h-full grid place-items-center text-xs text-cyan-300">正在加载车辆攻击面视图…</div>}>
+            <AgentVehicleScene
+              key={vehicleSceneGeneration}
+              activeZones={activeZones}
               autoRotate={activeStep < 0}
-              autoRotateSpeed={1}
-              maxPolarAngle={Math.PI / 2 - 0.1}
+              onFailure={() => setWebglFailed(true)}
             />
-            <Environment preset="night" />
-            <CarModel activeZones={activeZones} />
-            <ContactShadows resolution={512} scale={10} blur={2} opacity={0.6} far={10} color="#0eb5c2" />
-          </Canvas>
+          </React.Suspense>
         )}
       </div>
 
@@ -1718,6 +2224,21 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
       </div>
 
       {/* Agent Pipeline */}
+      {Array.isArray(structuredState.reflector_reentry_history) && structuredState.reflector_reentry_history.length > 0 && (
+        <div className="rounded-lg border border-fuchsia-500/35 bg-fuchsia-950/15 px-4 py-3">
+          <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-fuchsia-300">
+            <RotateCcw className="h-4 w-4" />
+            反思重入轨迹 · {structuredState.reflector_reentry_history.length} 次
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {structuredState.reflector_reentry_history.map((event: any, index: number) => (
+              <span key={`${event.timestamp || index}-${event.next_phase}`} className="rounded border border-fuchsia-700/40 bg-black/30 px-2.5 py-1 text-[11px] text-fuchsia-100">
+                #{event.count || index + 1} Reflector → {event.next_phase} · {event.next_action || 'retry'} · {event.status === 'completed' ? '已完成' : event.status === 'scheduled' ? '已调度' : '历史记录'}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="grid grid-cols-5 gap-2">
         {PHASES.map((phase, i) => {
           const r = phases[i];
@@ -1978,6 +2499,13 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
             >
               <Download className="w-3.5 h-3.5" />
               导出 PDF
+            </button>
+            <button
+              onClick={exportToMarkdown}
+              className="flex items-center gap-1.5 bg-cyan-700/30 hover:bg-cyan-600/45 border border-cyan-700/50 text-cyan-200 rounded px-3 py-1 text-xs font-semibold transition-colors"
+            >
+              <FileDown className="w-3.5 h-3.5" />
+              导出 Markdown
             </button>
           </div>
           <div className="text-sm text-gray-300 leading-relaxed max-h-96 overflow-y-auto mt-4 custom-scrollbar">

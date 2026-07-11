@@ -173,7 +173,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc61CVE202524132AirBorneAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-085'
+    meta_display_id = "POC-APP-061"
     meta_poc_name = 'CVE-2025-24132 AirBorne系列漏洞 Active Validation'
     meta_cve_id = 'CVE-2025-24132'
     meta_severity = 'High'

@@ -179,7 +179,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc17CVE202532058StackOverflowRCEAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-003'
+    meta_display_id = "POC-CAN-017"
     meta_poc_name = 'CVE-2025-32058 RCE Active Validation'
     meta_cve_id = 'CVE-2025-32058'
     meta_severity = 'Critical'

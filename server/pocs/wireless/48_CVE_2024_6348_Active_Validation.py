@@ -192,7 +192,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc48CVE20246348ExposureAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-046'
+    meta_display_id = "POC-WIRELESS-048"
     meta_poc_name = 'CVE-2024-6348 随机数不足 Active Validation'
     meta_cve_id = 'CVE-2024-6348'
     meta_severity = 'Medium'

@@ -180,7 +180,7 @@ def _run_poc(plugin) -> dict:
 
 
 class Poc55CVE202237434ExposureAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-090'
+    meta_display_id = "POC-NET-055"
     meta_poc_name = 'CVE-2022-37434 内存破坏 Active Validation'
     meta_cve_id = 'CVE-2022-37434'
     meta_severity = 'High'

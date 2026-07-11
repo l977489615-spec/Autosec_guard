@@ -376,8 +376,14 @@ def run_agent_scan(args: argparse.Namespace) -> dict[str, Any]:
         "context": args.context,
         "approve_high_risk_batch": bool(getattr(args, "approve_high_risk_batch", False)),
         "execution_mode": getattr(args, "execution_mode", "progressive_auto"),
+        "destructive_policy": (
+            "allow_all"
+            if bool(getattr(args, "approve_high_risk_batch", False))
+            else getattr(args, "destructive_policy", "confirm_each")
+        ),
         "risk_ceiling": getattr(args, "risk_ceiling", ""),
         "enable_reflection_reentry": bool(getattr(args, "enable_reflection_reentry", False)),
+        "enable_weaponize": bool(getattr(args, "enable_weaponize", True)),
         "allow_domains": getattr(args, "allow_domains", []) or [],
         "lab_policy": bool(getattr(args, "lab_policy", False)),
     }
@@ -387,7 +393,7 @@ def run_agent_scan(args: argparse.Namespace) -> dict[str, Any]:
     if args.token:
         headers["Authorization"] = args.token if args.token.startswith("Bearer ") else f"Bearer {args.token}"
     req = urllib.request.Request(
-        f"{base_url}/api/agent-scan",
+        f"{base_url}/api/v1/agent-scan",
         data=json.dumps(payload).encode("utf-8"),
         headers=headers,
         method="POST",
@@ -555,13 +561,21 @@ def build_parser() -> argparse.ArgumentParser:
     agent = sub.add_parser("agent", help="Run agent scan through the existing API and write reports")
     add_common(agent)
     agent.add_argument("--api-url", default="http://127.0.0.1:5001", help="AutoSec API base URL")
-    agent.add_argument("--token", default=os.environ.get("AUTOSEC_TOKEN", ""), help="Bearer token or raw JWT")
+    agent.add_argument("--token", default=os.environ.get("AUTOSEC_TOKEN", ""), help="Scoped Bearer API token")
     agent.add_argument("--target-name", default="CLI Target", help="Target display name")
     agent.add_argument("--context", default="", help="Additional agent context")
-    agent.add_argument("--approve-high-risk-batch", action="store_true", help="Single-run approval to auto-execute high-risk/disruptive PoCs selected by agent mode")
+    agent.add_argument("--approve-high-risk-batch", action="store_true", help="Deprecated alias for --destructive-policy allow_all")
     agent.add_argument("--execution-mode", choices=["safe_only", "progressive_auto", "full_auto_lab"], default="progressive_auto", help="Agent disruptive execution policy")
+    agent.add_argument(
+        "--destructive-policy",
+        choices=["allow_all", "confirm_each", "deny_all"],
+        default="confirm_each",
+        help="Destructive PoC decision: allow all in authorized scope, leave each pending for approval, or deny all",
+    )
     agent.add_argument("--risk-ceiling", choices=["SAFE", "PROBE", "RESTART", "DATALOSS", "BRICK"], default="", help="Upper risk ceiling for automatic high-risk execution")
     agent.add_argument("--enable-reflection-reentry", action="store_true", help="Enable Reflector audit and limited reentry loop")
+    agent.add_argument("--enable-weaponize", dest="enable_weaponize", action="store_true", default=True, help="Enable constrained unknown-service probe generation (default)")
+    agent.add_argument("--disable-weaponize", dest="enable_weaponize", action="store_false", help="Disable LLM probe generation and use the deterministic safe probe template")
     agent.add_argument("--allow-domain", dest="allow_domains", action="append", default=[], help="Authorized PoC domain for batch auto-approval")
     agent.add_argument("--lab-policy", action="store_true", help="Mark this run as trusted lab context for DataLoss-level checks")
     agent.add_argument("--ai-config-file", default="", help="JSON AI config file")

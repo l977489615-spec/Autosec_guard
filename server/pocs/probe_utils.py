@@ -337,26 +337,66 @@ def http_default_creds_probe(
     tls: bool,
     paths: Sequence[str],
     cred_pairs: Sequence[Tuple[str, str]],
-    timeout: float = 8.0,
+    timeout: float = 3.0,
+    max_total_seconds: float = 25.0,
 ) -> Dict[str, Any]:
     """Try default credential pairs against login paths.  Returns first success."""
     import base64, json as _json
+
+    started = time.time()
     result: Dict[str, Any] = {"paths_tried": list(paths), "creds_tried": len(cred_pairs)}
     probe = HTTPProbe(host, port, tls, timeout)
+
+    def _timed_out() -> bool:
+        return (time.time() - started) >= max_total_seconds
+
+    def _request_failed(response: Dict[str, Any]) -> bool:
+        return response.get("status") is None and bool(response.get("error"))
+
+    consecutive_failures = 0
     for path in paths:
+        if _timed_out():
+            result["aborted"] = "probe_time_budget_exceeded"
+            break
+        path_unreachable = False
         for user, passwd in cred_pairs:
+            if _timed_out():
+                result["aborted"] = "probe_time_budget_exceeded"
+                break
             b64 = base64.b64encode(f"{user}:{passwd}".encode()).decode()
             r = probe.request("GET", path, extra_headers={"Authorization": f"Basic {b64}"})
+            if _request_failed(r):
+                consecutive_failures += 1
+                path_unreachable = True
+                if consecutive_failures >= 3:
+                    result["aborted"] = "connection_failures"
+                    result["success"] = False
+                    result["elapsed_seconds"] = round(time.time() - started, 2)
+                    return result
+                break
+            consecutive_failures = 0
             if r.get("status") in (200, 302) and r.get("status") != 401:
                 result["success"] = True
                 result["credential"] = f"{user}:{passwd}"
                 result["path"] = path
                 result["status"] = r.get("status")
                 result["body_preview"] = r.get("body_text", "")[:200]
+                result["elapsed_seconds"] = round(time.time() - started, 2)
                 return result
-            # Try JSON body auth
+            if path_unreachable:
+                break
             payload = _json.dumps({"username": user, "password": passwd}).encode()
             r2 = probe.post(path, payload)
+            if _request_failed(r2):
+                consecutive_failures += 1
+                path_unreachable = True
+                if consecutive_failures >= 3:
+                    result["aborted"] = "connection_failures"
+                    result["success"] = False
+                    result["elapsed_seconds"] = round(time.time() - started, 2)
+                    return result
+                break
+            consecutive_failures = 0
             if r2.get("status") in (200, 201) and r2.get("status") not in (401, 403):
                 body = r2.get("body_text", "")
                 if any(k in body.lower() for k in ("token", "session", "success", "welcome", "dashboard")):
@@ -365,8 +405,12 @@ def http_default_creds_probe(
                     result["path"] = path
                     result["status"] = r2.get("status")
                     result["auth_type"] = "json"
+                    result["elapsed_seconds"] = round(time.time() - started, 2)
                     return result
+        if result.get("aborted"):
+            break
     result["success"] = False
+    result["elapsed_seconds"] = round(time.time() - started, 2)
     return result
 
 

@@ -1,7 +1,7 @@
 import React from 'react';
 import { AlertTriangle } from 'lucide-react';
 
-type Props = { children: React.ReactNode };
+type Props = { children: React.ReactNode; resetKey?: string };
 type State = { hasError: boolean; message: string };
 
 export class AgentScanErrorBoundary extends React.Component<Props, State> {
@@ -13,6 +13,12 @@ export class AgentScanErrorBoundary extends React.Component<Props, State> {
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.error('[AgentScan] render error:', error, info.componentStack);
+  }
+
+  componentDidUpdate(previousProps: Props) {
+    if (this.state.hasError && previousProps.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false, message: '' });
+    }
   }
 
   render() {
@@ -27,13 +33,13 @@ export class AgentScanErrorBoundary extends React.Component<Props, State> {
         <button
           type="button"
           onClick={() => {
-            try { localStorage.removeItem('autosec_agent_scan_state'); } catch { /* ignore */ }
+            try { sessionStorage.removeItem('autosec_agent_scan_state'); } catch { /* ignore */ }
             this.setState({ hasError: false, message: '' });
-            window.location.reload();
+            this.setState({ hasError: false, message: '' });
           }}
           className="rounded border border-cyan-700 px-4 py-2 text-sm text-cyan-300 hover:bg-cyan-950/50"
         >
-          清除缓存并刷新
+          清除本页运行缓存并重试
         </button>
       </div>
     );

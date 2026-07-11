@@ -197,7 +197,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc62CVE202010135AuthBypassAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-077'
+    meta_display_id = "POC-WIRELESS-062"
     meta_poc_name = 'CVE-2020-10135 认证绕过 Active Validation'
     meta_cve_id = 'CVE-2020-10135'
     meta_severity = 'High'

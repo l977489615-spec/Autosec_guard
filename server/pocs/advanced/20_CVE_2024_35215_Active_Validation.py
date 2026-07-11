@@ -148,7 +148,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc20CVE202435215NullDerefDoSAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-029'
+    meta_display_id = "POC-ADV-020"
     meta_poc_name = 'CVE-2024-35215 DoS Active Validation'
     meta_cve_id = 'CVE-2024-35215'
     meta_severity = 'High'

@@ -35,6 +35,12 @@ def extract_poc_security_profile(poc_path: str, source_text: str | None = None) 
         "meta_required_params",
         "meta_destructive_level",
         "is_disruptive",
+        "meta_requires_operator_observation",
+        "requires_manual_review",
+        "meta_requires_capabilities",
+        "meta_requires_any_capabilities",
+        "meta_excludes_capabilities",
+        "meta_grants_on_confirmed",
     }
 
     for node in ast.walk(tree):
@@ -52,6 +58,7 @@ def extract_poc_security_profile(poc_path: str, source_text: str | None = None) 
                 if isinstance(target_node, ast.Name) and target_node.id in metadata_keys:
                     class_meta[target_node.id] = value
         if class_meta:
+            profile["display_id"] = class_meta.get("meta_display_id") or profile.get("display_id") or ""
             profile["poc_name"] = class_meta.get("meta_poc_name") or profile["poc_name"]
             profile["cve_id"] = class_meta.get("meta_cve_id") or profile["cve_id"]
             profile["severity"] = class_meta.get("meta_severity") or profile["severity"]
@@ -60,6 +67,28 @@ def extract_poc_security_profile(poc_path: str, source_text: str | None = None) 
             profile["required_params"] = class_meta.get("meta_required_params") or profile["required_params"]
             profile["destructive_level"] = class_meta.get("meta_destructive_level") or profile["destructive_level"]
             profile["is_disruptive"] = bool(class_meta.get("is_disruptive", profile["is_disruptive"]))
+            if class_meta.get("meta_requires_operator_observation") is not None:
+                profile["requires_operator_observation"] = bool(class_meta.get("meta_requires_operator_observation"))
+            if class_meta.get("requires_manual_review") is not None:
+                profile["requires_manual_review"] = bool(class_meta.get("requires_manual_review"))
+            profile["requires_capabilities"] = class_meta.get("meta_requires_capabilities") or []
+            profile["requires_any_capabilities"] = class_meta.get("meta_requires_any_capabilities") or []
+            profile["excludes_capabilities"] = class_meta.get("meta_excludes_capabilities") or []
+            profile["grants_on_confirmed"] = class_meta.get("meta_grants_on_confirmed") or []
+            break
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        for target_node in node.targets:
+            if not isinstance(target_node, ast.Name) or target_node.id != "VULN":
+                continue
+            try:
+                vuln = ast.literal_eval(node.value)
+            except Exception:
+                continue
+            if isinstance(vuln, dict) and vuln.get("requires_manual_review") is True:
+                profile["requires_manual_review"] = True
             break
 
     try:

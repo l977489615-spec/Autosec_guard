@@ -9,7 +9,6 @@ import traceback
 import time
 import logging
 import bcrypt
-import jwt
 import datetime
 import re
 import socket
@@ -19,15 +18,65 @@ import uuid
 import base64
 import hashlib
 import hmac
+import secrets
+import shutil
+import ipaddress
+import threading
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from flask import Flask, request, jsonify, Response, send_from_directory
-from flask_cors import CORS, cross_origin
+from flask import Flask, request, jsonify, Response, send_from_directory, g, has_request_context
+from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
-from flask_migrate import Migrate
+from flask_migrate import Migrate, stamp as migrate_stamp, upgrade as migrate_upgrade
+from sqlalchemy import inspect as sqlalchemy_inspect, event
+from sqlalchemy.engine import Engine
+from sqlalchemy.exc import OperationalError
 from functools import wraps
+from urllib.parse import urlparse
 from cryptography.fernet import Fernet, InvalidToken
 from config import get_config, get_runtime_data_dir, get_runtime_warnings
+
+
+_ACTIVE_POC_PLANS: dict[str, list[tuple[Any, Any]]] = {}
+_ACTIVE_POC_PLANS_LOCK = threading.Lock()
+_CANCELLED_SCAN_SESSIONS: set[str] = set()
+
+
+def _register_active_poc_plan(session_id: str, worker: Any, plan: Any) -> None:
+    key = str(session_id or "manual")
+    with _ACTIVE_POC_PLANS_LOCK:
+        _ACTIVE_POC_PLANS.setdefault(key, []).append((worker, plan))
+
+
+def _unregister_active_poc_plan(session_id: str, worker: Any, plan: Any) -> None:
+    key = str(session_id or "manual")
+    with _ACTIVE_POC_PLANS_LOCK:
+        entries = _ACTIVE_POC_PLANS.get(key, [])
+        _ACTIVE_POC_PLANS[key] = [entry for entry in entries if entry != (worker, plan)]
+        if not _ACTIVE_POC_PLANS[key]:
+            _ACTIVE_POC_PLANS.pop(key, None)
+
+
+def _cancel_active_poc_plans(session_id: str) -> int:
+    key = str(session_id or "manual")
+    with _ACTIVE_POC_PLANS_LOCK:
+        entries = list(_ACTIVE_POC_PLANS.pop(key, []))
+    for worker, plan in entries:
+        try:
+            worker.cancel(plan)
+        except Exception as exc:
+            logger.warning("Failed to cancel PoC worker for session %s: %s", key, exc)
+    return len(entries)
+
+
+def _mark_scan_cancelled(session_id: str) -> None:
+    with _ACTIVE_POC_PLANS_LOCK:
+        _CANCELLED_SCAN_SESSIONS.add(str(session_id))
+
+
+def _is_scan_cancelled(session_id: str) -> bool:
+    with _ACTIVE_POC_PLANS_LOCK:
+        return str(session_id) in _CANCELLED_SCAN_SESSIONS
 
 def _get_utc_now() -> datetime.datetime:
     """Helper to return a naive UTC datetime, consistent across the app and DB."""
@@ -54,7 +103,6 @@ from local_requirements import (
 )
 from poc_security import extract_poc_security_profile, should_require_disruptive_approval
 from poc_execution_service import normalize_poc_params, resolve_target_label
-from auth_service import resolve_user_from_bearer
 from audit_exp_readiness import PROFESSIONAL_TIER_ORDER, audit_file
 from poc_naming import canonical_display_name
 from agent_execution_policy import (
@@ -62,6 +110,7 @@ from agent_execution_policy import (
     default_risk_ceiling,
     issue_signed_scope_token,
     normalize_execution_mode,
+    normalize_destructive_policy,
     normalize_risk_level,
     preflight_profile,
     risk_level_allows,
@@ -186,15 +235,16 @@ WEB_DIST_CANDIDATES = [
 
 app = Flask(__name__)
 
-# CORS：生产模式允许列表由 AUTOSEC_CORS_ORIGINS 环境变量控制（逗号分隔），
-# 未设置时回退 "*"（仅适用于本地边缘工作站场景）。
+# CORS is opt-in. Packaged and development UIs use the same origin.
 _cors_origins_env = os.environ.get("AUTOSEC_CORS_ORIGINS", "")
-_cors_origins = [o.strip() for o in _cors_origins_env.split(",") if o.strip()] or "*"
-CORS(app, resources={r"/api/*": {
-    "origins": _cors_origins,
-    "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
-}})
+_cors_origins = [o.strip().rstrip("/") for o in _cors_origins_env.split(",") if o.strip()]
+if _cors_origins:
+    CORS(app, resources={r"/api/v1/*": {
+        "origins": _cors_origins,
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
+        "supports_credentials": True,
+    }})
 
 CONFIG = get_config()
 RUNTIME_WARNINGS = get_runtime_warnings(CONFIG)
@@ -202,14 +252,13 @@ RUNTIME_WARNINGS = get_runtime_warnings(CONFIG)
 # Path to the Pocs directory
 POCS_DIR = str(SERVER_DIR / 'pocs')
 
-# ── 认证强制模式 ─────────────────────────────────────────────
-# AUTOSEC_REQUIRE_AUTH=true  → 所有执行端点强制 JWT 认证（多用户/网络部署推荐）
-# AUTOSEC_REQUIRE_AUTH=false → 本地边缘工作站模式，允许无 token 访问（默认）
-_REQUIRE_AUTH = os.environ.get("AUTOSEC_REQUIRE_AUTH", "false").strip().lower() in ("true", "1", "yes")
+# ── 持久浏览器会话（所有业务端点强制认证）────────────────────
+_SESSION_COOKIE_NAME = "autosec_session"
+_SESSION_TTL_HOURS = int(os.environ.get("AUTOSEC_SESSION_TTL_HOURS", "12"))
 
 # ── 并发 PoC 执行 Semaphore ──────────────────────────────────
 # AUTOSEC_MAX_CONCURRENT_POCS 控制同时执行的 PoC 数量上限（默认 5）。
-# 超出上限时，/api/run_poc 和 /api/run_poc_stream 返回 429。
+# 超出上限时，/api/v1/run_poc 和 /api/v1/run_poc_stream 返回 429。
 import threading as _threading_sem
 _MAX_CONCURRENT_POCS = int(os.environ.get("AUTOSEC_MAX_CONCURRENT_POCS", "5"))
 _POC_SEMAPHORE = _threading_sem.Semaphore(_MAX_CONCURRENT_POCS)
@@ -229,6 +278,29 @@ if _BOOTSTRAP_MODE not in ("edge", "cli_only"):
 _BOOTSTRAP_TOKEN = os.environ.get("AUTOSEC_BOOTSTRAP_TOKEN", "").strip()
 _REGISTRATION_LOCK = _threading_sem.Lock()
 
+
+def _is_local_registration_request() -> bool:
+    """Allow self-registration only when both peer and requested host are loopback."""
+    if not has_request_context() or _BOOTSTRAP_MODE != "edge":
+        return False
+    remote = str(request.remote_addr or '').split('%', 1)[0]
+    host = str(request.host or '').rsplit(':', 1)[0].strip('[]').lower()
+    try:
+        remote_ip = ipaddress.ip_address(remote)
+        remote_is_loopback = remote_ip.is_loopback
+    except ValueError:
+        remote_ip = None
+        remote_is_loopback = False
+    if remote_is_loopback and host in {'localhost', '127.0.0.1', '::1'}:
+        return True
+    try:
+        host_ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    # Accessing the workstation through its own private interface is still a
+    # local console; another LAN peer has a different source address.
+    return bool(remote_ip and remote_ip == host_ip and (host_ip.is_private or host_ip.is_loopback))
+
 # ── 授权目标网段（Agent/PoC 只应攻击这些范围；空则仅允许私网/回环） ──
 _ALLOWED_TARGET_CIDRS = parse_allowed_target_cidrs(os.environ.get("AUTOSEC_ALLOWED_TARGET_CIDRS", ""))
 # 是否允许攻击公网目标（默认禁止，防止误扫或被利用为攻击跳板）
@@ -236,23 +308,67 @@ _ALLOW_PUBLIC_TARGETS = os.environ.get("AUTOSEC_ALLOW_PUBLIC_TARGETS", "false").
 
 
 def _target_in_scope(target_ip: str) -> bool:
-    """判断扫描目标是否在授权范围内。公网目标需显式开启开关。
-    非 IP 字面量（如主机名）在允许公网时放行，否则拒绝。"""
+    """判断 IP 字面量是否在授权范围内。公网目标需显式开启开关。"""
     if _ALLOW_PUBLIC_TARGETS:
         return True
     if is_private_or_lab_target(target_ip, _ALLOWED_TARGET_CIDRS):
         return True
     return False
+
+
+def _pin_authorized_target(target: str) -> tuple[str | None, str]:
+    """Resolve once, validate every address, and return one pinned IP for execution."""
+    value = str(target or '').strip()
+    if not value:
+        return None, 'empty target'
+    try:
+        parsed = ipaddress.ip_address(value)
+        normalized = str(parsed)
+        return (normalized, 'ok') if _target_in_scope(normalized) else (None, 'target out of scope')
+    except ValueError:
+        pass
+    try:
+        infos = socket.getaddrinfo(value, None, type=socket.SOCK_STREAM)
+        resolved = sorted({str(info[4][0]).split('%')[0] for info in infos})
+    except OSError as exc:
+        return None, f'dns resolution failed: {exc}'
+    if not resolved:
+        return None, 'dns resolution returned no addresses'
+    if any(not _target_in_scope(address) for address in resolved):
+        return None, 'one or more resolved addresses are outside authorized scope'
+    resolved.sort(key=lambda address: (':' in address, address))
+    return resolved[0], 'ok'
 # ==========================================
 # Application Configuration
 # ==========================================
 
-# Secret Key for JWT
+# Installation key for session-adjacent signed scopes (not browser authentication storage)
 app.config['SECRET_KEY'] = CONFIG.secret_key
+app.config['AI_CONFIG_KEY'] = CONFIG.ai_config_key
 
 # Database Configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = CONFIG.database_uri
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'connect_args': {'timeout': 15},
+    'pool_pre_ping': True,
+}
+
+
+@event.listens_for(Engine, 'connect')
+def _configure_sqlite_connection(dbapi_connection, connection_record):
+    """Make concurrent session/history writes reliable on the edge SQLite DB."""
+    module_name = type(dbapi_connection).__module__
+    if not module_name.startswith('sqlite3'):
+        return
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute('PRAGMA busy_timeout=15000')
+        cursor.execute('PRAGMA foreign_keys=ON')
+        cursor.execute('PRAGMA synchronous=NORMAL')
+        cursor.execute('PRAGMA journal_mode=WAL')
+    finally:
+        cursor.close()
 
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)  # flask-migrate：支持 flask db upgrade 命令
@@ -276,34 +392,160 @@ def _rate_limit_cleanup():
 _cleanup_thread = _threading.Thread(target=_rate_limit_cleanup, daemon=True)
 _cleanup_thread.start()
 
+_SENSITIVE_KEY_PARTS = ('password', 'passwd', 'credential', 'api_key', 'apikey', 'token', 'secret', 'authorization')
+
+
+def _redact_sensitive(value):
+    if isinstance(value, dict):
+        return {
+            key: ('***REDACTED***' if any(part in str(key).lower() for part in _SENSITIVE_KEY_PARTS) else _redact_sensitive(item))
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_sensitive(item) for item in value]
+    return value
+
+
+_LOOPBACK_HOSTS = frozenset({'127.0.0.1', 'localhost', '::1'})
+
+
+def _origin_from_host(scheme: str, host_header: str) -> str:
+    host_header = str(host_header or '').split(',')[0].strip()
+    if not host_header:
+        return ''
+    parsed = urlparse(f'//{host_header}')
+    hostname = parsed.hostname or host_header
+    if parsed.port:
+        netloc = f'{hostname}:{parsed.port}'
+    else:
+        netloc = hostname
+    return f'{scheme}://{netloc}'.rstrip('/')
+
+
+def _loopback_origin_aliases(origin: str) -> set[str]:
+    parsed = urlparse(origin)
+    if not parsed.scheme or not parsed.hostname:
+        return set()
+    aliases = {origin.rstrip('/')}
+    hostname = parsed.hostname.lower()
+    if hostname not in _LOOPBACK_HOSTS:
+        return aliases
+    port = parsed.port
+    for alt in _LOOPBACK_HOSTS:
+        if alt == hostname:
+            continue
+        if alt == '::1' and hostname not in {'127.0.0.1', 'localhost'}:
+            continue
+        netloc = f'{alt}:{port}' if port else alt
+        aliases.add(f'{parsed.scheme}://{netloc}'.rstrip('/'))
+    return aliases
+
+
+def _allowed_request_origins() -> set[str]:
+    allowed: set[str] = {item.rstrip('/') for item in _cors_origins if item}
+    scheme = (request.headers.get('X-Forwarded-Proto') or request.scheme or 'http').split(',')[0].strip()
+
+    for host_header in (request.headers.get('X-Forwarded-Host'), request.host):
+        if not host_header:
+            continue
+        allowed.update(_loopback_origin_aliases(_origin_from_host(scheme, host_header)))
+
+    allowed.update(_loopback_origin_aliases(request.host_url.rstrip('/')))
+
+    trusted_ui = os.environ.get('AUTOSEC_TRUSTED_UI_ORIGINS', '').strip()
+    if not trusted_ui and CONFIG.flask_debug:
+        trusted_ui = 'http://127.0.0.1:3000,http://localhost:3000'
+    for item in trusted_ui.split(','):
+        item = item.strip().rstrip('/')
+        if item:
+            allowed.update(_loopback_origin_aliases(item))
+
+    return {item for item in allowed if item}
+
+
+def _request_origin_allowed() -> bool:
+    allowed = _allowed_request_origins()
+    origin = str(request.headers.get('Origin') or '').rstrip('/')
+    if origin and origin in allowed:
+        return True
+    referer = str(request.headers.get('Referer') or '').strip()
+    if referer:
+        ref = urlparse(referer)
+        if ref.scheme and ref.netloc:
+            referer_origin = f'{ref.scheme}://{ref.netloc}'.rstrip('/')
+            if referer_origin in allowed:
+                return True
+    return False
+
+
+@app.before_request
+def _enforce_cookie_csrf_and_origin():
+    if request.method in {'GET', 'HEAD', 'OPTIONS'}:
+        return None
+    # Login and registration do not rely on an existing browser session. A
+    # stale cookie must never prevent the operator from authenticating again.
+    # Both endpoints require JSON and remain protected from cross-site browser
+    # calls by same-origin deployment, disabled-by-default CORS and SameSite.
+    if request.path in {'/api/v1/auth/login', '/api/v1/auth/register'}:
+        return None
+    if not request.cookies.get(_SESSION_COOKIE_NAME):
+        return None
+    if not _request_origin_allowed():
+        return _api_error('ORIGIN_REJECTED', '请求来源未授权。', 403)
+    return None
+
 # ── 全局错误处理器 ────────────────────────────────────────────
 @app.errorhandler(400)
 def bad_request(e):
-    return jsonify({"error": "Bad Request", "message": str(e)}), 400
+    return _api_error('BAD_REQUEST', '请求格式无效。', 400)
 
 @app.errorhandler(401)
 def unauthorized(e):
-    return jsonify({"error": "Unauthorized", "message": str(e)}), 401
+    return _api_error('AUTHENTICATION_REQUIRED', '请先登录。', 401)
 
 @app.errorhandler(403)
 def forbidden(e):
-    return jsonify({"error": "Forbidden", "message": str(e)}), 403
+    return _api_error('FORBIDDEN', '当前账号无权执行此操作。', 403)
 
 @app.errorhandler(404)
 def not_found(e):
-    return jsonify({"error": "Not Found", "message": str(e)}), 404
+    return _api_error('NOT_FOUND', '请求的资源不存在。', 404)
 
 @app.errorhandler(405)
 def method_not_allowed(e):
-    return jsonify({"error": "Method Not Allowed", "message": str(e)}), 405
+    return _api_error('METHOD_NOT_ALLOWED', '请求方法不允许。', 405)
 
 @app.after_request
 def _apply_security_headers(response):
     """为所有响应添加基础安全响应头。"""
+    if request.path.startswith('/api/v1/') and response.status_code >= 400 and response.is_json:
+        data = response.get_json(silent=True)
+        if isinstance(data, dict) and not isinstance(data.get('error'), dict):
+            message = str(data.get('error') or data.get('message') or '请求处理失败。')
+            code = str(data.get('code') or f'HTTP_{response.status_code}')
+            details = {
+                key: value for key, value in data.items()
+                if key not in {'error', 'message', 'code', 'trace_id'}
+            }
+            payload = {
+                'error': {'code': code, 'message': message},
+                'trace_id': data.get('trace_id') or request.headers.get('X-Trace-Id') or uuid.uuid4().hex,
+            }
+            if details:
+                payload['error']['details'] = _redact_sensitive(details)
+            response.set_data(json.dumps(payload, ensure_ascii=False))
+            response.content_type = 'application/json; charset=utf-8'
     response.headers.setdefault('X-Content-Type-Options', 'nosniff')
     response.headers.setdefault('X-Frame-Options', 'DENY')
     response.headers.setdefault('Referrer-Policy', 'no-referrer')
     response.headers.setdefault('X-XSS-Protection', '0')
+    response.headers.setdefault(
+        'Content-Security-Policy',
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; "
+        "object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+    )
+    response.headers.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
     # HSTS 仅在 HTTPS 场景由前置代理注入更合适；此处在启用 TLS 时补充。
     if os.environ.get('AUTOSEC_BEHIND_TLS', 'false').strip().lower() in ('true', '1', 'yes'):
         response.headers.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
@@ -318,17 +560,24 @@ def handle_exception(e):
     _REDACT_KEYS = {"api_key", "apiKey", "password", "token", "secret"}
     try:
         req_json = request.get_json(silent=True) or {}
-        req_summary = {k: ("***REDACTED***" if k in _REDACT_KEYS else v) for k, v in req_json.items() if not isinstance(v, (dict, list))}
+        req_summary = _redact_sensitive(req_json)
     except Exception:
         req_summary = {}
     logger.error(
         f"Unhandled exception [{request.method} {request.path}] req={req_summary}: "
         f"{type(e).__name__}: {e}\n{_tb.format_exc()}"
     )
+    if isinstance(e, OperationalError) and 'database is locked' in str(e).lower():
+        return _api_error(
+            'DATABASE_BUSY',
+            '扫描数据库正在完成上一任务的归档，请稍后自动重试。',
+            503,
+            {'retryable': True},
+        )
     code = getattr(e, "code", 500)
     if isinstance(code, int) and 400 <= code < 600:
-        return jsonify({"error": type(e).__name__, "message": str(e)}), code
-    return jsonify({"error": "Internal Server Error", "message": "An unexpected error occurred."}), 500
+        return _api_error(type(e).__name__.upper(), str(e), code)
+    return _api_error('INTERNAL_ERROR', '系统处理请求时发生内部错误。', 500)
 
 def _extract_session_target_ip(session: dict) -> str:
     connection = session.get("connection") or {}
@@ -366,7 +615,11 @@ def _normalize_manual_execution_items(session: dict) -> list[dict]:
     for index, raw_item in enumerate(session.get("results") or [], start=1):
         item = raw_item if isinstance(raw_item, dict) else {}
         poc_name = _extract_result_identifier(item, index)
-        vulnerable = bool(item.get("vulnerable"))
+        verification_status = str(item.get("verificationStatus") or item.get("verification_status") or '').strip()
+        vulnerable = item.get("vulnerable") is True and verification_status in {
+            'auto_confirmed_vulnerable',
+            'manual_confirmed_vulnerable',
+        }
         evidence = _extract_result_evidence(item)
         execution_items.append({
             "step": index,
@@ -377,6 +630,7 @@ def _normalize_manual_execution_items(session: dict) -> list[dict]:
             "error": "" if vulnerable else str(item.get("error") or "").strip(),
             "details": evidence,
             "severity": str(item.get("severity") or "UNKNOWN").strip() or "UNKNOWN",
+            "verification_status": verification_status or 'unconfirmed',
             "branch": "global_scan",
         })
     return execution_items
@@ -453,7 +707,7 @@ def _normalize_ai_config(payload: dict | None) -> dict:
 
 
 def _ai_config_fernet() -> Fernet:
-    digest = hashlib.sha256(app.config['SECRET_KEY'].encode('utf-8')).digest()
+    digest = hashlib.sha256(app.config['AI_CONFIG_KEY'].encode('utf-8')).digest()
     return Fernet(base64.urlsafe_b64encode(digest))
 
 
@@ -513,6 +767,16 @@ def _load_user_ai_config(user_id: int) -> dict:
     return _decrypt_ai_config(record.encrypted_payload)
 
 
+def _resolve_user_ai_config(user_id: int, incoming: dict | None = None) -> dict:
+    """Merge editable fields with the saved secret instead of dropping a masked API key."""
+    stored = _normalize_ai_config(_load_user_ai_config(user_id))
+    supplied = _normalize_ai_config(incoming if isinstance(incoming, dict) else {})
+    return {
+        key: supplied.get(key) or stored.get(key) or ''
+        for key in ('base_url', 'api_key', 'report_model', 'fast_model', 'strong_model')
+    }
+
+
 def _save_user_ai_config(user_id: int, payload: dict | None) -> dict:
     record = UserAiConfig.query.filter_by(user_id=user_id).first()
     encrypted_payload = _encrypt_ai_config(payload)
@@ -531,40 +795,53 @@ def _validate_ai_config(payload: dict | None) -> tuple[dict, str | None]:
     if not config["base_url"]:
         return config, "AI base_url is required."
     # SSRF 防护：AI base_url 必须是安全的出站 URL（拒绝内网/回环/link-local/云 metadata）。
-    # 允许通过 AUTOSEC_ALLOW_PRIVATE_AI_URL=true 放行私网（本地自建模型网关场景）。
+    # allow_private：本地自建模型网关；allow_proxy_dns：Clash fake-ip（198.18.0.0/15）。
     allow_private = os.environ.get("AUTOSEC_ALLOW_PRIVATE_AI_URL", "false").strip().lower() in ("true", "1", "yes")
-    safe, reason = is_safe_outbound_url(config["base_url"], allow_private=allow_private)
+    allow_proxy_dns = os.environ.get("AUTOSEC_ALLOW_PROXY_DNS", "true").strip().lower() in ("true", "1", "yes")
+    safe, reason = is_safe_outbound_url(
+        config["base_url"],
+        allow_private=allow_private,
+        allow_proxy_dns=allow_proxy_dns,
+    )
     if not safe:
-        return config, f"AI base_url rejected for safety: {reason}. Set AUTOSEC_ALLOW_PRIVATE_AI_URL=true if using a local model gateway."
+        return config, (
+            f"AI base_url rejected for safety: {reason}. "
+            "若使用 Clash 等代理，请确认 AUTOSEC_ALLOW_PROXY_DNS=true；"
+            "若使用本地模型网关，请设置 AUTOSEC_ALLOW_PRIVATE_AI_URL=true。"
+        )
     return config, None
 
 
-def _generate_unified_assessment_report(session: dict, ai_config: dict) -> str:
+def _generate_unified_assessment_report(session: dict, ai_config: dict, tester_name: str) -> str:
     normalized_ai_config, error = _validate_ai_config(ai_config)
     if error:
-        return f"AI 报告功能未启用：{error}"
+        raise ValueError(f"AI 报告功能未启用：{error}")
 
-    try:
-        from agent_orchestrator import generate_assessment_report
+    from agent_orchestrator import (
+        AssessmentReportGenerationError,
+        generate_assessment_report,
+        is_local_assessment_report,
+    )
 
-        target_name, target_ip, context = _build_manual_assessment_context(session)
-        report_model = normalized_ai_config["report_model"] or normalized_ai_config["strong_model"] or normalized_ai_config["fast_model"] or "qwen-max"
-        logger.info(
-            "Unified assessment report requested for %s (%s) with model=%s",
-            target_name,
-            target_ip or "n/a",
-            report_model,
-        )
-        return generate_assessment_report(
-            target_ip=target_ip or "Unknown Target",
-            target_name=target_name,
-            llm_config=normalized_ai_config,
-            context=context,
-            report_date=_extract_session_report_date(session),
-        )
-    except Exception as exc:
-        logger.error(f"Unified assessment report generation failed: {exc}", exc_info=True)
-        return "与模型接口通信时发生错误，请检查当前用户的 AI 配置、网络和 API Key。"
+    target_name, target_ip, context = _build_manual_assessment_context(session)
+    report_model = normalized_ai_config["report_model"] or normalized_ai_config["strong_model"] or normalized_ai_config["fast_model"] or "qwen-max"
+    logger.info(
+        "Unified assessment report requested for %s (%s) with model=%s",
+        target_name,
+        target_ip or "n/a",
+        report_model,
+    )
+    report = generate_assessment_report(
+        target_ip=target_ip or "Unknown Target",
+        target_name=target_name,
+        llm_config=normalized_ai_config,
+        context=context,
+        report_date=_extract_session_report_date(session),
+        tester_name=tester_name,
+    )
+    if is_local_assessment_report(report):
+        raise AssessmentReportGenerationError("模型返回了本地降级报告，已拒绝。")
+    return report
 
 
 # ==========================================
@@ -572,47 +849,40 @@ def _generate_unified_assessment_report(session: dict, ai_config: dict) -> str:
 # ==========================================
 
 def _startup_db_migrate() -> None:
-    """启动时执行数据库迁移。
-    
-    策略（按优先级）：
-    1. 若 migrations/ 目录已初始化且含 alembic_version 表 → 执行 flask db upgrade head
-    2. 否则 → 执行 db.create_all() 并提示操作员初始化 Alembic
-    
-    这样保证：
-    - 首次部署：自动建表
-    - 后续升级：通过 Alembic 迁移，不会丢失数据
-    """
+    """Back up SQLite, adopt the legacy baseline, and migrate atomically or refuse startup."""
     from pathlib import Path as _Path
-    import subprocess as _sub
 
     migrations_dir = _Path(__file__).parent / 'migrations'
     has_migrations = (migrations_dir / 'env.py').exists()
+    database_uri = str(app.config.get('SQLALCHEMY_DATABASE_URI') or '')
+    database_path = None
+    backup_path = None
+    existing_tables = set(sqlalchemy_inspect(db.engine).get_table_names())
+    if database_uri.startswith('sqlite:///'):
+        database_path = _Path(database_uri[len('sqlite:///'):])
+        if database_path.exists() and 'scan_sessions_v3' not in existing_tables:
+            backup_path = database_path.with_suffix(database_path.suffix + '.pre-v3.bak')
+            shutil.copy2(database_path, backup_path)
 
-    if has_migrations:
-        # 尝试运行 Alembic 升级
-        try:
-            result = _sub.run(
-                ['flask', 'db', 'upgrade'],
-                capture_output=True, text=True,
-                cwd=str(_Path(__file__).parent),
-                timeout=30,
-            )
-            if result.returncode == 0:
-                logger.info("Database migrated via Alembic (flask db upgrade).")
-            else:
-                logger.warning(f"Alembic upgrade warning (falling back to create_all): {result.stderr.strip()}")
-                db.create_all()
-        except Exception as exc:
-            logger.warning(f"Alembic upgrade failed, falling back to create_all: {exc}")
-            db.create_all()
-    else:
-        # 首次部署或尚未初始化 Alembic：建表
-        db.create_all()
-        logger.info("Database schema created via db.create_all().")
-        logger.info(
-            "MIGRATION HINT: Run 'flask db init && flask db migrate -m init && flask db upgrade' "
-            "in the server/ directory to enable Alembic schema versioning for future upgrades."
-        )
+    try:
+        if not has_migrations:
+            raise RuntimeError('migrations directory is missing or incomplete')
+        if existing_tables and 'alembic_version' not in existing_tables:
+            required_legacy_tables = {'users', 'scan_history'}
+            if not required_legacy_tables.issubset(existing_tables):
+                raise RuntimeError('unversioned database does not match the supported legacy schema')
+            migrate_stamp(directory=str(migrations_dir), revision='8763c54bbdfd')
+            logger.info('Adopted existing database at the v2 legacy migration baseline.')
+        migrate_upgrade(directory=str(migrations_dir), revision='head')
+        _backfill_v3_sessions()
+        _sync_legacy_history_into_v3_sessions()
+        logger.info('Database migration and v3 backfill completed.')
+    except Exception as exc:
+        db.session.rollback()
+        db.engine.dispose()
+        if database_path and backup_path and backup_path.exists():
+            shutil.copy2(backup_path, database_path)
+        raise RuntimeError(f'Database migration failed; startup refused and backup restored: {exc}') from exc
 
 
 # ==========================================
@@ -633,6 +903,60 @@ class User(db.Model):
             "username": self.username,
             "role": self.role,
             "created_at": self.created_at.isoformat()
+        }
+
+
+class AuthSession(db.Model):
+    __tablename__ = 'auth_sessions'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    token_hash = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    expires_at = db.Column(db.DateTime, nullable=False, index=True)
+    revoked_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=_get_utc_now, nullable=False)
+    last_seen_at = db.Column(db.DateTime, default=_get_utc_now, nullable=False)
+    user_agent = db.Column(db.String(255), nullable=True)
+    ip_address = db.Column(db.String(50), nullable=True)
+
+    user = db.relationship('User', backref=db.backref('auth_sessions', lazy=True))
+
+    @property
+    def active(self) -> bool:
+        return self.revoked_at is None and self.expires_at > _get_utc_now()
+
+
+class ApiToken(db.Model):
+    __tablename__ = 'api_tokens'
+    id = db.Column(db.Integer, primary_key=True)
+    jti = db.Column(db.String(36), unique=True, nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    token_hash = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    name = db.Column(db.String(100), nullable=False, default='CLI token')
+    scopes_json = db.Column(db.Text, nullable=False, default='[]')
+    expires_at = db.Column(db.DateTime, nullable=False, index=True)
+    revoked_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=_get_utc_now, nullable=False)
+    last_used_at = db.Column(db.DateTime, nullable=True)
+
+    user = db.relationship('User', backref=db.backref('api_tokens', lazy=True))
+
+    @property
+    def active(self) -> bool:
+        return self.revoked_at is None and self.expires_at > _get_utc_now()
+
+    @property
+    def scopes(self) -> set[str]:
+        return set(json.loads(self.scopes_json or '[]'))
+
+    def to_dict(self) -> dict:
+        return {
+            'jti': self.jti,
+            'name': self.name,
+            'scopes': sorted(self.scopes),
+            'expires_at': self.expires_at.strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'revoked_at': self.revoked_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.revoked_at else None,
+            'created_at': self.created_at.strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'last_used_at': self.last_used_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.last_used_at else None,
         }
 
 
@@ -766,6 +1090,168 @@ class ExecutionArtifact(db.Model):
         }
 
 
+class ScanSessionV3(db.Model):
+    __tablename__ = 'scan_sessions_v3'
+    id = db.Column(db.String(36), primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    mode = db.Column(db.String(20), nullable=False, default='manual')
+    status = db.Column(db.String(32), nullable=False, default='draft', index=True)
+    target_json = db.Column(db.Text, nullable=False, default='{}')
+    policy_json = db.Column(db.Text, nullable=False, default='{}')
+    plan_json = db.Column(db.Text, nullable=False, default='[]')
+    result_json = db.Column(db.Text, nullable=False, default='{}')
+    version = db.Column(db.Integer, nullable=False, default=1)
+    created_at = db.Column(db.DateTime, default=_get_utc_now, nullable=False)
+    updated_at = db.Column(db.DateTime, default=_get_utc_now, onupdate=_get_utc_now, nullable=False)
+    started_at = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+
+    user = db.relationship('User', backref=db.backref('v3_scan_sessions', lazy=True))
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'mode': self.mode,
+            'status': self.status,
+            'target': json.loads(self.target_json or '{}'),
+            'policy': json.loads(self.policy_json or '{}'),
+            'plan': json.loads(self.plan_json or '[]'),
+            'result': json.loads(self.result_json or '{}'),
+            'version': self.version,
+            'created_at': self.created_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.created_at else None,
+            'updated_at': self.updated_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.updated_at else None,
+            'started_at': self.started_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.started_at else None,
+            'completed_at': self.completed_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.completed_at else None,
+        }
+
+
+class SessionEvent(db.Model):
+    __tablename__ = 'session_events'
+    id = db.Column(db.Integer, primary_key=True)
+    session_id = db.Column(db.String(36), db.ForeignKey('scan_sessions_v3.id'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    event_type = db.Column(db.String(60), nullable=False, index=True)
+    payload_json = db.Column(db.Text, nullable=False, default='{}')
+    created_at = db.Column(db.DateTime, default=_get_utc_now, nullable=False, index=True)
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'session_id': self.session_id,
+            'type': self.event_type,
+            'payload': json.loads(self.payload_json or '{}'),
+            'created_at': self.created_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.created_at else None,
+        }
+
+
+class ApprovalGrant(db.Model):
+    __tablename__ = 'approval_grants'
+    id = db.Column(db.Integer, primary_key=True)
+    jti = db.Column(db.String(36), unique=True, nullable=False, index=True)
+    token_hash = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    session_id = db.Column(db.String(36), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    target = db.Column(db.String(255), nullable=False)
+    poc_filename = db.Column(db.String(255), nullable=False)
+    risk_ceiling = db.Column(db.String(32), nullable=False, default='high')
+    allowed_domains_json = db.Column(db.Text, nullable=False, default='[]')
+    expires_at = db.Column(db.DateTime, nullable=False, index=True)
+    used_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=_get_utc_now, nullable=False)
+
+    def to_dict(self) -> dict:
+        return {
+            'jti': self.jti,
+            'session_id': self.session_id,
+            'target': self.target,
+            'poc_filename': self.poc_filename,
+            'risk_ceiling': self.risk_ceiling,
+            'allowed_domains': json.loads(self.allowed_domains_json or '[]'),
+            'expires_at': self.expires_at.strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'used_at': self.used_at.strftime('%Y-%m-%dT%H:%M:%SZ') if self.used_at else None,
+        }
+
+
+def _backfill_v3_sessions() -> None:
+    """Preserve legacy history without promoting unverified results to findings."""
+    migrated = 0
+    try:
+        legacy_items = ScanHistory.query.order_by(ScanHistory.id.asc()).all()
+    except Exception:
+        return
+    for legacy in legacy_items:
+        stable_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f'autosec-legacy:{legacy.id}:{legacy.session_id or ""}'))
+        if ScanSessionV3.query.filter_by(id=stable_id).first():
+            continue
+        try:
+            legacy_payload = json.loads(legacy.results_json or '{}')
+        except (TypeError, json.JSONDecodeError):
+            legacy_payload = {}
+        status = legacy.status if legacy.status in {'completed', 'failed', 'cancelled'} else 'completed'
+        session = ScanSessionV3(
+            id=stable_id,
+            user_id=legacy.user_id,
+            mode=str(legacy_payload.get('mode') or 'batch'),
+            status=status,
+            target_json=json.dumps({'ip': legacy.target_ip, 'mac': legacy.target_mac}, ensure_ascii=False),
+            policy_json='{}',
+            plan_json=json.dumps(legacy_payload.get('plan') or [], ensure_ascii=False),
+            result_json=json.dumps(legacy_payload, ensure_ascii=False),
+            created_at=legacy.started_at or _get_utc_now(),
+            updated_at=legacy.completed_at or legacy.started_at or _get_utc_now(),
+            started_at=legacy.started_at,
+            completed_at=legacy.completed_at,
+        )
+        db.session.add(session)
+        db.session.add(SessionEvent(
+            session_id=stable_id,
+            user_id=legacy.user_id,
+            event_type='session.migrated',
+            payload_json=json.dumps({'legacy_history_id': legacy.id}, ensure_ascii=False),
+        ))
+        migrated += 1
+    if migrated:
+        db.session.commit()
+        logger.info('Migrated %s legacy scan history records into v3 sessions.', migrated)
+
+
+def _sync_legacy_history_into_v3_sessions() -> None:
+    """Attach full legacy payloads onto matching v3 sessions (same session_id)."""
+    updated = 0
+    try:
+        legacy_items = ScanHistory.query.order_by(ScanHistory.id.asc()).all()
+    except Exception:
+        return
+    for legacy in legacy_items:
+        session_id = str(legacy.session_id or '').strip()
+        if not session_id:
+            continue
+        session = ScanSessionV3.query.filter_by(id=session_id, user_id=legacy.user_id).first()
+        if not session:
+            continue
+        try:
+            legacy_payload = json.loads(legacy.results_json or '{}')
+        except (TypeError, json.JSONDecodeError):
+            legacy_payload = {}
+        if not isinstance(legacy_payload, dict) or not legacy_payload:
+            continue
+        try:
+            current_payload = json.loads(session.result_json or '{}')
+        except (TypeError, json.JSONDecodeError):
+            current_payload = {}
+        merged = _merge_v3_session_result(
+            current_payload if isinstance(current_payload, dict) else {},
+            legacy_payload,
+        )
+        if merged != current_payload:
+            session.result_json = json.dumps(merged, ensure_ascii=False)
+            updated += 1
+    if updated:
+        db.session.commit()
+        logger.info('Synced %s v3 sessions from legacy scan history payloads.', updated)
+
+
 def _extract_poc_security_profile(poc_path: str) -> dict:
     source_text = None
     if not os.path.exists(poc_path):
@@ -779,21 +1265,34 @@ def _should_require_disruptive_approval(profile: dict, params: dict) -> bool:
 
 # ── 破坏性 PoC 审批令牌（服务端签发，防止客户端伪造 allow_disruptive 绕过） ──
 _APPROVAL_TOKEN_TTL_SECONDS = int(os.environ.get("AUTOSEC_APPROVAL_TTL_SECONDS", "300"))
-_USED_APPROVAL_TOKENS: set = set()  # 一次性令牌已用集合（进程内，重启清空）
 _BATCH_APPROVAL_TOKEN_TTL_SECONDS = int(os.environ.get("AUTOSEC_BATCH_APPROVAL_TTL_SECONDS", "1800"))
 
 
-def _issue_disruptive_approval_token(poc_filename: str, target: str) -> str:
-    """签发一次性破坏性执行审批令牌，绑定 poc+target，有 TTL。"""
-    issued_at = int(time.time())
-    payload = f"{poc_filename}|{target}|{issued_at}"
-    sig = hmac.new(
-        app.config['SECRET_KEY'].encode('utf-8'),
-        payload.encode('utf-8'),
-        hashlib.sha256,
-    ).hexdigest()
-    raw = f"{payload}|{sig}"
-    return base64.urlsafe_b64encode(raw.encode('utf-8')).decode('ascii')
+def _issue_disruptive_approval_token(
+    poc_filename: str,
+    target: str,
+    *,
+    user_id: int,
+    session_id: str,
+    risk_ceiling: str = 'critical',
+    allowed_domains: list[str] | None = None,
+) -> str:
+    """Persist and return an opaque, single-use approval grant."""
+    raw_token = secrets.token_urlsafe(48)
+    grant = ApprovalGrant(
+        jti=str(uuid.uuid4()),
+        token_hash=_hash_session_token(raw_token),
+        session_id=str(session_id or 'manual'),
+        user_id=user_id,
+        target=str(target),
+        poc_filename=str(poc_filename),
+        risk_ceiling=normalize_risk_level(risk_ceiling),
+        allowed_domains_json=json.dumps(sorted(set(allowed_domains or [])), ensure_ascii=False),
+        expires_at=_get_utc_now() + datetime.timedelta(seconds=_APPROVAL_TOKEN_TTL_SECONDS),
+    )
+    db.session.add(grant)
+    db.session.commit()
+    return raw_token
 
 
 def _issue_batch_approval_token(
@@ -849,6 +1348,7 @@ def _issue_single_use_disruptive_token_from_batch(
     session_id: str,
     risk_level: str,
     domain: str,
+    user_id: int,
 ) -> tuple[str, dict, str]:
     ok, payload, reason = _verify_batch_approval_token(
         batch_token,
@@ -859,49 +1359,71 @@ def _issue_single_use_disruptive_token_from_batch(
     )
     if not ok:
         return "", payload, reason
-    return _issue_disruptive_approval_token(poc_filename, target), payload, "ok"
+    return _issue_disruptive_approval_token(
+        poc_filename,
+        target,
+        user_id=user_id,
+        session_id=session_id,
+        risk_ceiling=risk_level,
+        allowed_domains=[domain] if domain else [],
+    ), payload, "ok"
 
 
-def _verify_disruptive_approval_token(token: str, poc_filename: str, target: str) -> bool:
-    """校验破坏性执行审批令牌：签名有效、poc+target 匹配、未过期。"""
+def _consume_disruptive_approval_token(
+    token: str,
+    poc_filename: str,
+    target: str,
+    user_id: int,
+    session_id: str,
+    risk_level: str = 'SAFE',
+    domain: str = '',
+) -> bool:
+    """Atomically consume a durable approval grant."""
     if not token:
         return False
-    try:
-        raw = base64.urlsafe_b64decode(token.encode('ascii')).decode('utf-8')
-        tok_poc, tok_target, tok_ts, tok_sig = raw.rsplit('|', 3)
-    except Exception:
+    grant = ApprovalGrant.query.filter_by(
+        token_hash=_hash_session_token(token),
+        poc_filename=poc_filename,
+        target=str(target),
+        user_id=user_id,
+        session_id=str(session_id),
+        used_at=None,
+    ).first()
+    if not grant or grant.expires_at <= _get_utc_now():
         return False
-    if tok_poc != poc_filename or tok_target != target:
+    if not risk_level_allows(grant.risk_ceiling, risk_level):
         return False
-    try:
-        issued_at = int(tok_ts)
-    except ValueError:
+    allowed_domains = set(json.loads(grant.allowed_domains_json or '[]'))
+    if allowed_domains and str(domain or '').strip().lower() not in allowed_domains:
         return False
-    if time.time() - issued_at > _APPROVAL_TOKEN_TTL_SECONDS:
+    updated = ApprovalGrant.query.filter_by(id=grant.id, used_at=None).update(
+        {'used_at': _get_utc_now()}, synchronize_session=False
+    )
+    if updated != 1:
+        db.session.rollback()
         return False
-    # 一次性约束：同一 token 不可重放
-    if token in _USED_APPROVAL_TOKENS:
-        return False
-    expected_payload = f"{tok_poc}|{tok_target}|{tok_ts}"
-    expected_sig = hmac.new(
-        app.config['SECRET_KEY'].encode('utf-8'),
-        expected_payload.encode('utf-8'),
-        hashlib.sha256,
-    ).hexdigest()
-    return hmac.compare_digest(expected_sig, tok_sig)
+    db.session.commit()
+    return True
 
 
-def _disruptive_execution_authorized(params: dict, poc_filename: str, target: str) -> bool:
+def _disruptive_execution_authorized(
+    params: dict,
+    poc_filename: str,
+    target: str,
+    user_id: int,
+    session_id: str,
+    risk_level: str,
+    domain: str,
+) -> bool:
     """
     判断一次破坏性执行是否已获授权。
     授权途径（服务端可信）：params 中携带有效的 approval_token。
     仅凭客户端 allow_disruptive 标志【不】构成授权。
     """
     token = str(params.get("approval_token") or "")
-    if _verify_disruptive_approval_token(token, poc_filename, target):
-        _USED_APPROVAL_TOKENS.add(token)  # 标记为已用，防止重放
-        return True
-    return False
+    return _consume_disruptive_approval_token(
+        token, poc_filename, target, user_id, session_id, risk_level, domain
+    )
 
 
 def _build_execution_artifact_payload(**kwargs) -> dict:
@@ -1115,27 +1637,73 @@ def _score_session_against_benchmark(session_payload: dict, benchmark: dict) -> 
 # Authentication Helpers
 # ==========================================
 
+def _api_error(code: str, message: str, status: int, details: dict | None = None):
+    trace_id = request.headers.get('X-Trace-Id') or uuid.uuid4().hex
+    error = {'code': code, 'message': message}
+    if details:
+        error['details'] = details
+    return jsonify({'error': error, 'trace_id': trace_id}), status
+
+
+def _hash_session_token(token: str) -> str:
+    return hashlib.sha256(token.encode('utf-8')).hexdigest()
+
+
+def _resolve_authenticated_user():
+    auth_header = request.headers.get('Authorization', '')
+    if auth_header.startswith('Bearer '):
+        raw_token = auth_header.split(' ', 1)[1].strip()
+        api_token = ApiToken.query.filter_by(token_hash=_hash_session_token(raw_token)).first()
+        if api_token and api_token.active:
+            api_token.last_used_at = _get_utc_now()
+            g.auth_type = 'api_token'
+            g.auth_scopes = api_token.scopes
+            g.api_token_jti = api_token.jti
+            return api_token.user
+
+    cookie_token = request.cookies.get(_SESSION_COOKIE_NAME, '')
+    if not cookie_token:
+        return None
+    session = AuthSession.query.filter_by(token_hash=_hash_session_token(cookie_token)).first()
+    if not session or not session.active:
+        return None
+    session.last_seen_at = _get_utc_now()
+    g.auth_type = 'browser_session'
+    g.auth_scopes = {'*'}
+    return session.user
+
+
+def _required_request_scope() -> str | None:
+    path = request.path
+    if path.startswith('/api/v1/sessions'):
+        return 'session:read' if request.method == 'GET' else 'session:write'
+    if path in {'/api/v1/list_pocs', '/api/v1/poc-registry'}:
+        return 'poc:read'
+    if path.startswith('/api/v1/run_poc') or path in {'/api/v1/execute', '/api/v1/agent-scan'}:
+        return 'poc:execute'
+    if path == '/api/v1/local/capabilities':
+        return 'capability:read'
+    return None
+
+
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if request.method == 'OPTIONS':
             return '', 200
             
-        token = request.headers.get('Authorization')
-        if not token or not token.startswith("Bearer "):
-            return jsonify({'message': 'Token is missing or invalid format!'}), 401
-        
-        token = token.split(" ")[1]
-        try:
-            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
-            current_user = User.query.filter_by(id=data['user_id']).first()
-            if not current_user:
-                return jsonify({'message': 'Authentication failed.'}), 401
-        except Exception:
-            # 不向客户端泄露 JWT 解码细节（过期/签名/格式差异）
-            return jsonify({'message': 'Authentication failed.'}), 401
+        current_user = _resolve_authenticated_user()
+        if not current_user:
+            return _api_error('AUTHENTICATION_REQUIRED', '请先登录后再继续。', 401)
+        required_scope = _required_request_scope()
+        scopes = getattr(g, 'auth_scopes', {'*'})
+        if required_scope and '*' not in scopes and required_scope not in scopes:
+            return _api_error('TOKEN_SCOPE_REQUIRED', 'API Token 缺少当前操作所需作用域。', 403, {
+                'required_scope': required_scope,
+            })
 
         return f(current_user, *args, **kwargs)
+    decorated._auth_required = True
     return decorated
 
 def admin_required(f):
@@ -1144,37 +1712,11 @@ def admin_required(f):
         if request.method == 'OPTIONS':
             return '', 200
         if current_user is None:
-            return jsonify({'message': 'Authentication required!'}), 401
+            return _api_error('AUTHENTICATION_REQUIRED', '请先登录后再继续。', 401)
         if current_user.role != 'admin':
-            return jsonify({'message': 'Admin privileges required!'}), 403
+            return _api_error('ADMIN_REQUIRED', '当前操作需要管理员权限。', 403)
         return f(current_user, *args, **kwargs)
-    return decorated
-
-
-def execution_auth_optional(f):
-    """
-    执行端点认证装饰器：
-    - AUTOSEC_REQUIRE_AUTH=true  → 强制 JWT，未认证返回 401
-    - AUTOSEC_REQUIRE_AUTH=false → 本地模式，token 可选（current_user 可为 None）
-    函数签名必须接受 current_user 作为第一个参数。
-    """
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if request.method == 'OPTIONS':
-            return '', 200
-        auth_header = request.headers.get('Authorization', '')
-        current_user = None
-        if auth_header.startswith('Bearer '):
-            try:
-                tok = auth_header.split(' ', 1)[1]
-                data = jwt.decode(tok, app.config['SECRET_KEY'], algorithms=['HS256'])
-                current_user = User.query.filter_by(id=data['user_id']).first()
-            except Exception:
-                if _REQUIRE_AUTH:
-                    return jsonify({'message': 'Token is invalid!'}), 401
-        elif _REQUIRE_AUTH:
-            return jsonify({'message': 'Authentication required. Set AUTOSEC_REQUIRE_AUTH=false for local edge mode.'}), 401
-        return f(current_user, *args, **kwargs)
+    decorated._admin_required = True
     return decorated
 
 
@@ -1187,7 +1729,8 @@ def _auth_status_payload() -> dict:
     user_count = User.query.count()
     bootstrap_required = user_count == 0
     web_bootstrap_allowed = bootstrap_required and _BOOTSTRAP_MODE == "edge"
-    open_registration = _ALLOW_OPEN_REGISTRATION and not bootstrap_required
+    local_registration = _is_local_registration_request() and not bootstrap_required
+    open_registration = (_ALLOW_OPEN_REGISTRATION or local_registration) and not bootstrap_required
     registration_allowed = web_bootstrap_allowed or open_registration
     return {
         "user_count": user_count,
@@ -1196,6 +1739,11 @@ def _auth_status_payload() -> dict:
         "web_bootstrap_allowed": web_bootstrap_allowed,
         "open_registration": open_registration,
         "registration_allowed": registration_allowed,
+        "registration_scope": (
+            "configured" if _ALLOW_OPEN_REGISTRATION and not bootstrap_required
+            else "local" if local_registration
+            else "disabled"
+        ),
         "bootstrap_token_required": bool(_BOOTSTRAP_TOKEN) and web_bootstrap_allowed,
     }
 
@@ -1221,17 +1769,17 @@ def _log_bootstrap_security_warnings() -> None:
         )
     if not _BOOTSTRAP_TOKEN:
         logger.warning(
-            "SECURITY: AUTOSEC_BOOTSTRAP_TOKEN is not set. Anyone who can reach /api/register first may become admin."
+            "SECURITY: AUTOSEC_BOOTSTRAP_TOKEN is not set. Anyone who can reach /api/v1/auth/register first may become admin."
         )
 
 
-@app.route('/api/auth/status', methods=['GET'])
+@app.route('/api/v1/auth/status', methods=['GET'])
 def auth_status():
     """公开端点：返回注册/bootstrap 策略，供登录页渲染正确 UI。"""
     return jsonify(_auth_status_payload())
 
 
-@app.route('/api/register', methods=['POST'])
+@app.route('/api/v1/auth/register', methods=['POST'])
 def register():
     data = request.json or {}
     username = str(data.get('username') or '').strip()
@@ -1315,7 +1863,7 @@ def register():
         "bootstrap_completed": is_bootstrap,
     }), 201
 
-@app.route('/api/login', methods=['POST'])
+@app.route('/api/v1/auth/login', methods=['POST'])
 def login():
     data = request.json
     if not data or not data.get('username') or not data.get('password'):
@@ -1336,16 +1884,49 @@ def login():
     password_bytes = data.get('password').encode('utf-8')
     if user and bcrypt.checkpw(password_bytes, user.password_hash.encode('utf-8')):
         _LOGIN_FAIL_CACHE.pop(_rate_key, None)  # 登录成功，清除失败计数
-        token = jwt.encode({
-            'user_id': user.id,
-            'role': user.role,
-            'exp': _get_utc_now() + datetime.timedelta(hours=24)
-        }, app.config['SECRET_KEY'], algorithm="HS256")
-
         logger.info(f"User logged in: {user.username}")
         user_payload = user.to_dict()
         user_payload["ai_config"] = _mask_ai_config_for_client(_load_user_ai_config(user.id))
-        return jsonify({'token': token, 'user': user_payload})
+        payload = {'user': user_payload}
+        if str(data.get('client_type') or '').lower() == 'cli':
+            allowed_scopes = {'poc:read', 'poc:execute', 'session:read', 'session:write', 'capability:read'}
+            requested_scopes = data.get('scopes') if isinstance(data.get('scopes'), list) else sorted(allowed_scopes)
+            scopes = sorted({str(scope) for scope in requested_scopes} & allowed_scopes)
+            raw_api_token = secrets.token_urlsafe(48)
+            api_token = ApiToken(
+                jti=str(uuid.uuid4()),
+                user_id=user.id,
+                token_hash=_hash_session_token(raw_api_token),
+                name=str(data.get('token_name') or 'CLI token')[:100],
+                scopes_json=json.dumps(scopes),
+                expires_at=_get_utc_now() + datetime.timedelta(hours=_SESSION_TTL_HOURS),
+            )
+            db.session.add(api_token)
+            db.session.commit()
+            payload.update({'token': raw_api_token, 'token_info': api_token.to_dict()})
+            return jsonify(payload)
+
+        raw_session_token = secrets.token_urlsafe(48)
+        auth_session = AuthSession(
+            user_id=user.id,
+            token_hash=_hash_session_token(raw_session_token),
+            expires_at=_get_utc_now() + datetime.timedelta(hours=_SESSION_TTL_HOURS),
+            user_agent=str(request.headers.get('User-Agent') or '')[:255],
+            ip_address=request.remote_addr,
+        )
+        db.session.add(auth_session)
+        db.session.commit()
+        response = jsonify(payload)
+        response.set_cookie(
+            _SESSION_COOKIE_NAME,
+            raw_session_token,
+            max_age=_SESSION_TTL_HOURS * 3600,
+            httponly=True,
+            secure=os.environ.get('AUTOSEC_BEHIND_TLS', 'false').strip().lower() in ('true', '1', 'yes'),
+            samesite='Strict',
+            path='/',
+        )
+        return response
 
     if not user:
         # 执行一次伪比对，抹平存在/不存在用户的响应时间差异
@@ -1355,7 +1936,39 @@ def login():
     _LOGIN_FAIL_TIMESTAMPS[_rate_key] = time.time()
     return jsonify({"message": "Invalid username or password."}), 401
 
-@app.route('/api/profile', methods=['GET', 'PUT'])
+
+@app.route('/api/v1/auth/logout', methods=['POST'])
+@token_required
+def logout(current_user):
+    raw_token = request.cookies.get(_SESSION_COOKIE_NAME, '')
+    if raw_token:
+        auth_session = AuthSession.query.filter_by(token_hash=_hash_session_token(raw_token)).first()
+        if auth_session:
+            auth_session.revoked_at = _get_utc_now()
+            db.session.commit()
+    response = jsonify({'success': True})
+    response.delete_cookie(_SESSION_COOKIE_NAME, path='/')
+    return response
+
+
+@app.route('/api/v1/api-tokens', methods=['GET'])
+@token_required
+def list_api_tokens(current_user):
+    tokens = ApiToken.query.filter_by(user_id=current_user.id).order_by(ApiToken.created_at.desc()).all()
+    return jsonify({'tokens': [token.to_dict() for token in tokens]})
+
+
+@app.route('/api/v1/api-tokens/<jti>', methods=['DELETE'])
+@token_required
+def revoke_api_token(current_user, jti):
+    token = ApiToken.query.filter_by(jti=jti, user_id=current_user.id).first()
+    if not token:
+        return _api_error('API_TOKEN_NOT_FOUND', 'API Token 不存在。', 404)
+    token.revoked_at = _get_utc_now()
+    db.session.commit()
+    return jsonify({'success': True, 'token': token.to_dict()})
+
+@app.route('/api/v1/profile', methods=['GET', 'PUT'])
 @token_required
 def profile(current_user):
     if request.method == 'GET':
@@ -1364,7 +1977,7 @@ def profile(current_user):
         return jsonify({"user": user_payload})
         
     if request.method == 'PUT':
-        data = request.json
+        data = request.get_json(silent=True) or {}
         new_username = data.get('new_username')
         new_password = data.get('new_password')
         ai_config = data.get('ai_config')
@@ -1388,20 +2001,20 @@ def profile(current_user):
 
         if isinstance(ai_config, dict):
             # 前端不回传 apiKey 明文时，保留已存储的密钥
-            incoming_key = str(ai_config.get("api_key") or ai_config.get("apiKey") or "").strip()
-            if not incoming_key:
-                existing = _load_user_ai_config(current_user.id)
-                if existing.get("apiKey"):
-                    ai_config = {**ai_config, "apiKey": existing["apiKey"]}
-            _save_user_ai_config(current_user.id, ai_config)
+            _save_user_ai_config(current_user.id, _resolve_user_ai_config(current_user.id, ai_config))
             updates_made = True
             
         if updates_made:
-            db.session.commit()
+            try:
+                db.session.commit()
+            except Exception as exc:
+                db.session.rollback()
+                logger.error("Profile update failed for user %s: %s", current_user.id, exc)
+                return _api_error('PROFILE_UPDATE_FAILED', '设置保存失败，请稍后重试。', 500)
             logger.info(f"User {current_user.id} updated their profile.")
             user_payload = current_user.to_dict()
             user_payload["ai_config"] = _mask_ai_config_for_client(_load_user_ai_config(current_user.id))
-            return jsonify({"message": "Profile updated successfully!", "user": user_payload}), 200
+            return jsonify({"message": "设置已保存。", "user": user_payload}), 200
             
         return jsonify({"message": "No changes requested."}), 200
 
@@ -1409,16 +2022,14 @@ def profile(current_user):
 # Admin Endpoints
 # ==========================================
 
-@app.route('/api/admin/users', methods=['GET'])
-@cross_origin()
+@app.route('/api/v1/admin/users', methods=['GET'])
 @token_required
 @admin_required
 def admin_get_users(current_user):
     users = User.query.order_by(User.created_at.desc()).all()
     return jsonify({"users": [user.to_dict() for user in users]})
 
-@app.route('/api/admin/users', methods=['POST'])
-@cross_origin()
+@app.route('/api/v1/admin/users', methods=['POST'])
 @token_required
 @admin_required
 def admin_create_user(current_user):
@@ -1448,8 +2059,7 @@ def admin_create_user(current_user):
 
     return jsonify({"message": "User created successfully!", "user": new_user.to_dict()}), 201
 
-@app.route('/api/admin/users/<int:user_id>', methods=['PUT', 'OPTIONS'])
-@cross_origin()
+@app.route('/api/v1/admin/users/<int:user_id>', methods=['PUT', 'OPTIONS'])
 @token_required
 @admin_required
 def admin_update_user(current_user, user_id):
@@ -1493,8 +2103,7 @@ def admin_update_user(current_user, user_id):
 
     return jsonify({"message": "No changes requested."}), 200
 
-@app.route('/api/admin/users/<int:user_id>', methods=['DELETE', 'OPTIONS'])
-@cross_origin()
+@app.route('/api/v1/admin/users/<int:user_id>', methods=['DELETE', 'OPTIONS'])
 @token_required
 @admin_required
 def admin_delete_user(current_user, user_id):
@@ -1545,7 +2154,7 @@ def serve_frontend(path: str):
     return send_from_directory(web_dist, 'index.html')
 
 
-@app.route('/api/health', methods=['GET'])
+@app.route('/health', methods=['GET'])
 def health_check():
     """Check if the execution engine is online. 仅返回存活状态，不泄露内部路径/配置。"""
     return jsonify({
@@ -1556,7 +2165,7 @@ def health_check():
     })
 
 
-@app.route('/api/local/capabilities', methods=['GET'])
+@app.route('/api/v1/local/capabilities', methods=['GET'])
 @token_required
 def local_capabilities(current_user):
     """Report hardware and host capabilities for this local vehicle-side workstation."""
@@ -1577,15 +2186,13 @@ def local_capabilities(current_user):
         return jsonify({"message": "Local capability probe failed", "error": str(exc)}), 500
 
 
-@app.route('/api/report/generate', methods=['POST'])
+@app.route('/api/v1/report/generate', methods=['POST'])
 @token_required
 def generate_report(current_user):
     """Generate AI security report on the server side to avoid exposing LLM credentials in the browser."""
     data = request.json or {}
     session = data.get('session')
-    ai_config = data.get('ai_config') or {}
-    if not isinstance(ai_config, dict) or not any(str(ai_config.get(key) or "").strip() for key in ("api_key", "apiKey", "base_url", "baseUrl")):
-        ai_config = _load_user_ai_config(current_user.id)
+    ai_config = _resolve_user_ai_config(current_user.id, data.get('ai_config'))
 
     if not session or not isinstance(session, dict):
         return jsonify({"message": "session payload is required"}), 400
@@ -1602,7 +2209,30 @@ def generate_report(current_user):
         session.get('targetName') or 'Unknown Target',
         selected_model,
     )
-    report = _generate_unified_assessment_report(session, normalized_ai_config)
+    try:
+        report = _generate_unified_assessment_report(session, normalized_ai_config, current_user.username)
+    except Exception as exc:
+        logger.error("Unified assessment report generation failed: %s", exc, exc_info=True)
+        return jsonify({"message": str(exc)}), 502
+
+    session_id = str(session.get('id') or session.get('session_id') or '').strip()
+    if session_id:
+        owned_session = _owned_v3_session(session_id, current_user)
+        if owned_session:
+            _persist_execution_artifact(
+                user_id=current_user.id,
+                session_id=session_id,
+                artifact_type='assessment_report',
+                payload={
+                    'report': report,
+                    'provider': 'user-configured-openai-compatible',
+                    'model': selected_model,
+                },
+                target_ip=_extract_session_target_ip(session),
+                replace_existing=True,
+            )
+            _append_session_event(owned_session, 'report.generated', {'model': selected_model})
+            db.session.commit()
     return jsonify({
         "report": report,
         "provider": "user-configured-openai-compatible",
@@ -1626,7 +2256,27 @@ def _build_history_results_payload(data: dict) -> dict:
         "findings": data.get('findings', []),
         "phase_records": data.get('phase_records', []),
         "structured": data.get('structured', {}),
+        "risk_score": data.get('riskScore', data.get('risk_score', 0)),
+        "logs": data.get('logs', []),
     }
+
+
+def _merge_v3_session_result(existing: dict | None, incoming: dict) -> dict:
+    """Keep rich scan payloads when run completion only sends summary stats."""
+    if not isinstance(existing, dict) or not existing:
+        return incoming
+    if not isinstance(incoming, dict):
+        return existing
+    has_rich_existing = isinstance(existing.get('results'), list) and bool(existing.get('results'))
+    if has_rich_existing and not incoming.get('results'):
+        merged = dict(existing)
+        merged.update(incoming)
+        return merged
+    if len(existing) > len(incoming):
+        merged = dict(incoming)
+        merged.update(existing)
+        return merged
+    return incoming
 
 def _build_supervisor_model_profile(structured: dict) -> str:
     if not isinstance(structured, dict):
@@ -1676,7 +2326,7 @@ def _truncate_poc_for_display(content: str) -> str:
     return content
 
 
-@app.route('/api/attack-graph/generate', methods=['POST'])
+@app.route('/api/v1/attack-graph/generate', methods=['POST'])
 @token_required
 def attack_graph_generate(current_user):
     session = _get_session_payload(request.json or {})
@@ -1685,7 +2335,7 @@ def attack_graph_generate(current_user):
     return jsonify(graph)
 
 
-@app.route('/api/attack-graph/update', methods=['POST'])
+@app.route('/api/v1/attack-graph/update', methods=['POST'])
 @token_required
 def attack_graph_update(current_user):
     """增量更新攻击路径图：将新增已确认漏洞并入既有攻击图后重新排序，避免整体重建。
@@ -1701,7 +2351,7 @@ def attack_graph_update(current_user):
     return jsonify(graph)
 
 
-@app.route('/api/attack-graph/multihop', methods=['POST'])
+@app.route('/api/v1/attack-graph/multihop', methods=['POST'])
 @token_required
 def attack_graph_multihop(current_user):
     """构建跨漏洞多跳攻击图：从外部入口推导贯穿多个漏洞到达车辆物理影响的攻击链。
@@ -1717,7 +2367,7 @@ def attack_graph_multihop(current_user):
     return jsonify(graph)
 
 
-@app.route('/api/attack-graph/multihop/update', methods=['POST'])
+@app.route('/api/v1/attack-graph/multihop/update', methods=['POST'])
 @token_required
 def attack_graph_multihop_update(current_user):
     """多跳攻击图增量更新：并入新增已确认漏洞后重新推导跨漏洞攻击链。
@@ -1735,7 +2385,7 @@ def attack_graph_multihop_update(current_user):
     return jsonify(graph)
 
 
-@app.route('/api/exploration/next-actions', methods=['POST'])
+@app.route('/api/v1/exploration/next-actions', methods=['POST'])
 @token_required
 def exploration_next_actions(current_user):
     """在线探测引导：基于 PoC 依赖图与执行反馈动态排序下一步候选 PoC。
@@ -1745,20 +2395,18 @@ def exploration_next_actions(current_user):
     """
     import poc_dependency_graph as _pdg
     payload = request.json or {}
-    coverage_path = os.path.join(os.path.dirname(__file__), '..', 'lab', 'evidence', 'poc_coverage.json')
     result = _pdg.next_poc_actions(
         candidate_pocs=payload.get('candidatePocs') or payload.get('candidate_pocs') or [],
         confirmed_findings=payload.get('confirmedFindings') or payload.get('confirmed_findings') or [],
         executed_pocs=payload.get('executedPocs') or payload.get('executed_pocs') or [],
         available_params=payload.get('availableParams') or payload.get('available_params') or {},
-        coverage_path=coverage_path,
         top_k=int(payload.get('topK') or payload.get('top_k') or 5),
     )
     logger.info(f"Exploration next-actions by {current_user.username} (frontier={result.get('frontier_size')})")
     return jsonify(result)
 
 
-@app.route('/api/physical-impact/assess', methods=['POST'])
+@app.route('/api/v1/physical-impact/assess', methods=['POST'])
 @token_required
 def physical_impact_assess(current_user):
     session = _get_session_payload(request.json or {})
@@ -1767,7 +2415,7 @@ def physical_impact_assess(current_user):
     return jsonify(result)
 
 
-@app.route('/api/remediation/simulate', methods=['POST'])
+@app.route('/api/v1/remediation/simulate', methods=['POST'])
 @token_required
 def remediation_simulate(current_user):
     session = _get_session_payload(request.json or {})
@@ -1776,7 +2424,7 @@ def remediation_simulate(current_user):
     return jsonify(result)
 
 
-@app.route('/api/report/structured', methods=['POST'])
+@app.route('/api/v1/report/structured', methods=['POST'])
 @token_required
 def structured_report(current_user):
     session = _get_session_payload(request.json or {})
@@ -1784,8 +2432,8 @@ def structured_report(current_user):
     logger.info(f"Structured report generated by {current_user.username}")
     return jsonify(report)
 
-@app.route('/api/auto_discovery', methods=['GET'])
-@execution_auth_optional
+@app.route('/api/v1/auto_discovery', methods=['GET'])
+@token_required
 def auto_discovery(current_user):
     """Hackathon: Zero-Config Discovery of local interfaces and possible targets."""
     interfaces = {
@@ -1851,8 +2499,8 @@ def auto_discovery(current_user):
         "message": "Discovery Agent completed physical topology mapping."
     })
 
-@app.route('/api/list_pocs', methods=['GET'])
-@execution_auth_optional
+@app.route('/api/v1/list_pocs', methods=['GET'])
+@token_required
 def list_pocs(current_user):
     """List all available PoC plugin files in pocs/ directory tree with metadata."""
     pocs = []
@@ -1916,7 +2564,7 @@ def list_pocs(current_user):
     return jsonify({"pocs": pocs, "total": len(pocs)})
 
 
-@app.route('/api/poc-registry', methods=['GET'])
+@app.route('/api/v1/poc-registry', methods=['GET'])
 @token_required
 def get_poc_registry(current_user):
     """Return a normalized PoC capability registry with aggregate status counts."""
@@ -1936,8 +2584,8 @@ def get_poc_registry(current_user):
         logger.error(f"Failed to build poc registry: {exc}")
         return jsonify({"message": str(exc)}), 500
 
-@app.route('/api/fingerprint', methods=['POST'])
-@execution_auth_optional
+@app.route('/api/v1/fingerprint', methods=['POST'])
+@token_required
 def fingerprint_os(current_user):
     """Detects target OS by quickly scanning signature ports (8000 for Qconn, 5555 for ADB)"""
     data = request.json
@@ -1946,12 +2594,14 @@ def fingerprint_os(current_user):
     if not target_ip or target_ip == 'N/A':
         return jsonify({"os": "unknown", "details": "No generic IP provided"})
 
-    if not _target_in_scope(target_ip):
+    pinned_target, pin_reason = _pin_authorized_target(target_ip)
+    if not pinned_target:
         return jsonify({
             "os": "unknown",
             "details": "Target IP is outside authorized scan scope.",
             "error": "Target IP is outside authorized scan scope. Configure AUTOSEC_ALLOWED_TARGET_CIDRS or enable AUTOSEC_ALLOW_PUBLIC_TARGETS.",
         }), 403
+    target_ip = pinned_target
         
     os_detected = "linux" # Default fallback for generalized car logic
     details = "Defaulting to generic Linux/Unknown"
@@ -1984,36 +2634,56 @@ def fingerprint_os(current_user):
         "details": details
     })
 
-@app.route('/api/run_poc', methods=['POST'])
-@execution_auth_optional
-def run_poc(current_user):
-    """Run a specific PoC plugin by filename with given parameters."""
-    # current_user is already resolved by @execution_auth_optional decorator
-    data = request.json
-    poc_filename = data.get('filename')
-    params = normalize_poc_params(data.get('params', {}))
-    session_id = data.get('session_id', 'manual')
+def _api_error_payload(code: str, message: str, status: int, details: dict | None = None) -> tuple[dict, int]:
+    trace_id = uuid.uuid4().hex
+    error = {'code': code, 'message': message}
+    if details:
+        error['details'] = details
+    payload: dict = {'error': error, 'trace_id': trace_id}
+    if details:
+        payload.update(details)
+    return payload, status
+
+
+def _execute_poc_for_user(
+    current_user,
+    poc_filename: str,
+    params: dict,
+    session_id: str = 'manual',
+    worker_mode=None,
+    trace_id=None,
+    remote_addr: str = 'internal',
+) -> tuple[dict, int]:
+    """In-process PoC execution (shared by HTTP route and Agent inline runner)."""
+    params = normalize_poc_params(params or {})
 
     if not poc_filename:
-        return jsonify({"error": "No PoC filename provided"}), 400
+        return {"error": "No PoC filename provided"}, 400
 
     # 目标范围校验：防止系统被用作攻击第三方网络的跳板
     target_ip = str(params.get("target_ip") or "").strip()
-    if target_ip and not _target_in_scope(target_ip):
-        return jsonify({
+    if target_ip:
+        pinned_target, pin_reason = _pin_authorized_target(target_ip)
+    else:
+        pinned_target, pin_reason = None, 'empty target'
+    if target_ip and not pinned_target:
+        return {
             "success": False,
             "error": "Target IP is outside authorized scan scope.",
-            "trace_id": data.get("trace_id") or data.get("session_id") or "",
-        }), 403
+            "trace_id": trace_id or session_id or "",
+        }, 403
+    if pinned_target:
+        params['target_hostname'] = target_ip if target_ip != pinned_target else ''
+        params['target_ip'] = pinned_target
 
     poc_path, normalized_filename, poc_code = resolve_poc_source(POCS_DIR, poc_filename)
     if not poc_path:
         logger.warning(f"PoC file not found: {poc_filename}")
-        return jsonify({"error": f"PoC file not found: {poc_filename}"}), 404
+        return {"error": f"PoC file not found: {poc_filename}"}, 404
     poc_filename = normalized_filename
 
-    logger.info(f"Starting PoC Execution: {poc_filename} w/ Params: {params}")
-    trace_id = data.get("trace_id") or session_id or uuid.uuid4().hex
+    logger.info("Starting PoC Execution: %s params=%s", poc_filename, _redact_sensitive(params))
+    trace_id = trace_id or session_id or uuid.uuid4().hex
     
     try:
         target = resolve_target_label(params)
@@ -2029,23 +2699,32 @@ def run_poc(current_user):
                 session_id=str(session_id or trace_id or "manual"),
                 risk_level=professional_policy.get("risk_level") or "SAFE",
                 domain=professional_policy.get("domain") or "",
+                user_id=current_user.id,
             )
             if derived_token:
                 params = dict(params)
                 params["approval_token"] = derived_token
         if not _tier_allowed_by_policy(professional_policy.get("validation_tier"), params):
-            return jsonify({
+            return {
                 "success": False,
                 "error": "PoC validation tier is blocked by the current scan policy.",
                 "requires_policy_override": True,
                 "trace_id": trace_id,
                 "security_profile": security_profile,
                 "professional_policy": professional_policy,
-            }), 403
+            }, 403
         requires_approval = professional_policy["requires_disruptive_approval"]
 
         # 破坏性执行必须持有服务端签发的有效审批令牌；客户端 allow_disruptive 标志不再单独放行。
-        if requires_approval and not _disruptive_execution_authorized(params, poc_filename, target):
+        if requires_approval and not _disruptive_execution_authorized(
+            params,
+            poc_filename,
+            target,
+            current_user.id,
+            str(session_id or trace_id or 'manual'),
+            professional_policy.get('risk_level') or 'SAFE',
+            professional_policy.get('domain') or '',
+        ):
             user_id = current_user.id if current_user else None
             audit = AuditLog(
                 user_id=user_id,
@@ -2058,38 +2737,34 @@ def run_poc(current_user):
                     "trace_id": trace_id,
                     "reason": "approval_required",
                 }, ensure_ascii=False),
-                ip_address=request.remote_addr
+                ip_address=remote_addr
             )
             db.session.add(audit)
             db.session.commit()
-            return jsonify({
-                "success": False,
-                "error": "High-risk PoC execution requires explicit approval.",
-                "requires_approval": True,
-                "requires_disruptive_approval": True,
-                "approval_token": _issue_disruptive_approval_token(poc_filename, target),
-                "approval_ttl_seconds": _APPROVAL_TOKEN_TTL_SECONDS,
-                "batch_approval_ttl_seconds": _BATCH_APPROVAL_TOKEN_TTL_SECONDS,
-                "batch_authorization_scope": batch_scope or None,
-                "batch_authorization_error": batch_reason or "",
-                "trace_id": trace_id,
-                "security_profile": security_profile,
-                "professional_policy": professional_policy,
-            }), 403
+            return _api_error_payload('APPROVAL_REQUIRED', '高风险 PoC 执行需要显式审批。', 403, {
+                'requires_disruptive_approval': True,
+                'approval_endpoint': f'/api/v1/sessions/{session_id or trace_id}/approvals',
+                'batch_authorization_scope': batch_scope or None,
+                'batch_authorization_error': batch_reason or '',
+                'security_profile': security_profile,
+                'professional_policy': professional_policy,
+            })
     except Exception as e:
         logger.error(f"Failed to record audit log: {e}")
 
     start_time = time.time()
 
     if not _POC_SEMAPHORE.acquire(blocking=False):
-        return jsonify({
+        return {
             "success": False,
             "error": f"Server is busy: maximum {_MAX_CONCURRENT_POCS} concurrent PoC executions reached. Retry later.",
             "trace_id": trace_id,
-        }), 429
+        }, 429
 
+    worker = None
+    plan = None
     try:
-        worker = get_poc_worker(data.get("worker_mode"))
+        worker = get_poc_worker(worker_mode)
         plan = worker.prepare(
             poc_path,
             params,
@@ -2098,6 +2773,7 @@ def run_poc(current_user):
             poc_code=poc_code if poc_code and not os.path.exists(poc_path) else None,
             timeout_seconds=int(params.get("sandbox_timeout_seconds", 60)),
         )
+        _register_active_poc_plan(session_id, worker, plan)
         run_result = worker.run_once(plan)
         elapsed = run_result.get("elapsed_seconds", round(time.time() - start_time, 2))
         all_logs = run_result.get("logs", [])
@@ -2171,23 +2847,42 @@ def run_poc(current_user):
             status_msg = "ERROR"
         logger.info(f"PoC Result [{poc_filename}]: {status_msg} (Elapsed: {elapsed}s)")
 
-        return jsonify(response)
+        return response, 200
 
     except Exception as e:
         elapsed = round(time.time() - start_time, 2)
         logger.error(f"run_poc failed for {poc_filename}: {e}\n{traceback.format_exc()}")
-        return jsonify({
+        return {
             "success": False, 
             "logs": [], 
             "errors": ["PoC execution failed. See server logs for details."],
             "vulnerable": False,
             "elapsed_seconds": elapsed
-        })
+        }, 500
     finally:
+        if worker is not None and plan is not None:
+            _unregister_active_poc_plan(session_id, worker, plan)
         _POC_SEMAPHORE.release()
 
-@app.route('/api/run_poc_stream', methods=['POST', 'OPTIONS'])
-@execution_auth_optional
+
+@app.route('/api/v1/run_poc', methods=['POST'])
+@token_required
+def run_poc(current_user):
+    """Run a specific PoC plugin by filename with given parameters."""
+    data = request.json or {}
+    payload, status = _execute_poc_for_user(
+        current_user,
+        poc_filename=data.get('filename'),
+        params=data.get('params', {}),
+        session_id=data.get('session_id', 'manual'),
+        worker_mode=data.get('worker_mode'),
+        trace_id=data.get('trace_id'),
+        remote_addr=request.remote_addr,
+    )
+    return jsonify(payload), status
+
+@app.route('/api/v1/run_poc_stream', methods=['POST', 'OPTIONS'])
+@token_required
 def run_poc_stream(current_user):
     """SSE streaming endpoint: 实时逐行推送 PoC 执行日志到前端 System Console"""
     if request.method == 'OPTIONS':
@@ -2201,6 +2896,14 @@ def run_poc_stream(current_user):
     if not poc_filename:
         return jsonify({"error": "No PoC filename provided"}), 400
 
+    target_ip = str(params.get('target_ip') or '').strip()
+    if target_ip:
+        pinned_target, pin_reason = _pin_authorized_target(target_ip)
+        if not pinned_target:
+            return _api_error('TARGET_OUT_OF_SCOPE', '目标不在授权扫描范围内。', 403, {'reason': pin_reason})
+        params['target_hostname'] = target_ip if target_ip != pinned_target else ''
+        params['target_ip'] = pinned_target
+
     poc_path, normalized_filename, poc_code = resolve_poc_source(POCS_DIR, poc_filename)
     if not poc_path:
         return jsonify({"error": f"PoC file not found: {poc_filename}"}), 404
@@ -2208,7 +2911,7 @@ def run_poc_stream(current_user):
 
     trace_id = data.get("trace_id") or data.get("session_id") or uuid.uuid4().hex
     remote_addr = request.remote_addr
-    current_user_for_stream = current_user  # resolved by @execution_auth_optional decorator
+    current_user_for_stream = current_user  # resolved by @token_required decorator
     security_profile = _extract_poc_security_profile(poc_path)
     professional_policy = _professional_policy_for_poc(poc_path, poc_filename, security_profile, params)
     if not _tier_allowed_by_policy(professional_policy.get("validation_tier"), params):
@@ -2231,11 +2934,20 @@ def run_poc_stream(current_user):
             session_id=str(session_id or trace_id or "manual"),
             risk_level=professional_policy.get("risk_level") or "SAFE",
             domain=professional_policy.get("domain") or "",
+            user_id=current_user.id,
         )
         if derived_token:
             params = dict(params)
             params["approval_token"] = derived_token
-    if professional_policy["requires_disruptive_approval"] and not _disruptive_execution_authorized(params, poc_filename, _stream_target):
+    if professional_policy["requires_disruptive_approval"] and not _disruptive_execution_authorized(
+        params,
+        poc_filename,
+        _stream_target,
+        current_user.id,
+        str(session_id or trace_id or 'manual'),
+        professional_policy.get('risk_level') or 'SAFE',
+        professional_policy.get('domain') or '',
+    ):
         try:
             audit = AuditLog(
                 user_id=None,
@@ -2255,20 +2967,14 @@ def run_poc_stream(current_user):
             db.session.commit()
         except Exception as e:
             logger.error(f"Failed to record stream approval audit log: {e}")
-        return jsonify({
-            "success": False,
-            "error": "High-risk PoC execution requires explicit approval.",
-            "requires_approval": True,
-            "requires_disruptive_approval": True,
-            "approval_token": _issue_disruptive_approval_token(poc_filename, _stream_target),
-            "approval_ttl_seconds": _APPROVAL_TOKEN_TTL_SECONDS,
-            "batch_approval_ttl_seconds": _BATCH_APPROVAL_TOKEN_TTL_SECONDS,
-            "batch_authorization_scope": batch_scope or None,
-            "batch_authorization_error": batch_reason or "",
-            "trace_id": trace_id,
-            "security_profile": security_profile,
-            "professional_policy": professional_policy,
-        }), 403
+        return _api_error('APPROVAL_REQUIRED', '高风险 PoC 执行需要显式审批。', 403, {
+            'requires_disruptive_approval': True,
+            'approval_endpoint': f'/api/v1/sessions/{session_id or trace_id}/approvals',
+            'batch_authorization_scope': batch_scope or None,
+            'batch_authorization_error': batch_reason or '',
+            'security_profile': security_profile,
+            'professional_policy': professional_policy,
+        })
 
     # Audit Logging
     try:
@@ -2315,6 +3021,7 @@ def run_poc_stream(current_user):
             poc_code=poc_code if poc_code and not os.path.exists(poc_path) else None,
             timeout_seconds=int(params.get("sandbox_timeout_seconds", 60)),
         )
+        _register_active_poc_plan(session_id, worker, plan)
         emitted_logs: list[str] = []
         try:
             for event in worker.iter_stream(plan):
@@ -2405,6 +3112,8 @@ def run_poc_stream(current_user):
         except Exception as e:
             logger.error(f"SSE stream error for PoC [{poc_filename}]: {e}\n{traceback.format_exc()}")
             yield f"data: {json.dumps({'type': 'result', 'success': False, 'errors': ['PoC execution failed. See server logs for details.']})}\n\n"
+        finally:
+            _unregister_active_poc_plan(session_id, worker, plan)
 
     # 不硬编码 Access-Control-Allow-Origin: *；由全局 flask-cors 依据 AUTOSEC_CORS_ORIGINS 处理跨域。
     return app.response_class(generate(), mimetype='text/event-stream', headers={
@@ -2413,7 +3122,7 @@ def run_poc_stream(current_user):
     })
 
 
-@app.route('/api/poc_manual_verdict', methods=['POST', 'OPTIONS'])
+@app.route('/api/v1/poc_manual_verdict', methods=['POST', 'OPTIONS'])
 @token_required
 def poc_manual_verdict(current_user):
     """Record an operator verdict for PoCs whose physical impact cannot be auto-verified."""
@@ -2498,7 +3207,7 @@ def poc_manual_verdict(current_user):
     return jsonify(response)
 
 
-@app.route('/api/poc_manual_verdict_batch', methods=['POST', 'OPTIONS'])
+@app.route('/api/v1/poc_manual_verdict_batch', methods=['POST', 'OPTIONS'])
 @token_required
 def poc_manual_verdict_batch(current_user):
     """Record one operator verdict for multiple PoCs in the same scan session."""
@@ -2569,7 +3278,7 @@ def poc_manual_verdict_batch(current_user):
     })
 
 
-@app.route('/api/scan_approval_policy', methods=['POST', 'OPTIONS'])
+@app.route('/api/v1/scan_approval_policy', methods=['POST', 'OPTIONS'])
 @token_required
 def scan_approval_policy(current_user):
     """Record an operator-approved scan policy for auditability."""
@@ -2600,8 +3309,7 @@ def scan_approval_policy(current_user):
     return jsonify({"success": True, "policy": policy})
 
 
-@app.route('/api/save_session', methods=['POST', 'OPTIONS'])
-@cross_origin()
+@app.route('/api/v1/save_session', methods=['POST', 'OPTIONS'])
 @token_required
 def save_session(current_user):
     """Save a full scan session (multiple results + final report) to history."""
@@ -2653,7 +3361,7 @@ def save_session(current_user):
                 session_id=session_id,
                 target_ip=connection.get('ip'),
                 target_mac=connection.get('bluetoothMac') or connection.get('canInterface'),
-                status='completed',
+                status=str(data.get('status') or 'completed'),
                 completed_at=_get_utc_now(),
                 results_json=json.dumps(results_payload),
                 logs=json.dumps(logs), # Added logs here
@@ -2766,6 +3474,13 @@ def save_session(current_user):
                 replace_existing=False,
             )
 
+        # v3 lifecycle is owned exclusively by /sessions/{id}/runs. History
+        # persistence must never perform a second, implicit state transition.
+        if session_id:
+            v3_session = ScanSessionV3.query.filter_by(id=str(session_id), user_id=current_user.id).first()
+            if v3_session:
+                v3_session.result_json = json.dumps(_redact_sensitive(results_payload), ensure_ascii=False)
+
         db.session.commit()
         logger.info(f"Session {session_id} saved/updated to history for user {current_user.username}")
         return jsonify({"message": "Session saved successfully", "id": history.id}), 201
@@ -2774,7 +3489,7 @@ def save_session(current_user):
         logger.error(f"Failed to save session: {str(e)}")
         return jsonify({"message": f"Error saving session: {str(e)}"}), 500
 
-@app.route('/api/history/<int:history_id>', methods=['DELETE'])
+@app.route('/api/v1/history/<int:history_id>', methods=['DELETE'])
 @token_required
 def delete_history_item(current_user, history_id):
     """Delete a single history record with RBAC."""
@@ -2808,7 +3523,7 @@ def delete_history_item(current_user, history_id):
         logger.error(f"Failed to delete history record {history_id}: {str(e)}")
         return jsonify({"message": "Error deleting record"}), 500
 
-@app.route('/api/history/delete-batch', methods=['POST'])
+@app.route('/api/v1/history/delete-batch', methods=['POST'])
 @token_required
 def delete_history_batch(current_user):
     """Delete multiple history records with RBAC."""
@@ -2849,7 +3564,7 @@ def delete_history_batch(current_user):
         logger.error(f"Batch delete failed: {str(e)}")
         return jsonify({"message": f"Error during batch deletion: {str(e)}"}), 500
 
-@app.route('/api/history', methods=['GET'])
+@app.route('/api/v1/history', methods=['GET'])
 @token_required
 def get_history(current_user):
     """Get scan history with RBAC (Admin sees all, User sees own)"""
@@ -2863,7 +3578,7 @@ def get_history(current_user):
     history = [scan.to_dict() for scan in scans]
     return jsonify({"history": history, "source": 'primary'})
 
-@app.route('/api/supervisor-metrics', methods=['GET'])
+@app.route('/api/v1/supervisor-metrics', methods=['GET'])
 @token_required
 def get_supervisor_metrics(current_user):
     """Get time-series supervisor metrics snapshots for trend analysis."""
@@ -2898,7 +3613,7 @@ def get_supervisor_metrics(current_user):
         return jsonify({"message": str(e)}), 500
 
 
-@app.route('/api/session-artifacts/<session_id>', methods=['GET'])
+@app.route('/api/v1/session-artifacts/<session_id>', methods=['GET'])
 @token_required
 def get_session_artifacts(current_user, session_id):
     """Return persisted execution artifacts for a scan session."""
@@ -2917,7 +3632,7 @@ def get_session_artifacts(current_user, session_id):
         return jsonify({"message": str(exc)}), 500
 
 
-@app.route('/api/evaluation/score', methods=['POST'])
+@app.route('/api/v1/evaluation/score', methods=['POST'])
 @token_required
 def score_evaluation_session(current_user):
     """Score a saved session against benchmark expectations."""
@@ -2945,7 +3660,7 @@ def score_evaluation_session(current_user):
         return jsonify({"message": str(exc)}), 500
 
 
-@app.route('/api/evaluation/benchmarks', methods=['GET'])
+@app.route('/api/v1/evaluation/benchmarks', methods=['GET'])
 @token_required
 def list_evaluation_benchmarks(current_user):
     """List the default benchmark suite and its metadata."""
@@ -2966,7 +3681,7 @@ def list_evaluation_benchmarks(current_user):
         return jsonify({"message": str(exc)}), 500
 
 
-@app.route('/api/evaluation/run-suite', methods=['POST'])
+@app.route('/api/v1/evaluation/run-suite', methods=['POST'])
 @token_required
 def run_evaluation_suite(current_user):
     """Run the regression benchmark suite against a saved session or payload."""
@@ -3006,7 +3721,7 @@ def run_evaluation_suite(current_user):
         logger.error(f"Failed to run evaluation suite: {exc}")
         return jsonify({"message": str(exc)}), 500
 
-@app.route('/api/execute', methods=['POST'])
+@app.route('/api/v1/execute', methods=['POST'])
 @token_required
 def execute_script(current_user):
     """Receives a Python script string, executes it locally, and returns stdout/stderr.
@@ -3017,13 +3732,13 @@ def execute_script(current_user):
       - 开放时仍要求 admin 角色
     """
     if not _ENABLE_SCRIPT_EXECUTION:
-        logger.warning(f"Blocked /api/execute (disabled) from user={current_user.username}")
+        logger.warning(f"Blocked /api/v1/execute (disabled) from user={current_user.username}")
         return jsonify({
             "error": "Arbitrary script execution is disabled. "
                      "Set AUTOSEC_ENABLE_SCRIPT_EXECUTION=true and use an admin account to enable it."
         }), 403
     if current_user.role != 'admin':
-        logger.warning(f"Blocked /api/execute (non-admin) from user={current_user.username}")
+        logger.warning(f"Blocked /api/v1/execute (non-admin) from user={current_user.username}")
         return jsonify({"error": "Admin privileges required for arbitrary script execution."}), 403
 
     data = request.json
@@ -3110,7 +3825,7 @@ def execute_script(current_user):
 # Patent-1: Topology-Aware Scan Endpoint
 # ==========================================
 
-@app.route('/api/topology', methods=['POST'])
+@app.route('/api/v1/topology', methods=['POST'])
 @token_required
 def topology_scan(current_user):
     """
@@ -3139,7 +3854,7 @@ def topology_scan(current_user):
 # Patent-1: Adaptive Context Endpoint (IVI/Static CAN)
 # ==========================================
 
-@app.route('/api/adaptive-context', methods=['POST'])
+@app.route('/api/v1/adaptive-context', methods=['POST'])
 @token_required
 def adaptive_context(current_user):
     """
@@ -3174,7 +3889,7 @@ def adaptive_context(current_user):
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/test-ai-config', methods=['POST'])
+@app.route('/api/v1/test-ai-config', methods=['POST'])
 @token_required
 def test_ai_config(current_user):
     """
@@ -3182,18 +3897,14 @@ def test_ai_config(current_user):
     Useful for ensuring the credentials work before starting a long scan.
     """
     data = request.json or {}
-    ai_config = data.get('ai_config') or {}
-    
-    # Fallback to saved config if not provided in request
-    if not isinstance(ai_config, dict) or not any(str(ai_config.get(key) or "").strip() for key in ("api_key", "apiKey", "base_url", "baseUrl")):
-        ai_config = _load_user_ai_config(current_user.id)
+    ai_config = _resolve_user_ai_config(current_user.id, data.get('ai_config'))
         
     normalized, error = _validate_ai_config(ai_config)
     if error:
         return jsonify({"success": False, "message": error}), 400
         
     # Use Fast Model for testing if available, else default to qwen-plus
-    test_model = normalized.get("fast_model") or normalized.get("strong_model") or "qwen-plus"
+    test_model = normalized.get("fast_model") or normalized.get("strong_model") or normalized.get("report_model") or "qwen-plus"
     
     logger.info(f"Testing AI config for user {current_user.username} using model {test_model}")
     
@@ -3227,22 +3938,22 @@ def test_ai_config(current_user):
             return jsonify({
                 "success": False, 
                 "message": f"API returned error ({response.status_code}): {msg}"
-            })
+            }), 502
             
     except requests.exceptions.RequestException as e:
         return jsonify({
             "success": False, 
             "message": f"Network/Connection failed: {str(e)}"
-        })
+        }), 502
     except Exception as e:
         logger.error(f"Unexpected error testing AI config: {e}")
         return jsonify({
             "success": False, 
             "message": f"Internal error: {str(e)}"
-        })
+        }), 500
 
 
-@app.route('/api/agent-scan', methods=['POST'])
+@app.route('/api/v1/agent-scan', methods=['POST'])
 @token_required
 def agent_scan(current_user):
     """
@@ -3256,9 +3967,7 @@ def agent_scan(current_user):
     resume_from = data.get('resume_from')
     state = data.get('state') or {}
     context = data.get('context', '')
-    ai_config = data.get('ai_config') or {}
-    if not isinstance(ai_config, dict) or not any(str(ai_config.get(key) or "").strip() for key in ("api_key", "apiKey", "base_url", "baseUrl")):
-        ai_config = _load_user_ai_config(current_user.id)
+    ai_config = _resolve_user_ai_config(current_user.id, data.get('ai_config'))
     # 可选资源参数（用于 Agent 智能过滤 PoC）
     can_interface  = data.get('can_interface', '')
     bluetooth_mac  = data.get('bluetooth_mac', '')
@@ -3280,8 +3989,16 @@ def agent_scan(current_user):
         data.get("execution_mode") or data.get("executionMode") or "",
         approve_high_risk_batch=approve_high_risk_batch,
     )
+    destructive_policy = normalize_destructive_policy(
+        data.get("destructive_policy")
+        or data.get("destructivePolicy")
+        or ("ALLOW_ALL" if approve_high_risk_batch else "CONFIRM_EACH")
+    )
     enable_reflection_reentry = str(
         data.get("enable_reflection_reentry") or data.get("enableReflectionReentry") or ""
+    ).strip().lower() in ("true", "1", "yes")
+    enable_weaponize = str(
+        data.get("enable_weaponize") if data.get("enable_weaponize") is not None else data.get("enableWeaponize", "true")
     ).strip().lower() in ("true", "1", "yes")
     risk_ceiling = normalize_risk_level(
         data.get("risk_ceiling") or data.get("riskCeiling") or default_risk_ceiling(execution_mode)
@@ -3314,7 +4031,8 @@ def agent_scan(current_user):
         return jsonify({"error": "target_ip is required"}), 400
 
     # 目标范围校验：默认仅允许私网/实验室网段；公网目标需显式开启 AUTOSEC_ALLOW_PUBLIC_TARGETS。
-    if not _target_in_scope(target_ip):
+    pinned_target, pin_reason = _pin_authorized_target(target_ip)
+    if not pinned_target:
         logger.warning(f"Agent scan blocked: target {target_ip} out of authorized scope (user={current_user.username})")
         return jsonify({
             "error": f"Target {target_ip} is outside the authorized scope. "
@@ -3322,6 +4040,9 @@ def agent_scan(current_user):
                      f"Set AUTOSEC_ALLOW_PUBLIC_TARGETS=true or add the range to AUTOSEC_ALLOWED_TARGET_CIDRS to authorize it.",
             "error_code": "TARGET_OUT_OF_SCOPE",
         }), 403
+    if pinned_target != target_ip:
+        logger.info('Agent target hostname %s pinned to %s for this run.', target_ip, pinned_target)
+    target_ip = pinned_target
 
     normalized_ai_config, ai_error = _validate_ai_config(ai_config)
     if ai_error:
@@ -3335,8 +4056,21 @@ def agent_scan(current_user):
     try:
         target_label = resolve_target_label({"target_ip": target_ip})
         session_scope_id = str(data.get("session_id") or data.get("trace_id") or f"agent-{uuid.uuid4().hex}")
+        phase_request_id = str(data.get("phase_request_id") or "").strip()[:160]
+        v3_session = _owned_v3_session(session_scope_id, current_user) if data.get("session_id") else None
+        if phase_request_id and v3_session:
+            try:
+                persisted_result = json.loads(v3_session.result_json or "{}")
+            except (TypeError, json.JSONDecodeError):
+                persisted_result = {}
+            checkpoint = persisted_result.get("agent_phase_checkpoint") if isinstance(persisted_result, dict) else None
+            if isinstance(checkpoint, dict) and checkpoint.get("request_id") == phase_request_id:
+                cached_response = checkpoint.get("response")
+                if isinstance(cached_response, dict):
+                    logger.info("Replaying committed Agent phase response request_id=%s", phase_request_id)
+                    return jsonify(cached_response)
         batch_approval_token = str(data.get("batch_approval_token") or data.get("batchApprovalToken") or "").strip()
-        if not batch_approval_token and execution_mode != "SAFE_ONLY":
+        if not batch_approval_token and destructive_policy == "ALLOW_ALL" and execution_mode != "SAFE_ONLY":
             batch_approval_token = _issue_batch_approval_token(
                 target=target_label,
                 session_id=session_scope_id,
@@ -3346,10 +4080,30 @@ def agent_scan(current_user):
                 lab_policy=lab_policy,
             )
         from agent_orchestrator import AgentOrchestrator
+
+        def _inline_run_poc(poc_name, poc_params, poc_session_id):
+            if _is_scan_cancelled(session_scope_id):
+                return {
+                    "success": False,
+                    "cancelled": True,
+                    "error": "scan cancelled by operator",
+                }, 409
+            return _execute_poc_for_user(
+                current_user,
+                poc_filename=poc_name,
+                params=poc_params,
+                session_id=poc_session_id,
+                trace_id=poc_session_id,
+                remote_addr=request.remote_addr,
+            )
+
         orch = AgentOrchestrator(
             target_ip=target_ip,
             target_name=target_name,
+            tester_name=current_user.username,
             auth_token=request.headers.get('Authorization'),
+            inline_run_poc=_inline_run_poc,
+            interactive_review=False,
             llm_config=normalized_ai_config,
             can_interface=can_interface,
             bluetooth_mac=bluetooth_mac,
@@ -3359,9 +4113,15 @@ def agent_scan(current_user):
             usb_mount_point=usb_mount_point,
             approve_high_risk_batch=approve_high_risk_batch,
             execution_mode=execution_mode,
+            destructive_policy=destructive_policy,
             risk_ceiling=risk_ceiling,
             enable_reflection_reentry=enable_reflection_reentry,
+            enable_weaponize=enable_weaponize,
             batch_approval_token=batch_approval_token,
+            approval_tokens=data.get("approval_tokens") if isinstance(data.get("approval_tokens"), dict) else {},
+            approval_only_pocs=data.get("approval_only_pocs") if isinstance(data.get("approval_only_pocs"), list) else [],
+            poc_session_id=session_scope_id,
+            cancel_check=lambda: _is_scan_cancelled(session_scope_id),
             allow_domains=allow_domains,
             lab_policy=lab_policy,
         )
@@ -3377,18 +4137,41 @@ def agent_scan(current_user):
             if state:
                 orch.hydrate_state(state)
             res_data = orch.run_phase(phase, context=context)
-            return jsonify({
+            phase_response = {
                 "phase": phase,
                 "target_ip": target_ip,
                 "execution_mode": execution_mode,
+                "destructive_policy": destructive_policy,
                 "risk_ceiling": risk_ceiling,
                 "enable_reflection_reentry": enable_reflection_reentry,
+                "enable_weaponize": enable_weaponize,
                 "result": res_data["result"],
                 "structured_result": res_data.get("structured_result", {}),
+                "structured": res_data.get("structured", {}),
                 "logs": res_data.get("logs", []),
                 "findings": res_data.get("findings", []),
                 "phase_records": res_data.get("phase_records", []),
-            })
+            }
+            if phase_request_id and v3_session:
+                try:
+                    existing_result = json.loads(v3_session.result_json or "{}")
+                except (TypeError, json.JSONDecodeError):
+                    existing_result = {}
+                if not isinstance(existing_result, dict):
+                    existing_result = {}
+                existing_result["agent_phase_checkpoint"] = {
+                    "request_id": phase_request_id,
+                    "phase": phase,
+                    "committed_at": _get_utc_now().strftime('%Y-%m-%dT%H:%M:%SZ'),
+                    "response": _redact_sensitive(phase_response),
+                }
+                v3_session.result_json = json.dumps(existing_result, ensure_ascii=False)
+                _append_session_event(v3_session, "agent.phase.committed", {
+                    "phase": phase,
+                    "request_id": phase_request_id,
+                })
+                db.session.commit()
+            return jsonify(phase_response)
         else:
             # 全量 4-Agent 协作模式
             report = orch.run_full_assessment()
@@ -3412,6 +4195,257 @@ def agent_scan(current_user):
         if "MCP" in message or "AutoSec API" in message:
             return _error_payload(message, "MCP_UNAVAILABLE")
         return _error_payload(message, "AGENT_SCAN_FAILED")
+
+
+_SESSION_MODES = {'manual', 'batch', 'agent'}
+_SESSION_TRANSITIONS = {
+    'draft': {'ready', 'cancelled'},
+    'ready': {'running', 'cancelled'},
+    'running': {'awaiting_approval', 'awaiting_review', 'completed', 'failed', 'cancelled'},
+    'awaiting_approval': {'running', 'cancelled'},
+    'awaiting_review': {'running', 'completed', 'cancelled'},
+    'completed': set(),
+    'failed': {'ready'},
+    'cancelled': set(),
+}
+
+
+def _owned_v3_session(session_id: str, current_user: User):
+    query = ScanSessionV3.query.filter_by(id=session_id)
+    if current_user.role != 'admin':
+        query = query.filter_by(user_id=current_user.id)
+    return query.first()
+
+
+def _append_session_event(session: ScanSessionV3, event_type: str, payload: dict | None = None):
+    event = SessionEvent(
+        session_id=session.id,
+        user_id=session.user_id,
+        event_type=event_type,
+        payload_json=json.dumps(_redact_sensitive(payload or {}), ensure_ascii=False),
+    )
+    db.session.add(event)
+    return event
+
+
+def _transition_session(session: ScanSessionV3, next_status: str, event_type: str, payload: dict | None = None):
+    if next_status not in _SESSION_TRANSITIONS.get(session.status, set()):
+        return False
+    session.status = next_status
+    session.version += 1
+    session.updated_at = _get_utc_now()
+    if next_status == 'running' and not session.started_at:
+        session.started_at = _get_utc_now()
+    if next_status in {'completed', 'failed', 'cancelled'}:
+        session.completed_at = _get_utc_now()
+    _append_session_event(session, event_type, {'status': next_status, **(payload or {})})
+    return True
+
+
+@app.route('/api/v1/sessions', methods=['POST'])
+@token_required
+def create_v3_session(current_user):
+    data = request.get_json(silent=True) or {}
+    mode = str(data.get('mode') or 'manual').lower()
+    if mode not in _SESSION_MODES:
+        return _api_error('INVALID_SESSION_MODE', '扫描模式必须是 manual、batch 或 agent。', 400)
+    target = data.get('target') if isinstance(data.get('target'), dict) else {}
+    target_ip = str(target.get('ip') or target.get('target_ip') or '').strip()
+    if target_ip:
+        pinned_target, pin_reason = _pin_authorized_target(target_ip)
+        if not pinned_target:
+            return _api_error('TARGET_OUT_OF_SCOPE', '目标不在授权扫描范围内。', 403, {'reason': pin_reason})
+        target['resolved_ip'] = pinned_target
+    status = 'ready' if any(str(value or '').strip() for value in target.values()) else 'draft'
+    session = ScanSessionV3(
+        id=str(uuid.uuid4()),
+        user_id=current_user.id,
+        mode=mode,
+        status=status,
+        target_json=json.dumps(target, ensure_ascii=False),
+        policy_json=json.dumps(data.get('policy') or {}, ensure_ascii=False),
+        plan_json=json.dumps(data.get('plan') or [], ensure_ascii=False),
+    )
+    db.session.add(session)
+    _append_session_event(session, 'session.created', {'mode': mode, 'status': status})
+    db.session.commit()
+    return jsonify({'session': session.to_dict()}), 201
+
+
+@app.route('/api/v1/sessions', methods=['GET'])
+@token_required
+def list_v3_sessions(current_user):
+    query = ScanSessionV3.query
+    if current_user.role != 'admin':
+        query = query.filter_by(user_id=current_user.id)
+    items = query.order_by(ScanSessionV3.updated_at.desc()).limit(200).all()
+    return jsonify({'sessions': [item.to_dict() for item in items], 'total': len(items)})
+
+
+@app.route('/api/v1/sessions/summary', methods=['GET'])
+@token_required
+def v3_session_summary(current_user):
+    query = ScanSessionV3.query
+    artifact_query = ExecutionArtifact.query
+    if current_user.role != 'admin':
+        query = query.filter_by(user_id=current_user.id)
+        artifact_query = artifact_query.filter_by(user_id=current_user.id)
+    sessions = query.all()
+    counts = {status: 0 for status in _SESSION_TRANSITIONS}
+    for item in sessions:
+        counts[item.status] = counts.get(item.status, 0) + 1
+    confirmed = artifact_query.filter(ExecutionArtifact.artifact_type.in_([
+        'auto_confirmed_vulnerable', 'manual_confirmed_vulnerable'
+    ])).count()
+    recent_failures = [item.to_dict() for item in sorted(
+        (item for item in sessions if item.status == 'failed'),
+        key=lambda item: item.updated_at,
+        reverse=True,
+    )[:5]]
+    return jsonify({'counts': counts, 'confirmed_findings': confirmed, 'recent_failures': recent_failures})
+
+
+@app.route('/api/v1/sessions/<session_id>', methods=['GET'])
+@token_required
+def get_v3_session(current_user, session_id):
+    session = _owned_v3_session(session_id, current_user)
+    if not session:
+        return _api_error('SESSION_NOT_FOUND', '扫描会话不存在。', 404)
+    return jsonify({'session': session.to_dict()})
+
+
+@app.route('/api/v1/sessions/<session_id>/runs', methods=['POST'])
+@token_required
+def start_v3_session_run(current_user, session_id):
+    session = _owned_v3_session(session_id, current_user)
+    if not session:
+        return _api_error('SESSION_NOT_FOUND', '扫描会话不存在。', 404)
+    data = request.get_json(silent=True) or {}
+    action = str(data.get('action') or 'start').strip().lower()
+    action_map = {
+        'start': ('running', 'run.started'),
+        'await_review': ('awaiting_review', 'review.requested'),
+        'complete': ('completed', 'run.completed'),
+        'fail': ('failed', 'run.failed'),
+        'cancel': ('cancelled', 'run.cancelled'),
+    }
+    if action not in action_map:
+        return _api_error('INVALID_RUN_ACTION', '运行操作必须是 start、await_review、complete、fail 或 cancel。', 400)
+    next_status, event_type = action_map[action]
+    result = data.get('result') if isinstance(data.get('result'), dict) else {}
+    if not _transition_session(session, next_status, event_type, {'result': result}):
+        return _api_error(
+            'INVALID_SESSION_TRANSITION',
+            f'会话不能从 {session.status} 进入 {next_status}。',
+            409,
+        )
+    if action == 'cancel':
+        _mark_scan_cancelled(session.id)
+        cancelled_workers = _cancel_active_poc_plans(session.id)
+        result = {**result, 'cancelled_workers': cancelled_workers}
+    if result:
+        try:
+            existing_result = json.loads(session.result_json or '{}')
+        except (TypeError, json.JSONDecodeError):
+            existing_result = {}
+        merged_result = _merge_v3_session_result(existing_result if isinstance(existing_result, dict) else {}, result)
+        session.result_json = json.dumps(_redact_sensitive(merged_result), ensure_ascii=False)
+    db.session.commit()
+    return jsonify({'session': session.to_dict()}), 202 if next_status == 'running' else 200
+
+
+@app.route('/api/v1/sessions/<session_id>/events', methods=['GET'])
+@token_required
+def stream_v3_session_events(current_user, session_id):
+    session = _owned_v3_session(session_id, current_user)
+    if not session:
+        return _api_error('SESSION_NOT_FOUND', '扫描会话不存在。', 404)
+    after_id = request.args.get('after', default=0, type=int)
+    events = SessionEvent.query.filter(
+        SessionEvent.session_id == session.id,
+        SessionEvent.id > after_id,
+    ).order_by(SessionEvent.id.asc()).all()
+
+    def generate():
+        for event in events:
+            yield f"id: {event.id}\nevent: {event.event_type}\ndata: {json.dumps(event.to_dict(), ensure_ascii=False)}\n\n"
+        yield ': snapshot-complete\n\n'
+
+    return Response(generate(), mimetype='text/event-stream', headers={'Cache-Control': 'no-store'})
+
+
+@app.route('/api/v1/sessions/<session_id>/approvals', methods=['POST'])
+@token_required
+def approve_v3_session_action(current_user, session_id):
+    session = _owned_v3_session(session_id, current_user)
+    if not session:
+        return _api_error('SESSION_NOT_FOUND', '扫描会话不存在。', 404)
+    data = request.get_json(silent=True) or {}
+    poc_filename = str(data.get('poc_filename') or '').strip()
+    session_target = json.loads(session.target_json or '{}')
+    target = str(data.get('target') or resolve_target_label(session_target)).strip()
+    session_ip = str(session_target.get('ip') or session_target.get('target_ip') or '').strip()
+    if session_ip and target == session_ip:
+        pinned_target, pin_reason = _pin_authorized_target(session_ip)
+        if not pinned_target:
+            return _api_error('TARGET_OUT_OF_SCOPE', '审批目标不在授权范围内。', 403, {'reason': pin_reason})
+        target = pinned_target
+    if not poc_filename or not target:
+        return _api_error('APPROVAL_SCOPE_REQUIRED', '审批必须绑定 PoC 和目标。', 400)
+    poc_path, normalized, _ = resolve_poc_source(POCS_DIR, poc_filename)
+    if not poc_path:
+        return _api_error('POC_NOT_FOUND', 'PoC 不存在。', 404)
+    token = _issue_disruptive_approval_token(
+        normalized,
+        target,
+        user_id=current_user.id,
+        session_id=session.id,
+        risk_ceiling=str(data.get('risk_ceiling') or 'RESTART'),
+        allowed_domains=data.get('allowed_domains') if isinstance(data.get('allowed_domains'), list) else [],
+    )
+    if session.status == 'running':
+        _transition_session(session, 'awaiting_approval', 'approval.requested', {'poc_filename': normalized})
+    _append_session_event(session, 'approval.granted', {'poc_filename': normalized, 'target': target})
+    if session.status == 'awaiting_approval':
+        _transition_session(session, 'running', 'run.resumed', {'reason': 'approval_granted'})
+    db.session.commit()
+    return jsonify({'approval_token': token, 'expires_in': _APPROVAL_TOKEN_TTL_SECONDS}), 201
+
+
+@app.route('/api/v1/sessions/<session_id>/reviews', methods=['POST'])
+@token_required
+def review_v3_session_finding(current_user, session_id):
+    session = _owned_v3_session(session_id, current_user)
+    if not session:
+        return _api_error('SESSION_NOT_FOUND', '扫描会话不存在。', 404)
+    data = request.get_json(silent=True) or {}
+    verdict = str(data.get('verdict') or '')
+    if verdict not in {'confirmed_vulnerable', 'confirmed_not_vulnerable', 'inconclusive', 'needs_retest'}:
+        return _api_error('INVALID_REVIEW_VERDICT', '人工判定值无效。', 400)
+    _append_session_event(session, 'review.completed', {
+        'trace_id': data.get('trace_id'),
+        'poc_id': data.get('poc_id'),
+        'verdict': verdict,
+        'operator_note': data.get('operator_note'),
+        'evidence_file': data.get('evidence_file'),
+    })
+    if session.status == 'awaiting_review':
+        _transition_session(session, 'running', 'run.resumed')
+    db.session.commit()
+    return jsonify({'success': True, 'session': session.to_dict()})
+
+
+@app.route('/api/v1/sessions/<session_id>/artifacts', methods=['GET'])
+@token_required
+def get_v3_session_artifacts(current_user, session_id):
+    session = _owned_v3_session(session_id, current_user)
+    if not session:
+        return _api_error('SESSION_NOT_FOUND', '扫描会话不存在。', 404)
+    query = ExecutionArtifact.query.filter_by(session_id=session_id)
+    if current_user.role != 'admin':
+        query = query.filter_by(user_id=current_user.id)
+    artifacts = query.order_by(ExecutionArtifact.created_at.asc()).all()
+    return jsonify({'artifacts': [artifact.to_dict() for artifact in artifacts]})
 
 
 import click
@@ -3457,6 +4491,37 @@ def create_admin_cli(username: str, password: str):
             click.echo(f"Administrator '{username}' created.")
 
 
+@app.cli.command("reset-password")
+@click.option("--username", required=True, help="Existing username")
+@click.option("--password", prompt=True, hide_input=True, confirmation_prompt=True, help="New password (min 8 characters)")
+def reset_password_cli(username: str, password: str):
+    """Reset an existing user's password without exposing the previous password."""
+    username = username.strip()
+    if len(password) < 8:
+        raise click.ClickException("Password must be at least 8 characters.")
+
+    with app.app_context():
+        user = User.query.filter_by(username=username).first()
+        if not user:
+            raise click.ClickException(f"User does not exist: {username}")
+
+        user.password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        now = _get_utc_now()
+        AuthSession.query.filter_by(user_id=user.id, revoked_at=None).update(
+            {AuthSession.revoked_at: now},
+            synchronize_session=False,
+        )
+        db.session.add(AuditLog(
+            user_id=user.id,
+            action="password_reset_cli",
+            target=username,
+            details_json=json.dumps({"revoked_browser_sessions": True}, ensure_ascii=False),
+            ip_address="cli",
+        ))
+        db.session.commit()
+        click.echo(f"Password reset complete for '{username}'. Existing browser sessions were revoked.")
+
+
 if __name__ == '__main__':
     if len(sys.argv) >= 4 and sys.argv[1] == '--run-sandbox':
         sys.argv = [sys.argv[0], sys.argv[2], sys.argv[3]]
@@ -3491,7 +4556,7 @@ if __name__ == '__main__':
                 poc_count += 1
                 
     logger.info(f"Available PoC files: {poc_count} across {len(categories)} categories: {', '.join(sorted(categories))}")
-    logger.info("New endpoints: /api/topology, /api/physical-state, /api/agent-scan")
+    logger.info("New endpoints: /api/v1/topology, /api/v1/physical-state, /api/v1/agent-scan")
 
     # 监听地址由 AUTOSEC_HOST 控制（默认 127.0.0.1；局域网共享时设为 0.0.0.0 并开启认证）
     # Disable flask default click logger to favor our custom logger

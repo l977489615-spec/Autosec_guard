@@ -132,7 +132,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc28CVE20173893ExposureAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-064'
+    meta_display_id = "POC-ADV-028"
     meta_poc_name = 'CVE-2017-3893 内存保护绕过 Active Validation'
     meta_cve_id = 'CVE-2017-3893'
     meta_severity = 'High'

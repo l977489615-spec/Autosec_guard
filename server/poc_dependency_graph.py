@@ -126,13 +126,10 @@ class PocDependencyGraph:
         self.attack_paths: List[AttackPath] = []
         self._exec_order: int = 0
 
-    def load_from_coverage(self, coverage_path: str):
-        path = Path(coverage_path)
-        if not path.exists():
-            return
-        data = json.loads(path.read_text(encoding="utf-8"))
-        pocs = data.get("pocs", [])
+    def load_from_entries(self, pocs: list[dict[str, Any]]):
         for entry in pocs:
+            if not isinstance(entry, dict):
+                continue
             rp = entry.get("required_params", "")
             if isinstance(rp, str):
                 req = [p.strip() for p in rp.split(",") if p.strip()]
@@ -141,10 +138,13 @@ class PocDependencyGraph:
             profiles = entry.get("profiles", [])
             if isinstance(profiles, str):
                 profiles = [profiles]
+            poc_id = str(entry.get("display_id") or entry.get("poc_file") or "").strip()
+            if not poc_id:
+                continue
             node = PocNode(
-                poc_id=entry["display_id"],
+                poc_id=poc_id,
                 poc_file=entry["poc_file"],
-                poc_name=entry["poc_name"],
+                poc_name=entry.get("poc_name") or entry["poc_file"],
                 category=entry.get("category", ""),
                 severity=entry.get("severity", "Medium"),
                 protocol=entry.get("protocol", ""),
@@ -157,6 +157,13 @@ class PocDependencyGraph:
             self.nodes[node.poc_id] = node
         self._build_static_edges()
         self._activate_roots()
+
+    def load_from_coverage(self, coverage_path: str):
+        path = Path(coverage_path)
+        if not path.exists():
+            return
+        data = json.loads(path.read_text(encoding="utf-8"))
+        self.load_from_entries(data.get("pocs", []))
 
     def _build_static_edges(self):
         recon_ids = [n.poc_id for n in self.nodes.values() if n.category == "reconnaissance"]
@@ -499,8 +506,11 @@ def next_poc_actions(candidate_pocs: List[Dict[str, Any]],
                      top_k: int = 5) -> Dict[str, Any]:
     """兼容 exploration_planner.next_exploration_actions 的接口，基于 PoC 依赖图排序。"""
     graph = PocDependencyGraph(available_params=available_params)
-    if coverage_path:
+    if coverage_path and Path(coverage_path).is_file():
         graph.load_from_coverage(coverage_path)
+    else:
+        from agent_poc_catalog_context import load_runtime_poc_catalog_entries
+        graph.load_from_entries(load_runtime_poc_catalog_entries())
 
     for f in (confirmed_findings or []):
         poc_id = f.get("poc_id") or f.get("display_id") or f.get("name", "")

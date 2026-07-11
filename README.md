@@ -38,7 +38,7 @@
 - 📊 **本地历史记录、证据、攻击图、物理影响和报告**
 - 🤖 **可选多 Agent Scan / MCP**，支持任意 OpenAI 兼容 LLM，仍在本机服务内运行
 - 👤 **本地用户体系、Bootstrap 管理员初始化与用户级 AI 配置**
-- 🔐 **运行时安全加固**：目标范围校验、AI Key 加密存储、PDF 导出 XSS 防护、可选强制 JWT
+- 🔐 **运行时安全加固**：强制认证、Scoped API Token、目标固定、AI Key 加密存储与导出 XSS 防护
 
 ---
 
@@ -73,8 +73,8 @@ python3 server.py
 默认地址：
 
 - Local Engine: `http://127.0.0.1:5002`
-- Health Check: `http://127.0.0.1:5002/api/health`
-- Local Capability: `http://127.0.0.1:5002/api/local/capabilities`
+- Health Check: `http://127.0.0.1:5002/health`
+- Local Capability: `http://127.0.0.1:5002/api/v1/local/capabilities`
 - SQLite: `server/autosec.db`
 - Log: `server/logs/autosec.log`（20MB × 5 轮转）
 
@@ -131,7 +131,7 @@ flowchart TD
     FE --> API[⚙️ Local Flask Engine]
     FE --> LR[🔌 Local Runtime Page]
 
-    API --> AUTH[🔐 JWT / Bootstrap / AI Config]
+    API --> AUTH[🔐 Persistent Session / Scoped API Token]
     API --> CAPP[🔍 Local Capability Probe]
     API --> ORCH[🧠 Scanner / Agent Orchestrator]
     API --> AUDIT[🧾 History / Artifacts / Audit]
@@ -163,7 +163,7 @@ flowchart TD
 
 前端 `Local Runtime` 页面调用：
 
-- `GET /api/local/capabilities`
+- `GET /api/v1/local/capabilities`
 
 后端使用 `server/local_capability_probe.py` 探测本机能力，输出：
 
@@ -213,7 +213,7 @@ flowchart TD
 python3 server/generate_poc_registry.py
 ```
 
-前端 PoC 数据库、扫描页和实验自动选择会通过 `/api/list_pocs` 动态读取插件元数据，一般不需要再手工维护前端列表。
+前端 PoC 数据库、扫描页和实验自动选择会通过 `/api/v1/list_pocs` 动态读取插件元数据，一般不需要再手工维护前端列表。
 
 ---
 
@@ -228,10 +228,20 @@ python3 server/generate_poc_registry.py
 - CPU / 内存 / 输出 / 文件句柄限制
 - 网络访问白名单默认绑定目标地址；无 `target_ip` 时拒绝出站
 - `run_poc` / `fingerprint` / `agent-scan` 目标范围校验
-- Weaponize Agent 生成代码仅写入 `/tmp/autosec_sandbox/`，禁止覆盖仓库 PoC
-- Agent 默认 `allow_disruptive=false`；人工复核须操作员在 UI 确认，不自动伪造结论
+- 探测生成 Agent 仅输出声明式协议配置，并由注册的只读探测器执行；模型不生成或执行 Python 代码
+- Agent 默认采用 `confirm_each`：破坏性 PoC 逐项确认且 60 秒超时自动拒绝；只有依赖硬件并需观察物理现象的结果进入人工复核
 - 并发限制：`AUTOSEC_MAX_CONCURRENT_POCS`（默认 5）
 - 执行日志、错误脱敏、证据和 trace_id 结构化保存
+
+Agent CLI 使用同一策略字段：
+
+```bash
+python3 server/scan_cli.py agent --target-ip 192.168.100.10 --destructive-policy confirm_each
+python3 server/scan_cli.py agent --target-ip 192.168.100.10 --destructive-policy allow_all
+python3 server/scan_cli.py agent --target-ip 192.168.100.10 --destructive-policy deny_all
+```
+
+`allow_all` 仍受授权目标、风险上限、实验室策略和 `BRICK` 禁止规则约束；`confirm_each` 在非交互 CLI 中保留待审批状态，避免命令行进程伪造网页操作员授权。
 
 企业部署加固清单见 [`SECURITY.md`](SECURITY.md)。
 
@@ -252,7 +262,7 @@ python3 server/generate_poc_registry.py
 │   │   ├── ScanHistory.tsx
 │   │   ├── AuthPage.tsx           # 登录 / 系统初始化
 │   │   └── Profile.tsx            # 用户与 OpenAI 兼容 AI 配置
-│   ├── utils/security.ts          # XSS 转义 / localStorage 脱敏
+│   ├── utils/security.ts          # XSS 转义 / 用户资料脱敏
 │   ├── services/api.ts
 │   └── package.json
 ├── server/
@@ -285,7 +295,8 @@ python3 server/generate_poc_registry.py
 `.env.example` 当前按本地边缘端工作站配置，关键项如下：
 
 ```env
-AUTOSEC_SECRET_KEY=replace_with_a_long_random_secret
+# AUTOSEC_SECRET_KEY=             # 留空则生成并持久化安装级密钥
+# AUTOSEC_AI_CONFIG_KEY=          # 与会话密钥分离
 AUTOSEC_DB_URI=sqlite:///server/autosec.db
 AUTOSEC_API=http://localhost:5002
 MCP_SERVER=http://localhost:5003
@@ -293,9 +304,9 @@ AUTOSEC_HOST=127.0.0.1
 AUTOSEC_PORT=5002
 AUTOSEC_DEBUG=false
 
-# 安全强化
-AUTOSEC_REQUIRE_AUTH=false
+# 安全默认：所有业务端点始终认证，CORS 默认关闭
 AUTOSEC_CORS_ORIGINS=
+AUTOSEC_SESSION_TTL_HOURS=12
 AUTOSEC_MAX_CONCURRENT_POCS=5
 
 # Bootstrap 管理员
@@ -306,7 +317,7 @@ AUTOSEC_BOOTSTRAP_MODE=edge          # edge | cli_only
 
 说明：
 
-- `AUTOSEC_HOST=127.0.0.1` 为默认最安全绑定；局域网共享时改为 `0.0.0.0` 并开启 `AUTOSEC_REQUIRE_AUTH=true`。
+- `AUTOSEC_HOST=127.0.0.1` 为默认最小暴露面；v3 在本机与网络部署中均强制认证。
 - `AUTOSEC_API` 用于本机 Agent / MCP 调用主 API。
 - `MCP_SERVER` 用于本机 Agent Scan。
 - 企业部署推荐 `AUTOSEC_BOOTSTRAP_MODE=cli_only` + `flask create-admin` + Nginx TLS（见 `docs/nginx-tls.conf`）。
@@ -403,7 +414,7 @@ CI 会执行：
 - 构建 React 前端
 - 生成嵌入式 PoC 注册表
 - 打包完整边缘端工作站
-- 启动发行版做 `/api/health`、`/api/list_pocs` 和首页 smoke test
+- 启动发行版做 `/health`、认证后的 `/api/v1/list_pocs` 和首页 smoke test
 - 上传三平台 zip 产物
 - tag 触发时自动把 zip 上传到 GitHub Release
 
@@ -423,54 +434,66 @@ CI 会执行：
 
 ### 认证与用户
 
-- `GET /api/auth/status`
-- `POST /api/register`
-- `POST /api/login`
-- `GET /api/profile`
-- `PUT /api/profile`
-- `GET /api/admin/users`
-- `POST /api/admin/users`
+- `GET /api/v1/auth/status`
+- `POST /api/v1/auth/register`
+- `POST /api/v1/auth/login`
+- `GET /api/v1/api-tokens`
+- `DELETE /api/v1/api-tokens/{jti}`
+- `GET /api/v1/profile`
+- `PUT /api/v1/profile`
+- `GET /api/v1/admin/users`
+- `POST /api/v1/admin/users`
 
 ### 本地运行时
 
-- `GET /api/health`
-- `GET /api/local/capabilities`
+- `GET /health`
+- `GET /api/v1/local/capabilities`
 
 ### PoC 执行
 
-- `GET /api/list_pocs`
-- `GET /api/poc-registry`
-- `GET /api/auto_discovery`
-- `POST /api/fingerprint`
-- `POST /api/run_poc`
-- `POST /api/run_poc_stream`
-- `POST /api/execute`
-- `POST /api/poc_manual_verdict`
-- `POST /api/poc_manual_verdict_batch`
-- `POST /api/scan_approval_policy`
+- `GET /api/v1/list_pocs`
+- `GET /api/v1/poc-registry`
+- `GET /api/v1/auto_discovery`
+- `POST /api/v1/fingerprint`
+- `POST /api/v1/run_poc`
+- `POST /api/v1/run_poc_stream`
+- `POST /api/v1/execute`
+- `POST /api/v1/poc_manual_verdict`
+- `POST /api/v1/poc_manual_verdict_batch`
+- `POST /api/v1/scan_approval_policy`
+
+### v3 权威会话
+
+- `POST /api/v1/sessions`
+- `POST /api/v1/sessions/{id}/runs`
+- `GET /api/v1/sessions/{id}`
+- `GET /api/v1/sessions/{id}/events`
+- `POST /api/v1/sessions/{id}/approvals`
+- `POST /api/v1/sessions/{id}/reviews`
+- `GET /api/v1/sessions/{id}/artifacts`
 
 ### 报告与评估
 
-- `POST /api/report/generate`
-- `POST /api/report/structured`
-- `POST /api/attack-graph/generate`
-- `POST /api/physical-impact/assess`
-- `POST /api/remediation/simulate`
+- `POST /api/v1/report/generate`
+- `POST /api/v1/report/structured`
+- `POST /api/v1/attack-graph/generate`
+- `POST /api/v1/physical-impact/assess`
+- `POST /api/v1/remediation/simulate`
 
 ### 历史与审计
 
-- `POST /api/save_session`
-- `GET /api/history`
-- `DELETE /api/history/<id>`
-- `POST /api/history/delete-batch`
-- `GET /api/session-artifacts/<session_id>`
+- `POST /api/v1/save_session`
+- `GET /api/v1/history`
+- `DELETE /api/v1/history/<id>`
+- `POST /api/v1/history/delete-batch`
+- `GET /api/v1/session-artifacts/<session_id>`
 
 ### Agent Scan
 
-- `POST /api/topology`
-- `POST /api/adaptive-context`
-- `POST /api/agent-scan`
-- `POST /api/test-ai-config`
+- `POST /api/v1/topology`
+- `POST /api/v1/adaptive-context`
+- `POST /api/v1/agent-scan`
+- `POST /api/v1/test-ai-config`
 
 ---
 
@@ -515,6 +538,8 @@ flask create-admin --username admin
 
 - 默认（`AUTOSEC_BOOTSTRAP_MODE=edge`）：空库时 Web 登录页显示「系统初始化」。
 - 企业模式（`cli_only`）：执行 `flask create-admin`，禁止 Web 自助创建首管理员。
+- 忘记已有账号密码时，密码不可逆向读取；在 `server/` 目录执行
+  `python3 -m flask --app server.py reset-password --username admin` 安全重置，现有浏览器会话会自动失效。
 - 网络暴露时建议设置 `AUTOSEC_BOOTSTRAP_TOKEN` 防抢注。
 
 ### 3) 支持哪些 AI 模型？

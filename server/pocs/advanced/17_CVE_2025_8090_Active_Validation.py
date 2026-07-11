@@ -252,7 +252,7 @@ def _run_poc(plugin, vuln=None) -> dict:
 
 
 class Poc17CVE20258090NullDerefDoSAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-020'
+    meta_display_id = "POC-ADV-017"
     meta_poc_name = 'CVE-2025-8090 DoS Active Validation'
     meta_cve_id = 'CVE-2025-8090'
     meta_severity = 'Medium'

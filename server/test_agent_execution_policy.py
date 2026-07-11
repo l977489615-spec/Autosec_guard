@@ -14,6 +14,7 @@ from agent_execution_policy import (
     default_risk_ceiling,
     issue_signed_scope_token,
     normalize_execution_mode,
+    normalize_destructive_policy,
     preflight_profile,
     risk_level_from_profile,
     verify_signed_scope_token,
@@ -21,6 +22,11 @@ from agent_execution_policy import (
 
 
 class AgentExecutionPolicyTests(unittest.TestCase):
+    def test_destructive_policy_is_independent_and_defaults_to_confirmation(self):
+        self.assertEqual(normalize_destructive_policy(None), "CONFIRM_EACH")
+        self.assertEqual(normalize_destructive_policy("allow_all"), "ALLOW_ALL")
+        self.assertEqual(normalize_destructive_policy("deny-all"), "DENY_ALL")
+
     def test_legacy_batch_flag_maps_to_progressive_auto(self) -> None:
         self.assertEqual(normalize_execution_mode("", approve_high_risk_batch=False), "SAFE_ONLY")
         self.assertEqual(normalize_execution_mode("", approve_high_risk_batch=True), "PROGRESSIVE_AUTO")

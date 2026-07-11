@@ -374,7 +374,7 @@ def run_poc_api(api_base: str, filename: str, params: dict, session_id: str) -> 
     started = time.time()
     try:
         resp = requests.post(
-            f"{api_base.rstrip('/')}/api/run_poc",
+            f"{api_base.rstrip('/')}/api/v1/run_poc",
             json={"filename": filename, "params": params, "session_id": session_id},
             timeout=120,
         )

@@ -136,7 +136,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc27CVE20257020CryptoAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-019'
+    meta_display_id = "POC-NET-027"
     meta_poc_name = 'CVE-2025-7020 加密实现错误 Active Validation'
     meta_cve_id = 'CVE-2025-7020'
     meta_severity = 'Medium'

@@ -5,9 +5,10 @@ import { Download, Trash2 } from 'lucide-react';
 interface ScanLogsProps {
   logs: ScanLog[];
   onClearLogs?: () => void;
+  maxHeightClass?: string;
 }
 
-const ScanLogs: React.FC<ScanLogsProps> = ({ logs, onClearLogs }) => {
+const ScanLogs: React.FC<ScanLogsProps> = ({ logs, onClearLogs, maxHeightClass = 'max-h-[420px]' }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const visibleLogs = logs.slice(-500);
 
@@ -31,7 +32,7 @@ const ScanLogs: React.FC<ScanLogsProps> = ({ logs, onClearLogs }) => {
   };
 
   return (
-    <div className="bg-cyber-900 border border-cyber-700 rounded-lg p-4 h-96 flex flex-col font-mono text-sm shadow-[0_0_15px_rgba(59,130,246,0.1)]">
+    <div className={`bg-cyber-900 border border-cyber-700 rounded-lg p-4 flex flex-col font-mono text-sm shadow-[0_0_15px_rgba(59,130,246,0.1)] ${maxHeightClass}`}>
       <div className="flex justify-between items-center mb-2 border-b border-cyber-700 pb-2">
         <span className="text-cyber-400 font-bold uppercase tracking-widest">System Console</span>
         <div className="flex gap-3 items-center">

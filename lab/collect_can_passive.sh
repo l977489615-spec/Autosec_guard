@@ -48,7 +48,8 @@ echo "${UDS_RESPONSE}" > "${UDS_LOG}"
 
 echo "[CAN] 调用平台 CAN Sniff PoC ..."
 SNIFF_JSON="${EVIDENCE}/CAN-001_sniff_poc.json"
-curl -sf -X POST "${API}/api/run_poc" \
+curl -sf -X POST "${API}/api/v1/run_poc" \
+  -H "Authorization: Bearer ${AUTOSEC_TOKEN:?AUTOSEC_TOKEN is required}" \
   -H 'Content-Type: application/json' \
   -d "{\"filename\":\"canbus/01_CAN_Bus_Sniff.py\",\"params\":{\"can_interface\":\"${INTERFACE}\"},\"session_id\":\"CAN-SNIFF-$(date +%Y%m%d_%H%M%S)\"}" \
   > "${SNIFF_JSON}" 2>"${EVIDENCE}/can_sniff_curl.err" || echo '{"error":"api unavailable"}' > "${SNIFF_JSON}"

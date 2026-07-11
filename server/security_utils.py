@@ -47,28 +47,44 @@ def safe_resolve_within(base_dir: str, candidate_path: str) -> str | None:
 _METADATA_HOSTS = {"169.254.169.254", "metadata.google.internal", "metadata"}
 
 
-def _ip_is_dangerous(ip_str: str) -> bool:
-    """判断 IP 是否属于危险范围（回环/私网/link-local/保留）。"""
+def _host_is_ip_literal(host: str) -> bool:
+    host = (host or "").strip().lower().strip("[]")
     try:
-        ip = ipaddress.ip_address(ip_str)
+        ipaddress.ip_address(host)
+        return True
     except ValueError:
         return False
-    return (
-        ip.is_loopback
-        or ip.is_link_local      # 169.254.x.x（含云 metadata）
-        or ip.is_private         # 10/8, 172.16/12, 192.168/16
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
 
 
-def is_safe_outbound_url(url: str, *, allow_private: bool = False) -> tuple[bool, str]:
+def _ip_in_clash_fake_ip_range(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    try:
+        return ip.version == 4 and ip in ipaddress.ip_network("198.18.0.0/15")
+    except ValueError:
+        return False
+
+
+def _ip_is_dangerous(ip_str: str, *, trust_proxy_dns: bool = False) -> bool:
+    """判断 IP 是否属于危险范围（回环/私网/link-local/保留）。"""
+    try:
+        ip = ipaddress.ip_address(str(ip_str).split("%")[0])
+    except ValueError:
+        return False
+    if trust_proxy_dns and _ip_in_clash_fake_ip_range(ip):
+        return False
+    if ip.is_loopback or ip.is_link_local or ip.is_private or ip.is_multicast or ip.is_unspecified:
+        return True
+    if ip.is_reserved:
+        return True
+    return False
+
+
+def is_safe_outbound_url(url: str, *, allow_private: bool = False, allow_proxy_dns: bool = False) -> tuple[bool, str]:
     """
     校验一个出站 URL 是否安全（防 SSRF）。
 
     默认拒绝：非 http/https、云 metadata 主机、解析到内网/回环/link-local 的主机。
     allow_private=True 时放行私网（用于本地实验室调用场景，但仍拒绝 metadata）。
+    allow_proxy_dns=True 或 HTTPS 域名场景下，放行 198.18.0.0/15 fake-ip（常见于 Clash 代理）。
 
     返回 (是否安全, 原因)。
     """
@@ -89,6 +105,10 @@ def is_safe_outbound_url(url: str, *, allow_private: bool = False) -> tuple[bool
     if host in _METADATA_HOSTS:
         return False, "cloud metadata endpoint blocked"
 
+    trust_proxy_dns = allow_proxy_dns or (
+        parsed.scheme == "https" and not _host_is_ip_literal(host)
+    )
+
     # 解析主机的所有 IP（防 DNS rebinding 到内网）
     try:
         infos = socket.getaddrinfo(host, None)
@@ -97,11 +117,10 @@ def is_safe_outbound_url(url: str, *, allow_private: bool = False) -> tuple[bool
         return False, f"dns resolution failed: {exc}"
 
     for ip_str in resolved_ips:
-        # 去掉 IPv6 scope
         clean = ip_str.split("%")[0]
         if clean in _METADATA_HOSTS:
             return False, "resolves to metadata endpoint"
-        if _ip_is_dangerous(clean):
+        if _ip_is_dangerous(clean, trust_proxy_dns=trust_proxy_dns):
             if allow_private and ipaddress.ip_address(clean).is_private:
                 continue
             return False, f"resolves to blocked address: {clean}"

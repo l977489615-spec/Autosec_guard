@@ -167,7 +167,7 @@ def _run_poc(plugin) -> dict:
 
 
 class Poc54CVE20222068CryptoAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-089'
+    meta_display_id = "POC-NET-054"
     meta_poc_name = 'CVE-2022-2068 数据加密实现错误 Active Validation'
     meta_cve_id = 'CVE-2022-2068'
     meta_severity = 'Medium'

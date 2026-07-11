@@ -202,7 +202,7 @@ except ImportError:
     _PROBE_UTILS = False
 
 class Poc59CVE201713081KRACKAuditPlugin(IVIVulnerabilityPlugin):
-    meta_display_id = 'XLSX-074'
+    meta_display_id = "POC-WIRELESS-059"
     meta_poc_name = 'CVE-2017-13081 KRACK密钥重装 Active Validation'
     meta_cve_id = 'CVE-2017-13081'
     meta_severity = 'High'

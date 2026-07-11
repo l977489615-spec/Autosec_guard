@@ -1,7 +1,56 @@
-/* AutoSec Guard - Base Styles
- * This file is referenced by index.html. Tailwind utility classes are loaded
- * via the CDN script in development; in production the classes are already
- * inlined by Vite. This file provides supplementary custom styles only. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: 'Inter Variable';
+  src: url('@fontsource-variable/inter/files/inter-latin-wght-normal.woff2') format('woff2-variations');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Space Grotesk Variable';
+  src: url('@fontsource-variable/space-grotesk/files/space-grotesk-latin-wght-normal.woff2') format('woff2-variations');
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+}
+
+/* AutoSec Guard v3 - locally compiled, offline-first control surface. */
+:root {
+  color-scheme: dark;
+  font-synthesis: none;
+  --ink-0: #06101c;
+  --ink-1: #081827;
+  --ink-2: #0b1d32;
+  --line: rgba(94, 216, 239, 0.19);
+  --cyan: #39e7ff;
+  --cyan-soft: #9af5ff;
+  --blue: #4b7cff;
+  --amber: #ffb02e;
+  --danger: #ff3d71;
+}
+
+html { background: var(--ink-0); }
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: var(--ink-0);
+  color: #dce8ef;
+  font-family: 'Inter Variable', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  font-variation-settings: 'wght' 440, 'opsz' 20;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+button, input, select, textarea { font: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
+h1, h2, h3, .font-display {
+  font-family: 'Space Grotesk Variable', 'Inter Variable', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-variation-settings: 'wght' 620;
+}
 
 /* ── Scrollbar ────────────────────────────────────────────────── */
 .scroller::-webkit-scrollbar {
@@ -18,11 +67,256 @@
 }
 
 /* ── Smooth transitions ──────────────────────────────────────── */
-*, *::before, *::after {
-  transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow, transform;
-  transition-duration: 150ms;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+*:focus-visible { outline: 2px solid #67c7d4; outline-offset: 2px; }
+
+/* ── Product surface language ───────────────────────────────── */
+.console-page {
+  background:
+    radial-gradient(circle at 82% 2%, rgba(57, 231, 255, 0.14), transparent 31rem),
+    radial-gradient(circle at 25% 105%, rgba(75, 124, 255, 0.1), transparent 38rem),
+    linear-gradient(145deg, #071321 0%, #0a1b2d 56%, #071421 100%);
 }
+
+.surface-panel {
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: rgba(11, 29, 50, 0.78);
+  box-shadow: 0 26px 75px rgba(0, 4, 12, 0.28), inset 0 1px 0 rgba(195, 246, 255, 0.055);
+  backdrop-filter: blur(18px);
+}
+
+.section-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: rgba(107, 239, 255, 0.9);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.icon-well {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(88, 211, 227, 0.16);
+  border-radius: 0.75rem;
+  background: linear-gradient(145deg, rgba(57, 231, 255, 0.16), rgba(75, 124, 255, 0.08));
+  color: var(--cyan);
+}
+
+.field-label {
+  display: grid;
+  gap: 0.55rem;
+  color: #aabac5;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.control-input {
+  border: 1px solid rgba(100, 207, 230, 0.22);
+  background: rgba(4, 18, 31, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.018);
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+.control-input:hover { border-color: rgba(125, 208, 222, 0.27); }
+.control-input:focus {
+  border-color: rgba(88, 211, 227, 0.68);
+  background: rgba(3, 12, 21, 0.9);
+  box-shadow: 0 0 0 3px rgba(88, 211, 227, 0.09), 0 0 26px rgba(46, 183, 204, 0.055);
+  outline: none;
+}
+
+.primary-action, .secondary-action {
+  border-radius: 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 650;
+  transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+.primary-action {
+  border: 1px solid rgba(127, 236, 247, 0.6);
+  background: linear-gradient(110deg, #39e7ff, #66d7ff 58%, #7096ff);
+  color: #031018;
+  box-shadow: 0 10px 34px rgba(57, 231, 255, 0.24), inset 0 1px 0 rgba(255,255,255,.5);
+}
+.primary-action:hover:not(:disabled) { transform: translateY(-2px); filter: saturate(1.14) brightness(1.08); box-shadow: 0 16px 42px rgba(57, 231, 255, 0.32); }
+.secondary-action { border: 1px solid rgba(88, 211, 227, 0.2); background: rgba(88, 211, 227, 0.055); color: #a7e8ef; }
+.secondary-action:hover:not(:disabled) { border-color: rgba(88, 211, 227, 0.46); background: rgba(88, 211, 227, 0.1); }
+.primary-action:disabled, .secondary-action:disabled { cursor: not-allowed; opacity: 0.42; transform: none; }
+
+.status-orb {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: var(--cyan);
+  box-shadow: 0 0 0 4px rgba(88, 211, 227, 0.08), 0 0 16px rgba(88, 211, 227, 0.55);
+}
+
+/* ── Authentication composition ─────────────────────────────── */
+.auth-shell { position: relative; background: #06101c; }
+.auth-grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.18;
+  background-image:
+    linear-gradient(rgba(113, 203, 220, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(113, 203, 220, 0.08) 1px, transparent 1px);
+  background-size: 54px 54px;
+  mask-image: linear-gradient(to right, black, transparent 72%);
+}
+.auth-aurora { position: absolute; border-radius: 999px; filter: blur(105px); pointer-events: none; }
+.auth-aurora-a { left: 7%; top: 10%; width: 34rem; height: 34rem; background: rgba(35, 205, 235, 0.23); }
+.auth-aurora-b { right: 5%; bottom: -10rem; width: 29rem; height: 29rem; background: rgba(75, 124, 255, 0.17); }
+.brand-mark {
+  display: grid;
+  width: 2.9rem;
+  height: 2.9rem;
+  place-items: center;
+  border: 1px solid rgba(88, 211, 227, 0.28);
+  border-radius: 0.9rem;
+  background: rgba(88, 211, 227, 0.07);
+  color: var(--cyan);
+  box-shadow: 0 0 34px rgba(36, 181, 204, 0.1);
+}
+.auth-tab { border-radius: 0.58rem; padding: 0.68rem 0.8rem; color: #65798a; font-size: 0.78rem; font-weight: 650; transition: color 150ms ease, background-color 150ms ease; }
+.auth-tab:hover { color: #c6d5df; }
+.auth-tab-active { background: rgba(88, 211, 227, 0.105); color: #a6eef5; box-shadow: inset 0 0 0 1px rgba(88, 211, 227, 0.09); }
+
+@keyframes auth-enter {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-auth-enter { animation: auth-enter 520ms cubic-bezier(.2,.8,.2,1) both; }
+
+/* ── Agent native 3D digital twin ───────────────────────────── */
+.vehicle-scene {
+  background:
+    radial-gradient(circle at 53% 43%, rgba(57, 231, 255, 0.2), transparent 40%),
+    radial-gradient(circle at 68% 58%, rgba(75, 124, 255, 0.14), transparent 38%),
+    linear-gradient(180deg, rgba(6, 23, 39, 0.94), rgba(3, 13, 24, 0.99));
+}
+.vehicle-scene::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 92px rgba(0, 4, 13, 0.55), inset 0 1px 0 rgba(142, 244, 255, 0.08);
+}
+.vehicle-zone {
+  display: flex;
+  align-items: center;
+  gap: 0.38rem;
+  border: 1px solid color-mix(in srgb, var(--zone-color, #39e7ff) 25%, transparent);
+  border-radius: 999px;
+  background: rgba(4, 18, 31, 0.7);
+  padding: 0.34rem 0.58rem;
+  color: rgba(181, 222, 232, 0.72);
+  font-size: 0.58rem;
+  white-space: nowrap;
+  backdrop-filter: blur(8px);
+  transition: border-color 180ms ease, color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+}
+.vehicle-zone-dot { width: 0.32rem; height: 0.32rem; border-radius: 999px; background: color-mix(in srgb, var(--zone-color, #39e7ff) 50%, #213743); }
+.vehicle-zone-active {
+  border-color: color-mix(in srgb, var(--zone-color, #39e7ff) 74%, transparent);
+  background: color-mix(in srgb, var(--zone-color, #39e7ff) 18%, rgba(3, 13, 24, .88));
+  color: color-mix(in srgb, var(--zone-color, #39e7ff) 35%, white);
+  box-shadow: 0 0 26px color-mix(in srgb, var(--zone-color, #39e7ff) 32%, transparent);
+}
+.vehicle-zone-active .vehicle-zone-dot {
+  background: var(--zone-color, #39e7ff);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--zone-color, #39e7ff) 15%, transparent), 0 0 18px var(--zone-color, #39e7ff);
+  animation: pulse-glow 1.8s ease-in-out infinite;
+}
+
+/* ── Main application frame ─────────────────────────────────── */
+.app-sidebar {
+  position: relative;
+  z-index: 20;
+  border-right: 1px solid rgba(147, 198, 214, 0.1);
+  background: linear-gradient(180deg, rgba(8, 25, 41, .98), rgba(5, 17, 30, .985));
+  box-shadow: 18px 0 70px rgba(0, 0, 0, 0.16);
+}
+.nav-control {
+  position: relative;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 0.72rem;
+  padding: 0.72rem;
+  color: #718493;
+  font-size: 0.875rem;
+  transition: color 150ms ease, border-color 150ms ease, background-color 150ms ease;
+}
+.nav-control:hover { border-color: rgba(140, 203, 217, 0.08); background: rgba(120, 191, 205, 0.045); color: #dce9ef; }
+.nav-control-active {
+  border-color: rgba(88, 211, 227, 0.14);
+  background: rgba(88, 211, 227, 0.085);
+  color: #8ee9f1;
+  box-shadow: inset 3px 0 0 rgba(88, 211, 227, 0.72);
+}
+
+/* ── Scan launcher / mission control ─────────────────────────── */
+.scan-launcher {
+  background:
+    linear-gradient(rgba(57, 231, 255, .025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(57, 231, 255, .025) 1px, transparent 1px),
+    radial-gradient(circle at 76% 36%, rgba(57, 231, 255, .13), transparent 30rem);
+  background-size: 48px 48px, 48px 48px, auto;
+}
+.scan-mode-row {
+  isolation: isolate;
+  color: #8298aa;
+  transition: background-color 180ms ease, color 180ms ease, transform 180ms ease;
+}
+.scan-mode-row::before {
+  content: '';
+  position: absolute;
+  inset: 12% auto 12% -1.5rem;
+  width: 3px;
+  border-radius: 999px;
+  background: #39e7ff;
+  box-shadow: 0 0 18px rgba(57, 231, 255, .85);
+  opacity: 0;
+  transform: scaleY(.35);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+.scan-mode-row:hover, .scan-mode-row-active {
+  background: linear-gradient(90deg, rgba(57, 231, 255, .1), rgba(75, 124, 255, .035) 70%, transparent);
+  color: #dffbff;
+}
+.scan-mode-row-active::before { opacity: 1; transform: scaleY(1); }
+.scan-mode-icon {
+  display: grid;
+  width: 2.65rem;
+  height: 2.65rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(91, 223, 244, .19);
+  border-radius: .85rem;
+  background: linear-gradient(145deg, rgba(57, 231, 255, .13), rgba(75, 124, 255, .08));
+  color: #58eaff;
+  box-shadow: inset 0 1px 0 rgba(207, 250, 255, .08);
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+.scan-mode-row:hover .scan-mode-icon, .scan-mode-row-active .scan-mode-icon {
+  transform: translateY(-1px);
+  border-color: rgba(91, 231, 250, .5);
+  box-shadow: 0 0 24px rgba(57, 231, 255, .15), inset 0 1px 0 rgba(207, 250, 255, .14);
+}
+
+/* Strengthen semantic colors against the brighter blue-black surfaces. */
+.text-yellow-500, .text-yellow-400, .text-amber-400 { color: #ffbd45 !important; }
+.text-red-500, .text-red-400, .text-rose-400 { color: #ff527f !important; }
+.text-blue-500, .text-blue-400 { color: #6d96ff !important; }
+.bg-yellow-500, .bg-amber-500 { background-color: #ffb02e !important; }
+.bg-red-500, .bg-rose-500 { background-color: #ff3d71 !important; }
+.bg-blue-500 { background-color: #4b7cff !important; }
 
 /* ── Animations ──────────────────────────────────────────────── */
 @keyframes pulse-glow {
@@ -41,4 +335,13 @@
 
 .animate-fade-in {
   animation: fade-in 0.3s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }
