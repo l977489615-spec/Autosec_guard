@@ -24,6 +24,7 @@ LEGACY_POC_ALIASES: dict[str, str] = {
     "dynamic_unknown_service_probe": "network/15_CWE_200_Service_Probe_Active_Validation.py",
     "dynamic_0day": "network/15_CWE_200_Service_Probe_Active_Validation.py",
     "99_Dynamic_Unknown_Service_Probe.py": "network/15_CWE_200_Service_Probe_Active_Validation.py",
+    "dynamic_unknown_protocol_fuzz": "network/16_Unknown_Protocol_Stateful_Fuzz_Validation.py",
     "network/09A_USB_ADB_Debug.py": "network/01_CWE_489_USB_ADB_Debug_Interface_Active_Validation.py",
     "network/09B_ADB_Debug_Port.py": "network/02_CVE_2018_6242_ADB_Debug_Port_Active_Validation.py",
     "network/10_SSH_Service.py": "network/03_CWE_200_SSH_Service_Active_Validation.py",

@@ -245,8 +245,6 @@ def _tier_allowed(
     tier: str,
     min_tier: str = "",
     max_tier: str = "",
-    allow_lab_exp: bool = False,
-    allow_auto_exp: bool = False,
 ) -> bool:
     tier = (tier or "PASSIVE").upper()
     min_tier = (min_tier or "").upper()
@@ -255,15 +253,7 @@ def _tier_allowed(
     if min_tier and value < PROFESSIONAL_TIER_ORDER.get(min_tier, 0):
         return False
     if max_tier and value > PROFESSIONAL_TIER_ORDER.get(max_tier, max(PROFESSIONAL_TIER_ORDER.values())):
-        if tier == "LAB_EXP" and allow_lab_exp:
-            return True
-        if tier == "AUTO_EXP" and allow_auto_exp:
-            return True
         return False
-    if tier == "LAB_EXP" and max_tier and PROFESSIONAL_TIER_ORDER.get(max_tier, 0) < PROFESSIONAL_TIER_ORDER["LAB_EXP"]:
-        return bool(allow_lab_exp)
-    if tier == "AUTO_EXP" and max_tier and PROFESSIONAL_TIER_ORDER.get(max_tier, 0) < PROFESSIONAL_TIER_ORDER["AUTO_EXP"]:
-        return bool(allow_auto_exp)
     return True
 
 
@@ -279,8 +269,6 @@ def _select_pocs(
     require_product: bool = False,
     min_tier: str = "",
     max_tier: str = "",
-    allow_lab_exp: bool = False,
-    allow_auto_exp: bool = False,
 ) -> list[str]:
     pocs = []
     for rel in list_available_poc_names(str(POCS_DIR)):
@@ -305,8 +293,6 @@ def _select_pocs(
                 finding.validation_tier,
                 min_tier,
                 max_tier,
-                allow_lab_exp,
-                allow_auto_exp,
             ):
                 continue
         pocs.append(rel)
@@ -329,8 +315,6 @@ def run_global_scan(args: argparse.Namespace) -> dict[str, Any]:
         require_product=getattr(args, "require_product", False),
         min_tier=getattr(args, "min_tier", ""),
         max_tier=getattr(args, "max_tier", "ACTIVE_PROBE"),
-        allow_lab_exp=getattr(args, "allow_lab_exp", False),
-        allow_auto_exp=getattr(args, "allow_auto_exp", False),
     )
     session_id = args.session_id or f"cli-global-{_now_id()}"
     results = []
@@ -536,8 +520,6 @@ def build_parser() -> argparse.ArgumentParser:
     single.add_argument("--require-product", action="store_true", help="Refuse to run unless the PoC reaches PRODUCT_READY")
     single.add_argument("--min-tier", default="", choices=list(PROFESSIONAL_TIER_ORDER), help="Minimum professional validation tier")
     single.add_argument("--max-tier", default="", choices=list(PROFESSIONAL_TIER_ORDER), help="Maximum professional validation tier")
-    single.add_argument("--allow-lab-exp", action="store_true", help="Allow LAB_EXP scripts beyond max-tier")
-    single.add_argument("--allow-auto-exp", action="store_true", help="Allow AUTO_EXP scripts beyond max-tier")
     add_common(single)
 
     global_scan = sub.add_parser("global", help="Run a batch/global scan and write reports")
@@ -552,9 +534,7 @@ def build_parser() -> argparse.ArgumentParser:
     global_scan.add_argument("--require-active", action="store_true", help="Only run ACTIVE_READY PoCs")
     global_scan.add_argument("--require-product", action="store_true", help="Only run PRODUCT_READY PoCs")
     global_scan.add_argument("--min-tier", default="", choices=list(PROFESSIONAL_TIER_ORDER), help="Minimum professional validation tier")
-    global_scan.add_argument("--max-tier", default="ACTIVE_PROBE", choices=list(PROFESSIONAL_TIER_ORDER), help="Maximum professional validation tier")
-    global_scan.add_argument("--allow-lab-exp", action="store_true", help="Allow LAB_EXP scripts beyond max-tier")
-    global_scan.add_argument("--allow-auto-exp", action="store_true", help="Allow AUTO_EXP scripts beyond max-tier")
+    global_scan.add_argument("--max-tier", default="", choices=list(PROFESSIONAL_TIER_ORDER), help="Maximum professional validation tier")
     global_scan.add_argument("--session-id", default="", help="Report session id")
     global_scan.add_argument("--output", default="", help="Output path prefix for reports")
 
@@ -592,8 +572,6 @@ def build_parser() -> argparse.ArgumentParser:
     list_cmd.add_argument("--require-product", action="store_true", help="Only list PRODUCT_READY PoCs")
     list_cmd.add_argument("--min-tier", default="", choices=list(PROFESSIONAL_TIER_ORDER), help="Minimum professional validation tier")
     list_cmd.add_argument("--max-tier", default="", choices=list(PROFESSIONAL_TIER_ORDER), help="Maximum professional validation tier")
-    list_cmd.add_argument("--allow-lab-exp", action="store_true", help="Allow LAB_EXP scripts beyond max-tier")
-    list_cmd.add_argument("--allow-auto-exp", action="store_true", help="Allow AUTO_EXP scripts beyond max-tier")
     list_cmd.add_argument("--include-manual", action="store_true", help="Include PoCs requiring manual review")
     list_cmd.add_argument("--include-disruptive", action="store_true", help="Include disruptive PoCs")
 
@@ -624,16 +602,12 @@ def main(argv: list[str] | None = None) -> int:
             print("Run `python3 server/scan_cli.py exp-audit --professional-audit` for product-readiness classification.")
             return 2
         effective_max_tier = args.max_tier
-        if getattr(args, "require_exp", False) and not effective_max_tier and not args.allow_lab_exp and not args.allow_auto_exp:
-            effective_max_tier = "ACTIVE_PROBE"
         if getattr(args, "min_tier", "") or effective_max_tier:
             finding = _professional_finding(args.poc)
             if not finding or not _tier_allowed(
                 finding.validation_tier,
                 args.min_tier,
                 effective_max_tier,
-                args.allow_lab_exp,
-                args.allow_auto_exp,
             ):
                 tier = finding.validation_tier if finding else "unknown"
                 print(f"Refusing to run PoC outside professional tier policy: {args.poc} tier={tier}")
@@ -660,8 +634,6 @@ def main(argv: list[str] | None = None) -> int:
             require_product=args.require_product,
             min_tier=args.min_tier,
             max_tier=args.max_tier,
-            allow_lab_exp=args.allow_lab_exp,
-            allow_auto_exp=args.allow_auto_exp,
         ):
             print(poc)
         return 0

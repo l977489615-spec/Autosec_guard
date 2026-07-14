@@ -23,7 +23,7 @@ POCS_DIR = SERVER_DIR / "pocs"
 
 
 class ExpReadinessContractTests(unittest.TestCase):
-    def test_shared_lab_harness_counts_as_exp_ready(self) -> None:
+    def test_shared_active_validation_counts_as_exp_ready(self) -> None:
         source = textwrap.dedent(
             '''
             from active_validation_core import run_active_validation
@@ -31,10 +31,8 @@ class ExpReadinessContractTests(unittest.TestCase):
 
             VULN = {
                 "cve": "CVE-2099-0001",
-                "summary": "lab trigger contract",
-                "exp_profile": "operator_supplied_lab_payload",
-                "active_payload_param": "lab_payload_hex",
-                "operator_observation": "target-side crash or state change",
+                "summary": "active trigger contract",
+                "active_payload_text": "malformed-test-payload",
             }
 
             class DemoCertificateValidationAuditPlugin(IVIVulnerabilityPlugin):
@@ -68,12 +66,11 @@ class ExpReadinessContractTests(unittest.TestCase):
         self.assertIsNotNone(finding)
         self.assertEqual(finding.grade, "EXP_READY")
         self.assertEqual(finding.missing, [])
-        self.assertEqual(finding.validation_tier, "LAB_EXP")
-        self.assertEqual(finding.exp_capability, "operator_supplied")
-        self.assertEqual(finding.execution_safety, "destructive_lab_only")
-        self.assertIn("operator_payload", finding.evidence_basis)
+        self.assertEqual(finding.validation_tier, "ACTIVE_VALIDATION")
+        self.assertEqual(finding.exp_capability, "supported_harness")
+        self.assertEqual(finding.execution_safety, "approval_required")
 
-    def test_legacy_plugin_inherits_generic_exp_harness(self) -> None:
+    def test_legacy_plugin_does_not_inherit_a_synthetic_exp_harness(self) -> None:
         source = textwrap.dedent(
             '''
             from iv_plugin_base import IVIVulnerabilityPlugin
@@ -105,13 +102,11 @@ class ExpReadinessContractTests(unittest.TestCase):
             path.unlink(missing_ok=True)
 
         self.assertIsNotNone(finding)
-        self.assertEqual(finding.grade, "EXP_READY")
-        self.assertEqual(finding.missing, [])
         self.assertEqual(finding.validation_tier, "PASSIVE")
-        self.assertEqual(finding.exp_capability, "supported_harness")
+        self.assertEqual(finding.exp_capability, "none")
         self.assertTrue(finding.not_native_exp)
 
-    def test_native_active_script_is_auto_exp_verified(self) -> None:
+    def test_native_active_script_is_active_validation(self) -> None:
         source = textwrap.dedent(
             '''
             import socket
@@ -152,7 +147,7 @@ class ExpReadinessContractTests(unittest.TestCase):
             path.unlink(missing_ok=True)
 
         self.assertIsNotNone(finding)
-        self.assertEqual(finding.validation_tier, "AUTO_EXP")
+        self.assertEqual(finding.validation_tier, "ACTIVE_VALIDATION")
         self.assertEqual(finding.exp_capability, "native_verified")
         self.assertFalse(finding.not_native_exp)
 
@@ -163,26 +158,25 @@ class ExpReadinessContractTests(unittest.TestCase):
         self.assertIn(finding.validation_tier, {"PASSIVE", "AUTHENTICATED_CONFIG"})
         self.assertNotEqual(finding.exp_capability, "native_verified")
 
-    def test_real_local_decoder_probe_is_lab_harness_not_remote_active(self) -> None:
+    def test_real_local_decoder_probe_is_active_validation(self) -> None:
         finding = audit_file(POCS_DIR / "application/64_CVE_2023_4863_Active_Validation.py")
 
         self.assertIsNotNone(finding)
-        self.assertEqual(finding.validation_tier, "LAB_EXP")
+        self.assertEqual(finding.validation_tier, "ACTIVE_VALIDATION")
         self.assertNotEqual(finding.exp_capability, "native_verified")
 
 
 class ActiveValidationContractTests(unittest.TestCase):
-    def test_operator_supplied_payload_requires_authorization(self) -> None:
+    def test_poc_defined_payload_requires_authorization(self) -> None:
         class DemoPlugin:
             params = {"validation_mode": "probe", "software_inventory_text": "CVE-2099-0002"}
             meta_protocol = "local"
 
         vuln = {
             "cve": "CVE-2099-0002",
-            "summary": "operator supplied lab trigger",
+            "summary": "PoC-defined active trigger",
             "signature_tokens": ["CVE-2099-0002"],
-            "active_payload_param": "lab_payload_hex",
-            "exp_profile": "operator_supplied_lab_payload",
+            "active_payload_text": "malformed-test-payload",
         }
 
         result = run_active_validation(DemoPlugin(), vuln)
@@ -191,11 +185,11 @@ class ActiveValidationContractTests(unittest.TestCase):
 
         self.assertTrue(trigger["requires_manual_review"])
         self.assertTrue(trigger["payload_supported"])
-        self.assertFalse(trigger["payload_available"])
-        self.assertEqual(trigger["payload_source"], "operator_parameter_required")
-        self.assertIn("allow_disruptive=true", trigger["reason"])
-        self.assertNotEqual(evidence["validation_tier_achieved"], "LAB_EXP")
-        self.assertEqual(evidence["exp_capability"], "operator_supplied")
+        self.assertTrue(trigger["payload_available"])
+        self.assertEqual(trigger["payload_source"], "poc_definition")
+        self.assertIn("was not approved", trigger["reason"])
+        self.assertNotEqual(evidence["validation_tier_achieved"], "ACTIVE_VALIDATION")
+        self.assertEqual(evidence["exp_capability"], "supported_harness")
 
     def test_passive_validation_merges_without_exception(self) -> None:
         class DemoPlugin:
@@ -243,9 +237,9 @@ class ActiveValidationContractTests(unittest.TestCase):
         self.assertEqual(calls, [])
         self.assertFalse(trigger["ok"])
         self.assertTrue(trigger["payload_available"])
-        self.assertIn("allow_disruptive=true", trigger["reason"])
+        self.assertIn("was not approved", trigger["reason"])
 
-    def test_declared_generic_payload_param_is_treated_as_text(self) -> None:
+    def test_undeclared_external_payload_param_is_not_used(self) -> None:
         class DemoPlugin:
             params = {
                 "validation_mode": "probe",
@@ -278,11 +272,11 @@ class ActiveValidationContractTests(unittest.TestCase):
             active_core._send_tcp = original_send
             active_core._tcp_liveness = original_liveness
 
-        self.assertEqual(sent_payloads, [b"PING\r\n"])
+        self.assertEqual(sent_payloads, [])
 
 
 class GenericHarnessContractTests(unittest.TestCase):
-    def test_prerequisite_failure_still_records_generic_harness(self) -> None:
+    def test_prerequisite_failure_does_not_add_synthetic_harness(self) -> None:
         class DemoPlugin(IVIVulnerabilityPlugin):
             meta_protocol = "rf"
             meta_cve_id = "CWE-345"
@@ -293,25 +287,19 @@ class GenericHarnessContractTests(unittest.TestCase):
             def exploit(self):
                 return {"vulnerable": False}
 
-        plugin = DemoPlugin({"generic_exp_payload_text": "rf_lab_payload"})
+        plugin = DemoPlugin({})
         plugin.run_verify()
-        evidence = json.loads(plugin.results["evidence"])
+        self.assertNotIn("exp_harness", plugin.results.get("evidence", ""))
 
-        self.assertIn("exp_harness", evidence)
-        self.assertTrue(evidence["exp_harness"][0]["payload_available"])
-        self.assertEqual(evidence["exp_harness"][0]["harness_tier"], "LAB_EXP")
-        self.assertNotEqual(evidence["exp_harness"][0]["validation_tier_achieved"], "LAB_EXP")
-
-    def test_non_network_trigger_reports_lab_execution_requirement(self) -> None:
+    def test_non_network_trigger_uses_poc_defined_payload(self) -> None:
         class DemoPlugin:
-            params = {"validation_mode": "probe", "allow_disruptive": True, "can_frame": "123#DEADBEEF"}
+            params = {"validation_mode": "probe", "allow_disruptive": True}
             meta_protocol = "can"
 
         vuln = {
             "cve": "CVE-2099-0003",
-            "summary": "CAN lab trigger",
-            "active_payload_param": "can_frame",
-            "exp_profile": "can_bus_lab_trigger",
+            "summary": "CAN active trigger",
+            "active_payload_text": "123#DEADBEEF",
         }
 
         result = run_active_validation(DemoPlugin(), vuln)
@@ -321,20 +309,18 @@ class GenericHarnessContractTests(unittest.TestCase):
         self.assertTrue(trigger["requires_manual_review"])
         self.assertEqual(trigger["protocol"], "can")
         self.assertIn("operator_action", trigger)
-        self.assertIn("can_frame", trigger["payload_parameter"])
+        self.assertEqual(trigger["payload_parameter"], "active_payload_text/active_payload_hex")
 
 
 class ProfessionalCliPolicyTests(unittest.TestCase):
-    def test_tier_filter_allows_safe_default_surface(self) -> None:
+    def test_tier_filter_uses_the_consolidated_active_validation_tier(self) -> None:
         self.assertLess(
             PROFESSIONAL_TIER_ORDER["ACTIVE_PROBE"],
-            PROFESSIONAL_TIER_ORDER["LAB_EXP"],
+            PROFESSIONAL_TIER_ORDER["ACTIVE_VALIDATION"],
         )
-        self.assertTrue(_tier_allowed("ACTIVE_PROBE", "", "ACTIVE_PROBE", False, False))
-        self.assertFalse(_tier_allowed("LAB_EXP", "", "ACTIVE_PROBE", False, False))
-        self.assertTrue(_tier_allowed("LAB_EXP", "", "ACTIVE_PROBE", True, False))
-        self.assertFalse(_tier_allowed("AUTO_EXP", "", "LAB_EXP", True, False))
-        self.assertTrue(_tier_allowed("AUTO_EXP", "", "LAB_EXP", True, True))
+        self.assertTrue(_tier_allowed("ACTIVE_PROBE", "", "ACTIVE_PROBE"))
+        self.assertFalse(_tier_allowed("ACTIVE_VALIDATION", "", "ACTIVE_PROBE"))
+        self.assertTrue(_tier_allowed("ACTIVE_VALIDATION", "", "ACTIVE_VALIDATION"))
 
 
 if __name__ == "__main__":

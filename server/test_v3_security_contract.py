@@ -382,10 +382,52 @@ class V3SecurityContractTests(unittest.TestCase):
     def test_reports_only_include_confirmed_findings(self):
         items = application._normalize_manual_execution_items({'results': [
             {'pocId': 'unconfirmed', 'vulnerable': True, 'verificationStatus': 'inconclusive'},
-            {'pocId': 'confirmed', 'vulnerable': True, 'verificationStatus': 'manual_confirmed_vulnerable'},
+            {
+                'pocId': 'confirmed',
+                'vulnerable': True,
+                'verificationStatus': 'manual_confirmed_vulnerable',
+                'evidence': 'operator observation and target-side log',
+            },
         ]})
         findings = application._normalize_manual_findings({'connection': {'ip': '127.0.0.1'}}, items)
         self.assertEqual([item['poc_name'] for item in findings], ['confirmed'])
+
+    def test_manual_execution_preserves_negative_evidence(self):
+        items = application._normalize_manual_execution_items({'results': [{
+            'pocId': 'negative',
+            'vulnerable': False,
+            'verificationStatus': 'auto_confirmed_not_vulnerable',
+            'evidence': 'service returned patched version 2.0.1',
+        }]})
+        self.assertEqual(items[0]['status'], 'completed')
+        self.assertIs(items[0]['vulnerable'], False)
+        self.assertEqual(items[0]['evidence'], 'service returned patched version 2.0.1')
+
+    def test_confirmed_result_without_evidence_is_invalid(self):
+        items = application._normalize_manual_execution_items({'results': [{
+            'pocId': 'invalid',
+            'vulnerable': True,
+            'verificationStatus': 'auto_confirmed_vulnerable',
+        }]})
+        self.assertEqual(items[0]['status'], 'invalid_result')
+        self.assertIsNone(items[0]['vulnerable'])
+
+    def test_manual_confirmed_verdict_requires_recorded_evidence(self):
+        self.login()
+        rejected = self.client.post('/api/v1/poc_manual_verdict', json={
+            'poc_id': 'demo.py',
+            'verdict': 'confirmed_vulnerable',
+        }, headers={'Origin': 'http://localhost'})
+        self.assertEqual(rejected.status_code, 400)
+
+        accepted = self.client.post('/api/v1/poc_manual_verdict', json={
+            'poc_id': 'demo.py',
+            'verdict': 'confirmed_vulnerable',
+            'operator_note': 'target rebooted immediately after the trigger',
+        }, headers={'Origin': 'http://localhost'})
+        self.assertEqual(accepted.status_code, 200)
+        self.assertTrue(accepted.json['evidence_contract_valid'])
+        self.assertIn('target rebooted', accepted.json['evidence'])
 
     def test_legacy_scan_history_backfills_without_promoting_findings(self):
         with application.app.app_context():

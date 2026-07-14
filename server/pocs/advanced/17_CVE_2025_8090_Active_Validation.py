@@ -168,7 +168,7 @@ def _qnx_kernel_probe(plugin, vuln):
         "ok": True,
         "sample_path": source_path,
         "payload_bytes": os.path.getsize(source_path),
-        "sample_source": "operator_supplied" if plugin.params.get("source_path") else "generated_stimulus",
+        "sample_source": "provided_sample" if plugin.params.get("source_path") else "generated_stimulus",
         "phenomenon": "local MsgRegisterEvent null-dereference trigger source prepared for kernel/process crash observation",
         "requires_manual_review": True,
     }

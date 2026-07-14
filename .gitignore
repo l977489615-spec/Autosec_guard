@@ -102,3 +102,6 @@ lab/experiment_config.json
 lab/experiment_config.full.json
 lab/experiment_config.local.json
 lab/.mock_vehicle_services.pid
+
+# outputs
+outputs/

@@ -9,7 +9,7 @@ from unittest import mock
 SERVER_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SERVER_DIR))
 
-from agent_orchestrator import AgentOrchestrator
+from agent_orchestrator import AgentOrchestrator, _classify_poc_branch_result
 
 
 class AgentOrchestratorExecutionModeTests(unittest.TestCase):
@@ -110,6 +110,26 @@ class AgentOrchestratorExecutionModeTests(unittest.TestCase):
         self.assertEqual(item["parameters"], {})
         self.assertEqual(branches[0]["params"], {})
         orch._add_log.assert_called_once()
+
+    def test_empty_evidence_is_invalid_even_when_execution_succeeds(self) -> None:
+        status, vulnerable = _classify_poc_branch_result({
+            "success": True,
+            "vulnerable": False,
+            "verification_status": "auto_confirmed_not_vulnerable",
+            "evidence": "",
+        })
+        self.assertEqual(status, "invalid_result")
+        self.assertIsNone(vulnerable)
+
+    def test_negative_verdict_with_evidence_is_completed(self) -> None:
+        status, vulnerable = _classify_poc_branch_result({
+            "success": True,
+            "vulnerable": False,
+            "verification_status": "auto_confirmed_not_vulnerable",
+            "evidence": "target returned patched version",
+        })
+        self.assertEqual(status, "completed")
+        self.assertIs(vulnerable, False)
 
 
 if __name__ == "__main__":

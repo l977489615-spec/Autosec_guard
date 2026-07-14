@@ -42,6 +42,7 @@ class CapabilityDescriptor:
     excludes: set[str] = field(default_factory=set)
     grants_on_confirmed: set[str] = field(default_factory=set)
     required_params: list[str] = field(default_factory=list)
+    profiles: set[str] = field(default_factory=set)
     severity: str = "Medium"
     destructive_level: str = "Safe"
 
@@ -66,6 +67,7 @@ class CapabilityScheduler:
                 excludes=set(_listify(raw.get("excludes_capabilities"))),
                 grants_on_confirmed=set(_listify(raw.get("grants_on_confirmed"))),
                 required_params=_listify(raw.get("required_params")),
+                profiles=set(_listify(raw.get("profiles"))),
                 severity=str(raw.get("severity") or "Medium"),
                 destructive_level=str(raw.get("destructive_level") or "Safe"),
             )
@@ -81,12 +83,12 @@ class CapabilityScheduler:
     def _is_confirmed(self, result: dict[str, Any]) -> bool:
         if result.get("vulnerable") is not True:
             return False
+        if not str(result.get("evidence") or "").strip():
+            return False
         if result.get("requires_human_review") or result.get("verification_status") == "pending_manual_review":
             return False
         status = str(result.get("verification_status") or result.get("verdict") or "").strip().lower()
-        if status and status in {"inconclusive", "needs_retest", "execution_error", "error"}:
-            return False
-        if status.startswith("manual_") and status not in CONFIRMED_VERDICTS:
+        if status not in CONFIRMED_VERDICTS:
             return False
         return True
 
@@ -103,10 +105,17 @@ class CapabilityScheduler:
             if fact.key not in self.facts:
                 self.facts[fact.key] = fact
                 added.append(fact)
+        declared = sorted(descriptor.grants_on_confirmed)
+        newly_granted = [fact.capability for fact in added]
         self.history.append({
             "poc_file": normalized,
             "confirmed": True,
-            "granted": [fact.capability for fact in added],
+            # `granted` describes capabilities supported by this confirmed PoC.
+            # Keep the incremental delta separate so an idempotent observation is
+            # not misread as a failed or contradictory execution.
+            "granted": declared,
+            "newly_granted": newly_granted,
+            "already_present": sorted(set(declared) - set(newly_granted)),
         })
         return added
 

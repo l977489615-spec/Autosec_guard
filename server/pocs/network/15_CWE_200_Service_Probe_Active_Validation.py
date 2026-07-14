@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Bounded unknown-service fingerprint probe.
+"""Bounded unknown-service fingerprint probe + offline protocol cue.
 
 This is not a fuzzer and does not claim a vulnerability. It executes a small,
 allowlisted set of read-only protocol profiles against one authorized TCP port
-and records reproducible fingerprint evidence.
+and records reproducible fingerprint evidence. Format/state inference and
+stateful fuzz live in ``protocol_research`` / PoC NET-016.
 """
 from __future__ import annotations
 

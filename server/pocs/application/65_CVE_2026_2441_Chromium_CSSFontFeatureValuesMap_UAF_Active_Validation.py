@@ -64,7 +64,7 @@ def _chromium_probe(plugin, vuln):
         "ok": True,
         "sample_path": sample,
         "payload_bytes": os.path.getsize(sample),
-        "sample_source": "operator_supplied" if supplied_sample else "generated_stimulus",
+        "sample_source": "provided_sample" if supplied_sample else "generated_stimulus",
         "phenomenon": "malicious HTML/CSS stimulus generated for Chromium/WebView crash observation",
         "requires_manual_review": True,
     }

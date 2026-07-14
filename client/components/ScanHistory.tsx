@@ -462,7 +462,7 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                 </button>
 
                 <div className="mt-10 grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
-                    <div className="space-y-6 flex flex-col min-h-0">
+                    <div className="min-w-0 space-y-6 flex flex-col min-h-0">
                         <div className="bg-cyber-800 border border-cyber-700 p-6 rounded-lg">
                             <div className="flex items-center gap-3 mb-2">
                                 <h2 className="text-xl font-bold text-white">{selectedSession.targetName}</h2>
@@ -503,7 +503,7 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                         </div>
 
                         {selectedSession.assessment?.attackGraph && (
-                            <div className="bg-cyber-800 border border-cyber-accent/30 p-6 rounded-lg">
+                            <div className="min-w-0 bg-cyber-800 border border-cyber-accent/30 p-6 rounded-lg">
                                 <div className="flex items-center justify-between mb-3">
                                     <h3 className="text-sm font-bold text-cyber-accent uppercase tracking-wide">Attack Graph Snapshot</h3>
                                     {topAttackPath?.riskScore && (
@@ -517,7 +517,9 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                                 )}
                                 {topAttackPath ? (
                                     <div className="space-y-3">
-                                        <div className="text-sm font-semibold text-white">{topAttackPath.title}</div>
+                                        <div className="min-w-0 text-sm font-semibold text-white [overflow-wrap:anywhere]">
+                                            {topAttackPath.title}
+                                        </div>
                                         <div className="flex flex-wrap gap-2">
                                             {topAttackPath.nodes?.slice(0, 4).map((step: string, index: number) => (
                                                 <span
@@ -568,7 +570,7 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                         </div>
                     </div>
 
-                    <div className="lg:col-span-2 flex flex-col gap-6 h-full overflow-y-auto pb-10 pr-2">
+                    <div className="min-w-0 lg:col-span-2 flex flex-col gap-6 h-full overflow-y-auto pb-10 pr-2">
                         <div className="bg-cyber-800 border border-cyber-700 rounded-lg p-4 shrink-0">
                             <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
                                 <Clock size={14} className="text-cyan-400" /> 权威会话时间线
@@ -685,8 +687,8 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                         )}
 
                         {selectedSession.mode === 'agent' && (plannerSteps.length > 0 || supervisorEvents.length > 0) && (
-                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                                <div className="bg-cyber-800 border border-cyber-700 rounded-lg p-4 shrink-0">
+                            <div className="min-w-0 grid grid-cols-1 xl:grid-cols-2 gap-4">
+                                <div className="min-w-0 bg-cyber-800 border border-cyber-700 rounded-lg p-4 shrink-0">
                                     <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
                                         <List size={14} className="text-cyan-400" />
                                         Planner Blueprint
@@ -699,15 +701,17 @@ const ScanHistory: React.FC<ScanHistoryProps> = ({ currentUser, token, localHist
                                     {plannerSteps.length > 0 && (
                                         <div className="space-y-2">
                                             {plannerSteps.map((step) => (
-                                                <div key={`${step.step}-${step.title}`} className="bg-cyber-900 border border-cyber-700 rounded p-3">
-                                                    <div className="flex items-center justify-between gap-3 mb-1">
-                                                        <div className="text-sm font-semibold text-white">{step.step}. {step.title}</div>
+                                                <div key={`${step.step}-${step.title}`} className="min-w-0 bg-cyber-900 border border-cyber-700 rounded p-3">
+                                                    <div className="min-w-0 flex flex-wrap items-start justify-between gap-2 mb-1">
+                                                        <div className="min-w-0 text-sm font-semibold text-white [overflow-wrap:anywhere]">
+                                                            {step.step}. {step.title}
+                                                        </div>
                                                         {Array.isArray(step.depends_on) && step.depends_on.length > 0 ? (
-                                                            <span className="text-[10px] text-gray-500 font-mono">depends_on: {step.depends_on.join(', ')}</span>
+                                                            <span className="max-w-full text-[10px] text-gray-500 font-mono [overflow-wrap:anywhere]">depends_on: {step.depends_on.join(', ')}</span>
                                                         ) : null}
                                                     </div>
-                                                    <div className="text-xs text-gray-300">目标: {step.objective || '未提供'}</div>
-                                                    <div className="text-xs text-cyan-300 mt-1">成功标准: {step.success_criteria || '未提供'}</div>
+                                                    <div className="text-xs text-gray-300 [overflow-wrap:anywhere]">目标: {step.objective || '未提供'}</div>
+                                                    <div className="text-xs text-cyan-300 mt-1 [overflow-wrap:anywhere]">成功标准: {step.success_criteria || '未提供'}</div>
                                                 </div>
                                             ))}
                                         </div>

@@ -12,6 +12,7 @@ def extract_poc_security_profile(poc_path: str, source_text: str | None = None) 
         "protocol": "",
         "target_os": [],
         "required_params": [],
+        "profiles": [],
         "destructive_level": "Safe",
         "is_disruptive": False,
     }
@@ -33,6 +34,7 @@ def extract_poc_security_profile(poc_path: str, source_text: str | None = None) 
         "meta_protocol",
         "meta_target_os",
         "meta_required_params",
+        "meta_profiles",
         "meta_destructive_level",
         "is_disruptive",
         "meta_requires_operator_observation",
@@ -65,6 +67,7 @@ def extract_poc_security_profile(poc_path: str, source_text: str | None = None) 
             profile["protocol"] = class_meta.get("meta_protocol") or profile["protocol"]
             profile["target_os"] = class_meta.get("meta_target_os") or profile["target_os"]
             profile["required_params"] = class_meta.get("meta_required_params") or profile["required_params"]
+            profile["profiles"] = class_meta.get("meta_profiles") or profile["profiles"]
             profile["destructive_level"] = class_meta.get("meta_destructive_level") or profile["destructive_level"]
             profile["is_disruptive"] = bool(class_meta.get("is_disruptive", profile["is_disruptive"]))
             if class_meta.get("meta_requires_operator_observation") is not None:

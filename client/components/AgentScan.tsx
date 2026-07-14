@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Bot, Shield, Network, Cpu, FileText, Play, Loader, CheckCircle, XCircle, Key, Sliders, Download, RotateCcw, AlertTriangle, ShieldCheck, Zap, Square, FileDown } from 'lucide-react';
-import { approveV3SessionAction, createV3Session, fetchWithEngineRecovery, saveScanSession, startV3SessionRun, submitPocManualVerdict, submitV3SessionReview, updateV3SessionRun } from '../services/api';
+import { approveV3SessionAction, createV3Session, fetchWithEngineRecovery, saveScanSession, startV3SessionRun, submitPocManualVerdict, submitV3SessionReview, updateV3SessionRun, uploadProtocolCorpus } from '../services/api';
 import ScanLogs from './ScanLogs';
 import { PhaseRecord, PlannerStep, ScanSession, Severity, SupervisorAdjustment, SupervisorEvent, SupervisorMetrics } from '../types';
 import ReactMarkdown from 'react-markdown';
@@ -26,8 +26,8 @@ const PHASES: AgentPhase[] = [
   { name: 'recon', label: '侦察 Agent', icon: Network, description: '端口扫描 + 拓扑分析 + 服务指纹' },
   { name: 'planner', label: '规划 Agent', icon: Sliders, description: '多级任务编排与验证路径规划' },
   { name: 'decision', label: '决策 Agent', icon: Cpu, description: '自适应 PoC 筛选 + 认证策略生成' },
-  { name: 'weaponize', label: '探测生成 Agent', icon: Zap, description: '未知服务协议感知型动态探测生成' },
-  { name: 'execute', label: '执行 Agent', icon: Shield, description: 'PoC 自动化执行 + 响应反馈闭环' },
+  { name: 'execute', label: '执行 Agent', icon: Shield, description: '第一轮：已知 PoC + 被动语料采集' },
+  { name: 'weaponize', label: '协议分析 Agent', icon: Zap, description: '协议推断与门控后的实验室 Fuzz 编排' },
   { name: 'reflector', label: '反思 Agent', icon: RotateCcw, description: '错误恢复与动态策略调整' },
   { name: 'assess', label: '评估 Agent', icon: FileText, description: 'ISO 21434 合规报告生成' },
 ];
@@ -297,9 +297,14 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
   const [findings, setFindings] = useState<any[]>([]);
   const [enableReflectionReentry, setEnableReflectionReentry] = useState(draft?.enableReflectionReentry || false);
   const [enableWeaponize, setEnableWeaponize] = useState(draft?.enableWeaponize ?? true);
+  const [protocolCorpusJson, setProtocolCorpusJson] = useState('');
+  const [protocolCorpusId, setProtocolCorpusId] = useState('');
+  const [protocolCorpusPort, setProtocolCorpusPort] = useState('');
+  const [protocolCorpusStatus, setProtocolCorpusStatus] = useState('');
   const [manualReviewState, setManualReviewState] = useState<AgentManualReviewState>(null);
   const manualReviewResolverRef = React.useRef<((decision: AgentManualReviewDecision) => void) | null>(null);
   const [destructiveApprovalState, setDestructiveApprovalState] = useState<DestructiveApprovalState>(null);
+  const sessionExpUnlockedRef = React.useRef(destructivePolicy === 'allow_all');
   const [destructiveApprovalSeconds, setDestructiveApprovalSeconds] = useState(60);
   const destructiveApprovalResolverRef = React.useRef<((decision: DestructiveApprovalDecision) => void) | null>(null);
   const destructiveApprovalTimeoutRef = React.useRef<number | null>(null);
@@ -326,7 +331,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
 
   const buildAgentResourcePayload = () => {
     const resources = resourceParamsRef.current;
-    const payload: Record<string, string> = {};
+    const payload: Record<string, string | Record<string, string>> = {};
     const can = resources.canInterface.trim();
     const bt = resources.bluetoothMac.trim();
     const wifi = resources.wifiInterface.trim();
@@ -353,6 +358,15 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
           ? 'RESTART'
           : 'PROBE';
     if (executionMode === 'full_auto_lab') payload.lab_policy = 'true';
+    if (sessionExpUnlockedRef.current || destructivePolicy === 'allow_all') {
+      payload.session_exp_unlocked = 'true';
+    }
+    if (protocolCorpusId) {
+      payload.protocol_corpus_id = protocolCorpusId;
+      if (protocolCorpusPort) {
+        payload.protocol_corpus_refs = { [protocolCorpusPort]: protocolCorpusId };
+      }
+    }
     return payload;
   };
 
@@ -746,6 +760,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
     const now = new Date().toLocaleString('zh-CN', { hour12: false });
     setScanTime(now);
     setIsRunning(true);
+    sessionExpUnlockedRef.current = destructivePolicy === 'allow_all';
     const isResume = Boolean(resumeFrom);
     const durableSessionStorageKey = `autosec.agent.session.${targetIp.trim()}`;
     let durableSessionId = isResume ? sessionStorage.getItem(durableSessionStorageKey) : null;
@@ -1168,10 +1183,18 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
                   token,
                   item.risk_level || 'RESTART',
                 );
+                if (!sessionExpUnlockedRef.current) {
+                  sessionExpUnlockedRef.current = true;
+                  collectedLogs.push({
+                    timestamp: new Date().toLocaleTimeString(),
+                    type: 'info',
+                    message: '[Execution Approval] 已确认破坏性执行，本会话后续 EXP 将自动发送（无需逐项再批）。',
+                  });
+                }
                 collectedLogs.push({
                   timestamp: new Date().toLocaleTimeString(),
                   type: 'info',
-                  message: `[Execution Approval] ${item.poc_name}: 已授权本次单次执行`,
+                  message: `[Execution Approval] ${item.poc_name}: 已授权执行`,
                 });
               }
 
@@ -1188,6 +1211,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
                     session_id: durableSessionId,
                     phase: 'execute',
                     context: prevContext,
+                    session_exp_unlocked: true,
                     ...buildAgentResourcePayload(),
                     approval_tokens: approvalTokens,
                     approval_only_pocs: approvedPocs,
@@ -1238,9 +1262,21 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
                 target_ip: targetIp,
                 bluetooth_mac: bluetoothMac,
                 verdict: decision.verdict,
-                operator_note: decision.note || `Operator verdict: ${decision.verdict}`,
+                operator_note: decision.note,
                 evidence_file: decision.evidenceFile || '',
               }, token, activeBackendUrl);
+
+              if (!review.success) {
+                item.requires_human_review = true;
+                item.verification_status = 'pending_manual_review';
+                item.status = 'pending_manual_review';
+                collectedLogs.push({
+                  timestamp: new Date().toLocaleTimeString(),
+                  type: 'error',
+                  message: `[Manual Review] ${item.poc_name}: ${review.errors?.[0] || '人工判定提交失败'}`,
+                });
+                continue;
+              }
 
               if (durableSessionId) {
                 await submitV3SessionReview(durableSessionId, {
@@ -1692,6 +1728,7 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
             <div className="space-y-4 px-6 py-5 text-sm text-gray-300">
               <p className="font-mono text-amber-200">{manualReviewState.item?.poc_name}</p>
               <p>{manualReviewState.item?.manual_review?.prompt || '该 PoC 已执行完成，但目标侧物理/业务效果无法自动判定。'}</p>
+              <p className="text-xs text-amber-300">确认成功或确认失败时，必须填写观察说明或证据文件。</p>
               {manualReviewState.item?.manual_review?.required_observations?.length ? (
                 <ul className="list-disc pl-5 space-y-1 text-xs text-gray-400">
                   {manualReviewState.item.manual_review.required_observations.map((text: string, idx: number) => (
@@ -1713,10 +1750,10 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
               />
             </div>
             <div className="grid grid-cols-2 gap-3 border-t border-cyan-900/50 px-6 py-4">
-              <button onClick={() => resolveAgentManualVerdict('confirmed_vulnerable')} className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500">
+              <button disabled={!manualReviewState.note.trim() && !manualReviewState.evidenceFile.trim()} onClick={() => resolveAgentManualVerdict('confirmed_vulnerable')} className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-40">
                 确认成功
               </button>
-              <button onClick={() => resolveAgentManualVerdict('confirmed_not_vulnerable')} className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500">
+              <button disabled={!manualReviewState.note.trim() && !manualReviewState.evidenceFile.trim()} onClick={() => resolveAgentManualVerdict('confirmed_not_vulnerable')} className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40">
                 确认失败
               </button>
               <button onClick={() => resolveAgentManualVerdict('inconclusive')} className="rounded-md border border-gray-700 px-4 py-2 text-sm text-gray-300 hover:border-gray-500 hover:text-white">
@@ -2008,9 +2045,9 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
               </div>
               <div className="mt-1.5 text-[10px] text-gray-500">
                 {destructivePolicy === 'allow_all'
-                  ? '在风险上限、授权目标与实验室策略内自动签发单次许可；BRICK 仍禁止。'
+                  ? '扫描开始时一次性授权：本会话内所有风险等级的 EXP/破坏性 PoC 均自动发送。'
                   : destructivePolicy === 'confirm_each'
-                    ? '每个破坏性 PoC 执行前逐项确认，60 秒无操作自动拒绝。'
+                    ? '首次人工确认后，本会话后续所有风险等级的 EXP 均自动发送；首个破坏性 PoC 仍需确认。'
                     : '安全/探测脚本照常执行，所有破坏性 PoC 均拒绝。'}
               </div>
             </div>
@@ -2034,7 +2071,50 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
               </div>
             </div>
             <div>
-              <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">探测生成 Agent</label>
+              <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">协议语料</label>
+              <textarea
+                value={protocolCorpusJson}
+                onChange={e => setProtocolCorpusJson(e.target.value)}
+                placeholder='{"target":{"ip":"192.168.10.20","port":18888,"transport":"tcp"},"sessions":[...]}'
+                className="w-full min-h-[72px] rounded border border-cyan-900/40 bg-black/40 px-2 py-1.5 text-[10px] font-mono text-gray-300"
+              />
+              <div className="mt-1 flex gap-2">
+                <input
+                  value={protocolCorpusPort}
+                  onChange={e => setProtocolCorpusPort(e.target.value)}
+                  placeholder="端口"
+                  className="w-20 rounded border border-cyan-900/40 bg-black/40 px-2 py-1 text-[10px] text-gray-300"
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const parsed = JSON.parse(protocolCorpusJson);
+                      if (targetIp) {
+                        parsed.target = { ...(parsed.target || {}), ip: targetIp };
+                      }
+                      if (protocolCorpusPort) {
+                        parsed.target = { ...(parsed.target || {}), port: Number(protocolCorpusPort) };
+                      }
+                      const res = await uploadProtocolCorpus(parsed, token);
+                      setProtocolCorpusId(res.corpus_id);
+                      setProtocolCorpusStatus(`已入库 ${res.corpus_id}（${res.summary?.message_count || 0} 条消息）`);
+                    } catch (err: any) {
+                      setProtocolCorpusStatus(err?.message || '语料导入失败');
+                    }
+                  }}
+                  className="flex-1 rounded border border-cyan-700/50 bg-cyan-950/30 px-2 py-1 text-[10px] text-cyan-200"
+                >
+                  导入语料
+                </button>
+              </div>
+              <div className="mt-1 text-[10px] text-gray-500">
+                {protocolCorpusId ? `corpus_id: ${protocolCorpusId}` : '导入后生成 corpus_id，供协议分析门控与 PoC16 加载。'}
+                {protocolCorpusStatus ? ` · ${protocolCorpusStatus}` : ''}
+              </div>
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">协议分析 Agent</label>
               <button
                 type="button"
                 onClick={() => setEnableWeaponize(value => !value)}
@@ -2048,8 +2128,8 @@ const AgentScan: React.FC<AgentScanProps> = ({ token, currentUser, onSessionComp
               </button>
               <div className="mt-1 text-[10px] text-gray-500">
                 {enableWeaponize
-                  ? '未知服务尝试生成受限只读探测器；失败时自动使用确定性模板。'
-                  : '跳过模型生成，未知服务直接使用内置安全探测模板。'}
+                  ? '未知服务由 Agent 编排 protocol_test_plan；推断/变异/复现由确定性引擎执行，不让模型写攻击代码。'
+                  : '跳过模型编排，未知服务直接使用内置安全指纹模板。'}
               </div>
             </div>
           </div>

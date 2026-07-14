@@ -32,15 +32,44 @@ class CapabilitySchedulerTests(unittest.TestCase):
 
     def test_confirmed_a_unlocks_b_then_confirmed_b_unlocks_c(self):
         self.assertEqual(self.scheduler.evaluate_delta(), [])
-        facts = self.scheduler.observe("a.py", {"vulnerable": True, "verification_status": "auto_confirmed_vulnerable"})
+        facts = self.scheduler.observe("a.py", {
+            "vulnerable": True,
+            "verification_status": "auto_confirmed_vulnerable",
+            "evidence": "capability A confirmed",
+        })
         self.assertEqual([fact.capability for fact in facts], ["capability:a"])
         self.assertEqual([item["poc_file"] for item in self.scheduler.evaluate_delta()], ["b.py"])
-        self.scheduler.observe("b.py", {"vulnerable": True, "verification_status": "manual_confirmed_vulnerable"})
+        self.scheduler.observe("b.py", {
+            "vulnerable": True,
+            "verification_status": "manual_confirmed_vulnerable",
+            "evidence": "capability B confirmed",
+        })
         self.assertEqual([item["poc_file"] for item in self.scheduler.evaluate_delta()], ["c.py"])
 
     def test_execution_success_without_vulnerability_does_not_unlock(self):
         self.scheduler.observe("a.py", {"success": True, "vulnerable": False})
         self.assertEqual(self.scheduler.evaluate_delta(), [])
+
+    def test_confirmed_label_without_evidence_does_not_unlock(self):
+        self.scheduler.observe("a.py", {
+            "vulnerable": True,
+            "verification_status": "auto_confirmed_vulnerable",
+        })
+        self.assertEqual(self.scheduler.evaluate_delta(), [])
+
+    def test_idempotent_confirmed_observation_keeps_declared_grant(self):
+        result = {
+            "vulnerable": True,
+            "verification_status": "auto_confirmed_vulnerable",
+            "evidence": "capability A confirmed",
+        }
+        self.scheduler.observe("a.py", result)
+        added = self.scheduler.observe("a.py", result)
+
+        self.assertEqual(added, [])
+        self.assertEqual(self.scheduler.history[-1]["granted"], ["capability:a"])
+        self.assertEqual(self.scheduler.history[-1]["newly_granted"], [])
+        self.assertEqual(self.scheduler.history[-1]["already_present"], ["capability:a"])
 
     def test_pending_manual_review_does_not_unlock(self):
         self.scheduler.observe("a.py", {
@@ -51,7 +80,11 @@ class CapabilitySchedulerTests(unittest.TestCase):
         self.assertEqual(self.scheduler.evaluate_delta(), [])
 
     def test_facts_are_bound_to_subject_and_survive_hydration(self):
-        self.scheduler.observe("a.py", {"vulnerable": True})
+        self.scheduler.observe("a.py", {
+            "vulnerable": True,
+            "verification_status": "auto_confirmed_vulnerable",
+            "evidence": "subject-bound capability evidence",
+        })
         restored = CapabilityScheduler(DESCRIPTORS, subject="192.0.2.10")
         restored.hydrate(self.scheduler.snapshot())
         self.assertEqual([item["poc_file"] for item in restored.evaluate_delta()], ["b.py"])
@@ -72,7 +105,14 @@ class CapabilitySchedulerTests(unittest.TestCase):
         orchestrator.attack_plan = ""
         orchestrator._record_supervisor_event = mock.Mock()
         orchestrator._execute_plan_stepwise = mock.Mock(side_effect=[
-            ("A", {"items": [{"step": 1, "poc_name": "a.py", "status": "vulnerable", "vulnerable": True}]}),
+            ("A", {"items": [{
+                "step": 1,
+                "poc_name": "a.py",
+                "status": "vulnerable",
+                "vulnerable": True,
+                "verification_status": "auto_confirmed_vulnerable",
+                "evidence": "capability A confirmed",
+            }]}),
             ("B", {"items": [{"step": 2, "poc_name": "b.py", "status": "completed", "vulnerable": False}]}),
         ])
 

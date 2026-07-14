@@ -128,6 +128,7 @@ def preflight_profile(
     target_in_scope: bool = True,
     lab_policy: bool = False,
     allowed_domains: Iterable[str] | str | None = None,
+    operator_approved: bool = False,
 ) -> Dict[str, Any]:
     profile = profile or {}
     params = params or {}
@@ -144,7 +145,11 @@ def preflight_profile(
         requirements.append("target_out_of_scope")
     if allowed and not domain_ok:
         requirements.append("domain_not_authorized")
-    if normalize_risk_level(risk_level) in {"DATALOSS", "BRICK"} and not lab_policy:
+    if (
+        normalize_risk_level(risk_level) in {"DATALOSS", "BRICK"}
+        and not lab_policy
+        and not operator_approved
+    ):
         requirements.append("lab_policy_required")
     expected = profile.get("expected_observable") or _default_expected_observable(profile)
     return {
@@ -168,11 +173,14 @@ def allow_automatic_escalation(
     risk_ceiling: str | None,
     preflight_ready: bool,
     lab_policy: bool = False,
+    operator_approved: bool = False,
 ) -> Tuple[bool, str]:
     mode = normalize_execution_mode(execution_mode)
     level = normalize_risk_level(risk_level)
     ceiling = normalize_risk_level(risk_ceiling or default_risk_ceiling(mode))
 
+    if operator_approved:
+        return True, "operator-approved"
     if should_use_safe_pass(level):
         return True, "safe-pass"
     if not risk_level_allows(ceiling, level):

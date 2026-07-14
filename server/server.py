@@ -103,7 +103,7 @@ from local_requirements import (
 )
 from poc_security import extract_poc_security_profile, should_require_disruptive_approval
 from poc_execution_service import normalize_poc_params, resolve_target_label
-from audit_exp_readiness import PROFESSIONAL_TIER_ORDER, audit_file
+from audit_exp_readiness import audit_file
 from poc_naming import canonical_display_name
 from agent_execution_policy import (
     allow_automatic_escalation,
@@ -180,23 +180,6 @@ def _professional_policy_for_poc(poc_path: str, rel_path: str, profile: dict | N
         "expected_observable": preflight["expected_observable"],
     }
 
-
-def _tier_allowed_by_policy(tier: str, params: dict) -> bool:
-    tier = str(tier or "PASSIVE").upper()
-    max_tier = str(params.get("max_tier") or params.get("scan_max_tier") or "").upper()
-    min_tier = str(params.get("min_tier") or params.get("scan_min_tier") or "").upper()
-    allow_lab = params.get("allow_lab_exp") in (True, "true", "True", "1", 1)
-    allow_auto = params.get("allow_auto_exp") in (True, "true", "True", "1", 1)
-    value = PROFESSIONAL_TIER_ORDER.get(tier, PROFESSIONAL_TIER_ORDER["PASSIVE"])
-    if min_tier and value < PROFESSIONAL_TIER_ORDER.get(min_tier, 0):
-        return False
-    if max_tier and value > PROFESSIONAL_TIER_ORDER.get(max_tier, max(PROFESSIONAL_TIER_ORDER.values())):
-        if tier == "LAB_EXP" and allow_lab:
-            return True
-        if tier == "AUTO_EXP" and allow_auto:
-            return True
-        return False
-    return True
 
 # This server must be running on the device connected to the vehicle (e.g., Raspberry Pi/Laptop)
 # Run with: python3 server.py
@@ -607,7 +590,7 @@ def _extract_result_evidence(item: dict) -> str:
         value = str(item.get(key) or "").strip()
         if value:
             return value
-    return "No evidence recorded."
+    return ""
 
 
 def _normalize_manual_execution_items(session: dict) -> list[dict]:
@@ -616,18 +599,41 @@ def _normalize_manual_execution_items(session: dict) -> list[dict]:
         item = raw_item if isinstance(raw_item, dict) else {}
         poc_name = _extract_result_identifier(item, index)
         verification_status = str(item.get("verificationStatus") or item.get("verification_status") or '').strip()
-        vulnerable = item.get("vulnerable") is True and verification_status in {
+        confirmed_vulnerable = item.get("vulnerable") is True and verification_status in {
             'auto_confirmed_vulnerable',
             'manual_confirmed_vulnerable',
         }
+        confirmed_not_vulnerable = item.get("vulnerable") is False and verification_status in {
+            'auto_confirmed_not_vulnerable',
+            'manual_confirmed_not_vulnerable',
+        }
         evidence = _extract_result_evidence(item)
+        error = str(item.get("error") or "").strip()
+        if error:
+            status = "execution_error"
+            vulnerable = None
+        elif confirmed_vulnerable and evidence:
+            status = "vulnerable"
+            vulnerable = True
+        elif confirmed_not_vulnerable and evidence:
+            status = "completed"
+            vulnerable = False
+        elif verification_status in {'inconclusive', 'manual_inconclusive', 'manual_needs_retest', 'pending_manual_review'}:
+            status = "inconclusive" if verification_status != 'pending_manual_review' else 'pending_manual_review'
+            vulnerable = None
+        elif verification_status in {'auto_confirmed_vulnerable', 'manual_confirmed_vulnerable', 'auto_confirmed_not_vulnerable', 'manual_confirmed_not_vulnerable', 'invalid_result'} and not evidence:
+            status = "invalid_result"
+            vulnerable = None
+        else:
+            status = "inconclusive"
+            vulnerable = None
         execution_items.append({
             "step": index,
             "poc_name": poc_name,
-            "status": "vulnerable" if vulnerable else "completed",
+            "status": status,
             "vulnerable": vulnerable,
-            "evidence": evidence if vulnerable else "",
-            "error": "" if vulnerable else str(item.get("error") or "").strip(),
+            "evidence": evidence,
+            "error": error,
             "details": evidence,
             "severity": str(item.get("severity") or "UNKNOWN").strip() or "UNKNOWN",
             "verification_status": verification_status or 'unconfirmed',
@@ -2584,6 +2590,42 @@ def get_poc_registry(current_user):
         logger.error(f"Failed to build poc registry: {exc}")
         return jsonify({"message": str(exc)}), 500
 
+@app.route('/api/v1/protocol-corpus', methods=['POST'])
+@token_required
+def create_protocol_corpus(current_user):
+    """Validate and persist an immutable protocol session corpus."""
+    data = request.get_json(silent=True) or {}
+    target = data.get('target') or {}
+    target_ip = str(target.get('ip') or target.get('target_ip') or data.get('target_ip') or '').strip()
+    if target_ip:
+        pinned, pin_reason = _pin_authorized_target(target_ip)
+        if not pinned:
+            return _api_error('TARGET_OUT_OF_SCOPE', '语料目标不在授权范围内。', 403, {'reason': pin_reason})
+        target = {**target, 'ip': pinned, 'target_ip': pinned}
+    try:
+        from protocol_research.corpus_store import default_corpus_store
+        store = default_corpus_store()
+        doc = store.save({**data, 'target': target}, user_id=current_user.id)
+        summary = store.summary(doc.corpus_id)
+        return jsonify({'corpus_id': doc.corpus_id, 'summary': summary}), 201
+    except Exception as exc:
+        logger.warning('protocol corpus save failed: %s', exc)
+        return _api_error('CORPUS_INVALID', str(exc), 400)
+
+
+@app.route('/api/v1/protocol-corpus/<corpus_id>', methods=['GET'])
+@token_required
+def get_protocol_corpus_summary(current_user, corpus_id):
+    try:
+        from protocol_research.corpus_store import default_corpus_store
+        store = default_corpus_store()
+        return jsonify(store.summary(corpus_id))
+    except KeyError:
+        return _api_error('CORPUS_NOT_FOUND', '语料不存在。', 404)
+    except Exception as exc:
+        return _api_error('CORPUS_READ_FAILED', str(exc), 500)
+
+
 @app.route('/api/v1/fingerprint', methods=['POST'])
 @token_required
 def fingerprint_os(current_user):
@@ -2704,15 +2746,7 @@ def _execute_poc_for_user(
             if derived_token:
                 params = dict(params)
                 params["approval_token"] = derived_token
-        if not _tier_allowed_by_policy(professional_policy.get("validation_tier"), params):
-            return {
-                "success": False,
-                "error": "PoC validation tier is blocked by the current scan policy.",
-                "requires_policy_override": True,
-                "trace_id": trace_id,
-                "security_profile": security_profile,
-                "professional_policy": professional_policy,
-            }, 403
+                params["allow_disruptive"] = True
         requires_approval = professional_policy["requires_disruptive_approval"]
 
         # 破坏性执行必须持有服务端签发的有效审批令牌；客户端 allow_disruptive 标志不再单独放行。
@@ -2914,15 +2948,6 @@ def run_poc_stream(current_user):
     current_user_for_stream = current_user  # resolved by @token_required decorator
     security_profile = _extract_poc_security_profile(poc_path)
     professional_policy = _professional_policy_for_poc(poc_path, poc_filename, security_profile, params)
-    if not _tier_allowed_by_policy(professional_policy.get("validation_tier"), params):
-        return jsonify({
-            "success": False,
-            "error": "PoC validation tier is blocked by the current scan policy.",
-            "requires_policy_override": True,
-            "trace_id": trace_id,
-            "security_profile": security_profile,
-            "professional_policy": professional_policy,
-        }), 403
     _stream_target = resolve_target_label(params)
     batch_scope = {}
     batch_reason = ""
@@ -3146,6 +3171,11 @@ def poc_manual_verdict(current_user):
     poc_filename = str(data.get("poc_id") or data.get("poc_filename") or "").strip()
     operator_note = str(data.get("operator_note") or "").strip()
     evidence_file = str(data.get("evidence_file") or "").strip()
+    if verdict in {"confirmed_vulnerable", "confirmed_not_vulnerable"} and not (operator_note or evidence_file):
+        return jsonify({
+            "success": False,
+            "error": "A confirmed manual verdict requires an observation note or evidence file.",
+        }), 400
 
     vulnerable = None
     verification_status = f"manual_{verdict}"
@@ -3164,6 +3194,8 @@ def poc_manual_verdict(current_user):
         "vulnerable": vulnerable,
         "requires_human_review": True,
         "verification_status": verification_status,
+        "evidence": " | ".join(part for part in (operator_note, evidence_file) if part),
+        "evidence_contract_valid": bool(operator_note or evidence_file),
         "manual_review": {
             "state": "completed",
             "verdict": verdict,
@@ -3231,6 +3263,17 @@ def poc_manual_verdict_batch(current_user):
             })
             continue
 
+        operator_note = str(payload.get("operator_note") or "").strip()
+        evidence_file = str(payload.get("evidence_file") or "").strip()
+        if verdict in {"confirmed_vulnerable", "confirmed_not_vulnerable"} and not (operator_note or evidence_file):
+            results.append({
+                "success": False,
+                "trace_id": str(payload.get("trace_id") or ""),
+                "poc_id": str(payload.get("poc_id") or payload.get("poc_filename") or ""),
+                "error": "A confirmed manual verdict requires an observation note or evidence file.",
+            })
+            continue
+
         vulnerable = None
         verification_status = f"manual_{verdict}"
         if verdict == "confirmed_vulnerable":
@@ -3248,11 +3291,13 @@ def poc_manual_verdict_batch(current_user):
             "vulnerable": vulnerable,
             "requires_human_review": True,
             "verification_status": verification_status,
+            "evidence": " | ".join(part for part in (operator_note, evidence_file) if part),
+            "evidence_contract_valid": bool(operator_note or evidence_file),
             "manual_review": {
                 "state": "completed",
                 "verdict": verdict,
-                "operator_note": str(payload.get("operator_note") or ""),
-                "evidence_file": str(payload.get("evidence_file") or ""),
+                "operator_note": operator_note,
+                "evidence_file": evidence_file,
                 "reviewed_at": _get_utc_now().strftime('%Y-%m-%dT%H:%M:%SZ'),
             },
         })
@@ -3285,10 +3330,6 @@ def scan_approval_policy(current_user):
     data = request.json or {}
     policy = {
         "session_id": str(data.get("session_id") or "manual"),
-        "min_tier": str(data.get("min_tier") or "RECON").upper(),
-        "max_tier": str(data.get("max_tier") or "ACTIVE_PROBE").upper(),
-        "allow_lab_exp": bool(data.get("allow_lab_exp")),
-        "allow_auto_exp": bool(data.get("allow_auto_exp")),
         "allow_disruptive": bool(data.get("allow_disruptive")),
         "operator_confirmed_at": _get_utc_now().strftime('%Y-%m-%dT%H:%M:%SZ'),
     }
@@ -4004,6 +4045,15 @@ def agent_scan(current_user):
         data.get("risk_ceiling") or data.get("riskCeiling") or default_risk_ceiling(execution_mode)
     )
     lab_policy = str(data.get("lab_policy") or data.get("labPolicy") or "").strip().lower() in ("true", "1", "yes")
+    protocol_corpus_refs_raw = data.get("protocol_corpus_refs") or data.get("protocolCorpusRefs") or {}
+    protocol_corpus_refs: dict[str, str] = {}
+    if isinstance(protocol_corpus_refs_raw, dict):
+        protocol_corpus_refs = {
+            str(port): str(corpus_id).strip()
+            for port, corpus_id in protocol_corpus_refs_raw.items()
+            if str(corpus_id).strip()
+        }
+    protocol_corpus_id = str(data.get("protocol_corpus_id") or data.get("protocolCorpusId") or "").strip()
     allow_domains_raw = data.get("allow_domains") or data.get("allowDomains") or []
     if isinstance(allow_domains_raw, str):
         allow_domains = [item.strip() for item in allow_domains_raw.split(",") if item.strip()]
@@ -4070,15 +4120,20 @@ def agent_scan(current_user):
                     logger.info("Replaying committed Agent phase response request_id=%s", phase_request_id)
                     return jsonify(cached_response)
         batch_approval_token = str(data.get("batch_approval_token") or data.get("batchApprovalToken") or "").strip()
-        if not batch_approval_token and destructive_policy == "ALLOW_ALL" and execution_mode != "SAFE_ONLY":
+        session_exp_unlocked = str(
+            data.get("session_exp_unlocked") or data.get("sessionExpUnlocked") or ""
+        ).strip().lower() in ("true", "1", "yes")
+        operator_batch_authorized = destructive_policy == "ALLOW_ALL" or session_exp_unlocked
+        if not batch_approval_token and execution_mode != "SAFE_ONLY" and operator_batch_authorized:
             batch_approval_token = _issue_batch_approval_token(
                 target=target_label,
                 session_id=session_scope_id,
-                risk_ceiling=risk_ceiling,
+                risk_ceiling="BRICK" if operator_batch_authorized else risk_ceiling,
                 allowed_domains=allow_domains,
                 execution_mode=execution_mode,
-                lab_policy=lab_policy,
+                lab_policy=lab_policy or operator_batch_authorized,
             )
+            session_exp_unlocked = True
         from agent_orchestrator import AgentOrchestrator
 
         def _inline_run_poc(poc_name, poc_params, poc_session_id):
@@ -4118,12 +4173,15 @@ def agent_scan(current_user):
             enable_reflection_reentry=enable_reflection_reentry,
             enable_weaponize=enable_weaponize,
             batch_approval_token=batch_approval_token,
+            session_exp_unlocked=session_exp_unlocked or bool(batch_approval_token),
             approval_tokens=data.get("approval_tokens") if isinstance(data.get("approval_tokens"), dict) else {},
             approval_only_pocs=data.get("approval_only_pocs") if isinstance(data.get("approval_only_pocs"), list) else [],
             poc_session_id=session_scope_id,
             cancel_check=lambda: _is_scan_cancelled(session_scope_id),
             allow_domains=allow_domains,
             lab_policy=lab_policy,
+            protocol_corpus_refs=protocol_corpus_refs,
+            protocol_corpus_id=protocol_corpus_id,
         )
 
         if resume_from:
@@ -4400,7 +4458,7 @@ def approve_v3_session_action(current_user, session_id):
         target,
         user_id=current_user.id,
         session_id=session.id,
-        risk_ceiling=str(data.get('risk_ceiling') or 'RESTART'),
+        risk_ceiling=str(data.get('risk_ceiling') or 'BRICK'),
         allowed_domains=data.get('allowed_domains') if isinstance(data.get('allowed_domains'), list) else [],
     )
     if session.status == 'running':
@@ -4422,12 +4480,16 @@ def review_v3_session_finding(current_user, session_id):
     verdict = str(data.get('verdict') or '')
     if verdict not in {'confirmed_vulnerable', 'confirmed_not_vulnerable', 'inconclusive', 'needs_retest'}:
         return _api_error('INVALID_REVIEW_VERDICT', '人工判定值无效。', 400)
+    operator_note = str(data.get('operator_note') or '').strip()
+    evidence_file = str(data.get('evidence_file') or '').strip()
+    if verdict in {'confirmed_vulnerable', 'confirmed_not_vulnerable'} and not (operator_note or evidence_file):
+        return _api_error('REVIEW_EVIDENCE_REQUIRED', '确认性人工结论必须填写观察说明或证据文件。', 400)
     _append_session_event(session, 'review.completed', {
         'trace_id': data.get('trace_id'),
         'poc_id': data.get('poc_id'),
         'verdict': verdict,
-        'operator_note': data.get('operator_note'),
-        'evidence_file': data.get('evidence_file'),
+        'operator_note': operator_note,
+        'evidence_file': evidence_file,
     })
     if session.status == 'awaiting_review':
         _transition_session(session, 'running', 'run.resumed')

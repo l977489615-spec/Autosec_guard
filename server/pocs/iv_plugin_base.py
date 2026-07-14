@@ -14,7 +14,6 @@ import json
 import logging
 import sys
 import socket
-import time
 
 
 
@@ -125,14 +124,12 @@ class IVIVulnerabilityPlugin(metaclass=abc.ABCMeta):
             self.logger.info("前置条件满足。开始执行漏洞验证...")
             exploit_result = self.exploit()
             self._merge_exploit_result(exploit_result)
-            self._append_generic_exp_harness_evidence()
             self.logger.info("漏洞验证流程结束。")
 
         except RuntimeError as re:
             print(f"[-][错误] 前置条件未满足: {re}。终止任务。")
             self.logger.warning(f"前置条件未满足: {re}")
             self.results["evidence"] = f"Prerequisite failure: {re}"
-            self._append_generic_exp_harness_evidence()
             return # Exit without printing final verdict or print verdict as safe/error? Usually stop.
         except Exception as e:
             self.logger.error(f"脚本执行期间发生异常: {str(e)}")
@@ -159,83 +156,6 @@ class IVIVulnerabilityPlugin(metaclass=abc.ABCMeta):
             evidence = exploit_result.get("details")
         if evidence:
             self.results["evidence"] = str(evidence)
-
-    def _append_generic_exp_harness_evidence(self):
-        """
-        Every plugin inherits an operator-supplied EXP harness. Script-specific
-        logic remains the primary signal; this records the common authorization,
-        payload, and observation contract for legacy PoCs that predate
-        active_validation_core.
-        """
-        params = self.params or {}
-        payload = (
-            params.get("generic_exp_payload_hex")
-            or params.get("generic_exp_payload_text")
-            or params.get("active_payload_hex")
-            or params.get("active_payload_text")
-        )
-        allow = params.get("allow_disruptive") in (True, "true", "True", "1", 1)
-        harness = {
-            "kind": "generic_exp_harness",
-            "supported": True,
-            "payload_parameters": [
-                "generic_exp_payload_hex",
-                "generic_exp_payload_text",
-                "active_payload_hex",
-                "active_payload_text",
-            ],
-            "payload_available": bool(payload),
-            "payload_authorization_required": True,
-            "allow_disruptive": bool(allow),
-            "requires_manual_review": True,
-            "exp_capability": "supported_harness",
-            "not_native_exp": True,
-            "harness_tier": "LAB_EXP",
-            "validation_tier_achieved": "PASSIVE",
-            "exploit_confirmed": None,
-            "protocol": self.meta_protocol,
-            "destructive_level": self.meta_destructive_level,
-            "operator_action": self._generic_exp_operator_action(payload),
-            "observable_results": [
-                "target-side crash or restart",
-                "connection reset or service state change",
-                "unauthorized access or sensitive data disclosure",
-                "privilege change or physical/bench state transition",
-            ],
-            "recorded_at": round(time.time(), 3),
-        }
-        if allow and payload:
-            harness["phenomenon"] = "operator authorized payload is present; execute only on isolated lab target and record observable result"
-        else:
-            harness["phenomenon"] = "operator-supplied EXP payload is not executed without allow_disruptive=true"
-
-        evidence = self._coerce_evidence_dict(self.results.get("evidence"))
-        existing = evidence.get("exp_harness")
-        if isinstance(existing, list):
-            existing.append(harness)
-        elif existing:
-            evidence["exp_harness"] = [existing, harness]
-        else:
-            evidence["exp_harness"] = [harness]
-        self.results["evidence"] = json.dumps(evidence, ensure_ascii=False)
-
-    def _generic_exp_operator_action(self, payload):
-        if payload:
-            return "Run the supplied payload only in an authorized lab and attach target-side logs or physical observations."
-        return "Provide generic_exp_payload_hex/text or active_payload_hex/text plus allow_disruptive=true for lab EXP execution."
-
-    def _coerce_evidence_dict(self, value):
-        if isinstance(value, dict):
-            return dict(value)
-        if not value:
-            return {}
-        try:
-            parsed = json.loads(str(value))
-            if isinstance(parsed, dict):
-                return parsed
-        except Exception:
-            pass
-        return {"raw_evidence": str(value)}
 
     def _print_final_verdict(self):
         poc_display_name = self.params.get('poc_id', self.__class__.__name__)

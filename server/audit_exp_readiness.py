@@ -41,9 +41,7 @@ PROFESSIONAL_TIER_ORDER = {
     "PASSIVE": 1,
     "AUTHENTICATED_CONFIG": 2,
     "ACTIVE_PROBE": 3,
-    "REMOTE_ACTIVE": 4,
-    "LAB_EXP": 5,
-    "AUTO_EXP": 6,
+    "ACTIVE_VALIDATION": 4,
 }
 
 ATTACK_INPUT_RE = re.compile(
@@ -121,9 +119,8 @@ SAFETY_GATE_RE = re.compile(
     r"(Restart|DataLoss|Brick|Disruptive|Probe)['\"]|requires_manual_review|manual_confirmation",
     re.IGNORECASE,
 )
-LAB_HARNESS_RE = re.compile(
-    r"exp_profile|active_payload_param|operator_payload_param|operator_supplied_lab_payload|"
-    r"operator_observation|build_local_sample_probe|run_local_target",
+ACTIVE_HARNESS_RE = re.compile(
+    r"active_payload_(?:text|hex)|build_local_sample_probe|run_local_target",
     re.IGNORECASE,
 )
 STATIC_AUDIT_RE = re.compile(
@@ -213,7 +210,7 @@ def _grade(item: ExpFinding) -> str:
 def _is_static_audit(path: Path, source: str) -> bool:
     if not STATIC_AUDIT_RE.search(path.name):
         return False
-    return not bool(EXP_EXECUTION_RE.search(source) or LAB_HARNESS_RE.search(source))
+    return not bool(EXP_EXECUTION_RE.search(source) or ACTIVE_HARNESS_RE.search(source))
 
 
 def _professional_classification(
@@ -224,7 +221,6 @@ def _professional_classification(
     is_recon: bool,
     framework_payload: bool,
     framework_harness: bool,
-    inherited_harness: bool,
     static_audit: bool,
 ) -> dict[str, Any]:
     name = path.name
@@ -247,8 +243,6 @@ def _professional_classification(
         evidence.append("crash_observed")
     if re.search(r"requires_manual_review|operator_action|manual_confirmation|operator_observation", source, re.I):
         evidence.append("manual_confirmation")
-    if re.search(r"active_payload_param|operator_payload_param|lab_payload_param|generic_exp_payload", source, re.I):
-        evidence.append("operator_payload")
     if not evidence:
         evidence.append("metadata")
 
@@ -268,7 +262,6 @@ def _professional_classification(
         re.I,
     ))
     has_local_lab_probe = bool(re.search(r"build_local_sample_probe|run_local_target|sample_path|_write_.*sample", source, re.I))
-    has_operator_payload = bool(re.search(r"active_payload_param|operator_payload_param|lab_payload_param|operator_observation", source, re.I))
     name_lower = name.lower()
     config_or_version_audit = bool(
         re.search(
@@ -287,39 +280,36 @@ def _professional_classification(
         confidence = 50
         safety = "safe"
         capability = "none"
-    elif config_or_version_audit and not (framework_payload or framework_harness or has_local_lab_probe or has_operator_payload):
+    elif config_or_version_audit and not (framework_payload or framework_harness or has_local_lab_probe):
         tier = "AUTHENTICATED_CONFIG" if "authenticated_config" in evidence else "PASSIVE"
         confidence = 75 if tier == "AUTHENTICATED_CONFIG" else 60
         safety = "safe"
-        capability = "supported_harness" if inherited_harness else "none"
-    elif framework_payload or has_local_lab_probe or has_operator_payload or framework_harness:
-        tier = "LAB_EXP"
+        capability = "none"
+    elif framework_payload or has_local_lab_probe or framework_harness:
+        tier = "ACTIVE_VALIDATION"
         confidence = 90 if has_local_lab_probe else 85
-        safety = "destructive_lab_only" if is_disruptive or destructive_level in {"disruptive", "restart", "dataloss", "brick"} else "intrusive"
-        capability = "operator_supplied" if has_operator_payload else "supported_harness"
+        safety = "approval_required" if is_disruptive or destructive_level in {"disruptive", "restart", "dataloss", "brick"} else "intrusive"
+        capability = "supported_harness"
     elif native_execution and native_observation and not run_active_wrapper and not config_or_version_audit and ("crafted_payload" in evidence or "crash_observed" in evidence):
-        tier = "AUTO_EXP" if is_disruptive or destructive_level in {"disruptive", "restart", "dataloss", "brick"} else "REMOTE_ACTIVE"
-        confidence = 100 if tier == "AUTO_EXP" else 95
-        safety = "destructive_lab_only" if tier == "AUTO_EXP" else "intrusive"
+        tier = "ACTIVE_VALIDATION"
+        confidence = 100 if is_disruptive or destructive_level in {"disruptive", "restart", "dataloss", "brick"} else 95
+        safety = "approval_required" if is_disruptive or destructive_level in {"disruptive", "restart", "dataloss", "brick"} else "intrusive"
         capability = "native_verified"
     elif "run_active_validation(" in source or protocol in {"http", "https", "http2", "redis", "airplay", "rtsp", "tcp"}:
         tier = "ACTIVE_PROBE"
         confidence = 70
         safety = "low_impact"
-        capability = "supported_harness" if inherited_harness else "none"
+        capability = "none"
     elif static_audit or "audit" in name.lower() or category in {"application", "advanced", "network", "wireless", "canbus"}:
         tier = "AUTHENTICATED_CONFIG" if "authenticated_config" in evidence or any(p in profiles for p in ("usb_adb", "local_artifact")) else "PASSIVE"
         confidence = 75 if tier == "AUTHENTICATED_CONFIG" else 60
         safety = "safe"
-        capability = "supported_harness" if inherited_harness else "none"
+        capability = "none"
     else:
         tier = "PASSIVE"
         confidence = 50
         safety = "safe"
-        capability = "supported_harness" if inherited_harness else "none"
-
-    if tier in {"PASSIVE", "AUTHENTICATED_CONFIG", "ACTIVE_PROBE"} and inherited_harness:
-        capability = "supported_harness"
+        capability = "none"
 
     not_native = capability != "native_verified"
     professional_grade = f"{tier}:{capability}"
@@ -345,14 +335,8 @@ def _market_baseline_mapping(professional: dict[str, Any]) -> tuple[str, str]:
         return ("Tenable/Greenbone local security checks", "authenticated-but-not-triggering")
     if tier == "ACTIVE_PROBE":
         return ("Nmap safe/intrusive NSE or Nuclei request-only check", "probe-without-proof-of-trigger")
-    if tier == "REMOTE_ACTIVE":
+    if tier == "ACTIVE_VALIDATION":
         return ("Nuclei targeted-request with explicit matcher", "good-remote-check")
-    if tier == "LAB_EXP" and capability == "supported_harness":
-        return ("Greenbone ultimate / lab-only intrusive validation", "operator-or-lab-required")
-    if tier == "LAB_EXP":
-        return ("Lab exploit harness", "operator-supplied-trigger")
-    if tier == "AUTO_EXP":
-        return ("Auto-executing intrusive exploit check", "highest-risk")
     return ("Unclassified", "review-needed")
 
 
@@ -386,7 +370,7 @@ def _scanner_grade(
             "os.walk(",
         )
     )
-    protocol_check = validation_tier in {"ACTIVE_PROBE", "REMOTE_ACTIVE", "LAB_EXP", "AUTO_EXP"}
+    protocol_check = validation_tier in {"ACTIVE_PROBE", "ACTIVE_VALIDATION"}
     authenticated_local = validation_tier in {"AUTHENTICATED_CONFIG", "PASSIVE"} and local_check
 
     if active_wrapper and execution_path:
@@ -504,13 +488,13 @@ def _active_grade(
         )
     )
     native_remote = (
-        tier in {"REMOTE_ACTIVE", "AUTO_EXP"}
+        tier == "ACTIVE_VALIDATION"
         and exp_capability == "native_verified"
         and execution_path
         and observable_result
     )
-    lab_harness = (
-        tier == "LAB_EXP"
+    active_harness = (
+        tier == "ACTIVE_VALIDATION"
         and execution_path
         and observable_result
         and (
@@ -549,16 +533,16 @@ def _active_grade(
         return True, "native-socket-probe"
     if fieldbus_or_local_stimulus:
         return True, "fieldbus-or-local-stimulus"
-    if lab_harness:
-        return True, "lab-trigger-capable"
+    if active_harness:
+        return True, "active-trigger-capable"
     if protocol_probe:
         return True, "protocol-active-probe"
     if direct_payload:
         return True, "direct-payload-with-gate"
     if tier in {"AUTHENTICATED_CONFIG", "PASSIVE"}:
         return False, "config-or-passive-only"
-    if tier == "LAB_EXP":
-        return False, "lab-metadata-without-trigger-path"
+    if tier == "ACTIVE_VALIDATION":
+        return False, "active-metadata-without-trigger-path"
     if tier == "ACTIVE_PROBE":
         return False, "request-wrapper-without-real-observation"
     if execution_safety in {"safe", "low_impact"}:
@@ -603,7 +587,7 @@ def _product_grade(
     ):
         return False, "external-command-harness"
     tier = (validation_tier or "").upper()
-    if tier in {"ACTIVE_PROBE", "REMOTE_ACTIVE", "LAB_EXP", "AUTO_EXP"}:
+    if tier in {"ACTIVE_PROBE", "ACTIVE_VALIDATION"}:
         return True, f"{tier.lower()}-product-check"
     if active_grade in {
         "authenticated-local-check",
@@ -612,7 +596,7 @@ def _product_grade(
         "framework-request-probe",
     }:
         return True, "validated-defensive-check"
-    if execution_safety in {"safe", "low_impact", "intrusive", "destructive_lab_only"}:
+    if execution_safety in {"safe", "low_impact", "intrusive", "approval_required"}:
         return True, "controlled-product-check"
     return False, "review-needed"
 
@@ -631,15 +615,10 @@ def audit_file(path: Path) -> ExpFinding | None:
     framework_payload = "run_active_validation(" in source and bool(
         re.search(r"active_payload_(?:text|hex)|build_local_sample_probe|run_local_target|sample_path|_write_.*sample", source)
     )
-    framework_harness = "run_active_validation(" in source and bool(LAB_HARNESS_RE.search(source))
-    inherited_harness = bool(
-        re.search(r"class\s+\w+\([^)]*IVIVulnerabilityPlugin[^)]*\)", source)
-        and re.search(r"def\s+exploit\s*\(", source)
-        and not is_recon
-    )
-    attack_input = (bool(ATTACK_INPUT_RE.search(source)) or framework_payload or framework_harness or inherited_harness) and not static_audit
-    execution_path = (bool(EXP_EXECUTION_RE.search(source)) or framework_payload or framework_harness or inherited_harness) and not static_audit
-    observable_result = (bool(OBSERVATION_RE.search(source)) or framework_payload or framework_harness or inherited_harness) and not static_audit
+    framework_harness = "run_active_validation(" in source and bool(ACTIVE_HARNESS_RE.search(source))
+    attack_input = (bool(ATTACK_INPUT_RE.search(source)) or framework_payload or framework_harness) and not static_audit
+    execution_path = (bool(EXP_EXECUTION_RE.search(source)) or framework_payload or framework_harness) and not static_audit
+    observable_result = (bool(OBSERVATION_RE.search(source)) or framework_payload or framework_harness) and not static_audit
     professional = _professional_classification(
         path,
         source,
@@ -647,7 +626,6 @@ def audit_file(path: Path) -> ExpFinding | None:
         is_recon=is_recon,
         framework_payload=framework_payload,
         framework_harness=framework_harness,
-        inherited_harness=inherited_harness,
         static_audit=static_audit,
     )
     finding = ExpFinding(
@@ -660,7 +638,7 @@ def audit_file(path: Path) -> ExpFinding | None:
         attack_input=attack_input,
         execution_path=execution_path,
         observable_result=observable_result,
-        safety_gate=bool(SAFETY_GATE_RE.search(source) or inherited_harness),
+        safety_gate=bool(SAFETY_GATE_RE.search(source)),
         is_recon=is_recon,
         missing=[],
         validation_tier=professional["validation_tier"],

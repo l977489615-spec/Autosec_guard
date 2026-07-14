@@ -71,6 +71,30 @@ class PocManualReviewPolicyTests(unittest.TestCase):
         self.assertFalse(result["requires_human_review"])
         self.assertEqual(result["verification_status"], "auto_confirmed_vulnerable")
 
+    def test_negative_verdict_keeps_evidence(self):
+        poc_file, profile = self._profile("network/03_CWE_200_SSH_Service_Active_Validation.py")
+        result = apply_manual_review_state(
+            {"success": True, "vulnerable": False, "evidence": "SSH port closed with TCP RST"},
+            poc_filename=poc_file,
+            security_profile=profile,
+            plugin_results={},
+        )
+        self.assertEqual(result["verification_status"], "auto_confirmed_not_vulnerable")
+        self.assertEqual(result["evidence"], "SSH port closed with TCP RST")
+        self.assertTrue(result["evidence_contract_valid"])
+
+    def test_empty_evidence_cannot_produce_confirmed_verdict(self):
+        poc_file, profile = self._profile("network/03_CWE_200_SSH_Service_Active_Validation.py")
+        result = apply_manual_review_state(
+            {"success": True, "vulnerable": False, "evidence": ""},
+            poc_filename=poc_file,
+            security_profile=profile,
+            plugin_results={},
+        )
+        self.assertEqual(result["verification_status"], "invalid_result")
+        self.assertIsNone(result["vulnerable"])
+        self.assertFalse(result["evidence_contract_valid"])
+
 
 if __name__ == "__main__":
     unittest.main()

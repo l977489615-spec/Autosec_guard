@@ -66,7 +66,7 @@ def _ffmpeg_probe(plugin, vuln):
         "ok": True,
         "sample_path": sample,
         "payload_bytes": os.path.getsize(sample),
-        "sample_source": "operator_supplied" if supplied_sample else "generated_stimulus",
+        "sample_source": "provided_sample" if supplied_sample else "generated_stimulus",
         "phenomenon": "malformed MagicYUV/AVI sample prepared for decoder crash observation",
         "requires_manual_review": True,
     }

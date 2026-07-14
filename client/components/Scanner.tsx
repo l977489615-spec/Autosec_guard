@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { flushSync, createPortal } from 'react-dom';
-import { ScanSession, ScanLog, ScanResult, Severity, POC, Category, ConnectionParams, ValidationTier } from '../types';
+import { ScanSession, ScanLog, ScanResult, Severity, POC, Category, ConnectionParams } from '../types';
 import ScanLogs from './ScanLogs';
 import { generateSecurityReport } from '../services/api';
 import { approveV3SessionAction, checkBackendHealth, createV3Session, executePocScript, getBackendUrl, fingerprintOS, runPocPlugin, saveScanSession, startV3SessionRun, submitPocManualVerdict, recordScanApprovalPolicy, updateV3SessionRun } from '../services/api';
@@ -73,25 +73,6 @@ type DisruptiveApprovalState = {
 type DisruptiveApprovalDecision = 'approved' | 'approved_all' | 'skipped' | 'timeout';
 
 type ManualVerdict = 'confirmed_vulnerable' | 'confirmed_not_vulnerable' | 'inconclusive' | 'needs_retest';
-
-const TIER_ORDER: Record<ValidationTier, number> = {
-  RECON: 0,
-  PASSIVE: 1,
-  AUTHENTICATED_CONFIG: 2,
-  ACTIVE_PROBE: 3,
-  REMOTE_ACTIVE: 4,
-  LAB_EXP: 5,
-  AUTO_EXP: 6,
-};
-
-const DEFAULT_BATCH_MAX_TIER: ValidationTier = 'ACTIVE_PROBE';
-
-const isTierAllowedForBatch = (poc: POC, allowLabExp: boolean, allowAutoExp: boolean) => {
-  const tier = (poc.validationTier || 'PASSIVE') as ValidationTier;
-  if (tier === 'LAB_EXP') return allowLabExp;
-  if (tier === 'AUTO_EXP') return allowAutoExp;
-  return (TIER_ORDER[tier] ?? TIER_ORDER.PASSIVE) <= TIER_ORDER[DEFAULT_BATCH_MAX_TIER];
-};
 
 type ManualVerdictState = {
   poc: POC;
@@ -172,8 +153,6 @@ const Scanner: React.FC<ScannerProps> = ({
   const [filterCategory, setFilterCategory] = useState<string>('All');
   const [manualSearch, setManualSearch] = useState('');
   const [disruptiveApproval, setDisruptiveApproval] = useState<DisruptiveApprovalState>(null);
-  const [allowLabExpBatch, setAllowLabExpBatch] = useState(false);
-  const [allowAutoExpBatch, setAllowAutoExpBatch] = useState(false);
   const autoApproveDisruptiveForRunRef = React.useRef(false);
   const autoManualVerdictForRunRef = React.useRef<{
     verdict: ManualVerdict;
@@ -403,12 +382,7 @@ const Scanner: React.FC<ScannerProps> = ({
         frequency: session.connection.frequency,
         usb_adb_serial: session.connection.usbAdbSerial,
         usb_mount_point: session.connection.usbMountPoint,
-      }, {
-        min_tier: 'RECON',
-        max_tier: DEFAULT_BATCH_MAX_TIER,
-        allow_lab_exp: allowLabExpBatch,
-        allow_auto_exp: allowAutoExpBatch,
-      }, token);
+      }, {}, token);
       newSessionId = durableSession.id;
       batchSessionIdRef.current = newSessionId;
       await startV3SessionRun(newSessionId, token);
@@ -431,8 +405,7 @@ const Scanner: React.FC<ScannerProps> = ({
     autoManualVerdictForRunRef.current = null;
     const refreshedCatalog = await fetchPocs();
     const catalogForRun = refreshedCatalog.length ? refreshedCatalog : pocCatalogRef.current;
-    const activePocs = catalogForRun.filter((poc) => isTierAllowedForBatch(poc, allowLabExpBatch, allowAutoExpBatch));
-    const policySkippedCount = catalogForRun.length - activePocs.length;
+    const activePocs = catalogForRun;
     const runtimeMetadata = pocRuntimeMetadataRef.current;
 
     if (!activePocs.length) {
@@ -443,19 +416,12 @@ const Scanner: React.FC<ScannerProps> = ({
     }
 
     addLog(`Starting batch execution of ${activePocs.length} modules...`, 'info');
-    addLog(`Policy: max tier ${DEFAULT_BATCH_MAX_TIER}, LAB_EXP=${allowLabExpBatch ? 'allowed' : 'blocked'}, AUTO_EXP=${allowAutoExpBatch ? 'allowed' : 'blocked'}`, 'info');
-    if (policySkippedCount > 0) {
-      addLog(`Policy skipped ${policySkippedCount} LAB/AUTO exploit modules. Enable explicit lab/auto authorization to include them.`, 'warning');
-    }
+    addLog('Policy: regular PoCs execute directly; disruptive PoCs require operator approval.', 'info');
     addLog(`Engine: ${engineUrl} | Target: ${session.targetName}`, 'info');
     recordScanApprovalPolicy({
       session_id: newSessionId,
       target_ip: session.connection.ip,
-      min_tier: 'RECON',
-      max_tier: DEFAULT_BATCH_MAX_TIER,
-      allow_lab_exp: allowLabExpBatch,
-      allow_auto_exp: allowAutoExpBatch,
-      allow_disruptive: allowLabExpBatch || allowAutoExpBatch,
+      allow_disruptive: false,
     }, token, engineUrl).then((res) => {
       if (!res.success) addLog(`Warning: failed to persist scan policy: ${res.error}`, 'warning');
     });
@@ -513,12 +479,7 @@ const Scanner: React.FC<ScannerProps> = ({
       const shouldAllowDisruptive = autoApproveDisruptiveForRunRef.current;
       const executionParams = buildExecutionParams(
         session.connection,
-        {
-          max_tier: DEFAULT_BATCH_MAX_TIER,
-          allow_lab_exp: allowLabExpBatch,
-          allow_auto_exp: allowAutoExpBatch,
-          ...(shouldAllowDisruptive ? { allow_disruptive: true } : {}),
-        },
+        shouldAllowDisruptive ? { allow_disruptive: true } : {},
       );
 
       if (requiresDisruptiveApproval && autoApproveDisruptiveForRunRef.current) {
@@ -695,6 +656,8 @@ const Scanner: React.FC<ScannerProps> = ({
             elapsedSeconds: parseFloat(elapsed),
             requiresHumanReview: Boolean(resolvedResult.requires_human_review),
             verificationStatus: resolvedResult.verification_status,
+            evidenceContractValid: resolvedResult.evidence_contract_valid,
+            contractError: resolvedResult.contract_error,
             manualReview: resolvedResult.manual_review,
           });
           const score = poc.severity === Severity.CRITICAL ? 10 : poc.severity === Severity.HIGH ? 7 : 3;
@@ -710,6 +673,8 @@ const Scanner: React.FC<ScannerProps> = ({
             elapsedSeconds: parseFloat(elapsed),
             requiresHumanReview: Boolean(resolvedResult.requires_human_review),
             verificationStatus: resolvedResult.verification_status,
+            evidenceContractValid: resolvedResult.evidence_contract_valid,
+            contractError: resolvedResult.contract_error,
             manualReview: resolvedResult.manual_review,
           });
         } else {
@@ -723,6 +688,8 @@ const Scanner: React.FC<ScannerProps> = ({
             elapsedSeconds: parseFloat(elapsed),
             requiresHumanReview: Boolean(resolvedResult.requires_human_review),
             verificationStatus: resolvedResult.verification_status,
+            evidenceContractValid: resolvedResult.evidence_contract_valid,
+            contractError: resolvedResult.contract_error,
             manualReview: resolvedResult.manual_review,
           });
         }
@@ -1453,32 +1420,12 @@ const Scanner: React.FC<ScannerProps> = ({
                     <div className="flex items-start gap-2">
                       <ShieldCheck size={14} className="mt-0.5 text-cyber-accent" />
                       <div>
-                        <p className="text-xs text-cyber-300 uppercase font-bold">Professional Scan Policy</p>
+                        <p className="text-xs text-cyber-300 uppercase font-bold">Execution Safety Policy</p>
                         <p className="text-[11px] text-gray-400">
-                          Default batch ceiling: {DEFAULT_BATCH_MAX_TIER}. LAB_EXP / AUTO_EXP require explicit operator authorization.
+                          常规 PoC 直接执行；重启、拒绝服务、数据修改等危险 PoC 在执行前请求人工确认。
                         </p>
                       </div>
                     </div>
-                    <label className="flex items-center justify-between gap-3 text-xs text-gray-300">
-                      <span>Include authorized LAB_EXP modules</span>
-                      <input
-                        type="checkbox"
-                        checked={allowLabExpBatch}
-                        disabled={session.status === 'running'}
-                        onChange={(e) => setAllowLabExpBatch(e.target.checked)}
-                        className="h-4 w-4 accent-cyber-accent"
-                      />
-                    </label>
-                    <label className="flex items-center justify-between gap-3 text-xs text-gray-300">
-                      <span>Include AUTO_EXP modules</span>
-                      <input
-                        type="checkbox"
-                        checked={allowAutoExpBatch}
-                        disabled={session.status === 'running'}
-                        onChange={(e) => setAllowAutoExpBatch(e.target.checked)}
-                        className="h-4 w-4 accent-amber-400"
-                      />
-                    </label>
                   </div>
 
                   {!session.isConnected ? (

@@ -198,14 +198,14 @@ flowchart TD
 | Network | 65 | USB ADB、有线/网络 ADB、SSH、FTP、MQTT、SOME/IP、公开 CVE 主动验证等 | 网络 / USB |
 | CAN Bus | 17 | CAN、UDS、OBD、DoIP、日志重放、诊断访问 | CAN / PCAN / SocketCAN / 网络可达 |
 | Wireless | 108 | Wi-Fi、Bluetooth、KRACK、FragAttacks、QNX 无线面 | Wi-Fi / Bluetooth |
-| Application | 76 | 车机应用、AirPlay、CarPlay、USB、WebView、Manifest、媒体解析与组件库检查 | 网络 / USB / 人工辅助 / 静态制品 |
+| Application | 76 | 车机应用、AirPlay、CarPlay、USB、WebView、Manifest、媒体解析与组件库检查 | 网络 / USB / 本地制品 |
 | Advanced | 43 | OTA、RF、GPS、TPMS、V2X、固件、内核 LPE、Android 系统加固 | SDR / RF / USB / 台架 / ADB |
 
 分层说明：
 
-- `ACTIVE_PROBE`：常规主动探测，默认可批量执行
-- `LAB_EXP` / `AUTO_EXP`：台架级实验 harness，须显式授权
-- 破坏性 PoC 须审批 token，客户端 `allow_disruptive` 不能单独绕过
+- `ACTIVE_PROBE`：发送常规探测请求并分析目标响应
+- `ACTIVE_VALIDATION`：执行 PoC 内置触发逻辑并采集可观察证据
+- 常规 PoC 直接执行；破坏性 PoC 须审批 token，客户端 `allow_disruptive` 不能单独绕过
 
 新增 PoC 时，按类别放入 `server/pocs/<category>/`，然后运行：
 

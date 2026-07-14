@@ -58,7 +58,7 @@ class AgentExecutionPolicyTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual(reason, "lab-policy-required")
 
-    def test_brick_is_never_auto_allowed(self) -> None:
+    def test_brick_blocked_without_operator_approval(self) -> None:
         ok, reason = allow_automatic_escalation(
             execution_mode="full_auto_lab",
             risk_level="BRICK",
@@ -68,6 +68,31 @@ class AgentExecutionPolicyTests(unittest.TestCase):
         )
         self.assertFalse(ok)
         self.assertEqual(reason, "brick-blocked")
+
+    def test_operator_approval_allows_any_risk_level(self) -> None:
+        for level in ("DATALOSS", "BRICK"):
+            ok, reason = allow_automatic_escalation(
+                execution_mode="safe_only",
+                risk_level=level,
+                risk_ceiling="PROBE",
+                preflight_ready=False,
+                lab_policy=False,
+                operator_approved=True,
+            )
+            self.assertTrue(ok, level)
+            self.assertEqual(reason, "operator-approved")
+
+    def test_preflight_skips_lab_policy_when_operator_approved(self) -> None:
+        profile = {"destructive_level": "brick", "protocol": "tcp"}
+        preflight = preflight_profile(
+            profile=profile,
+            params={},
+            domain="network",
+            target_in_scope=True,
+            lab_policy=False,
+            operator_approved=True,
+        )
+        self.assertNotIn("lab_policy_required", preflight["auto_escalation_requirements"])
 
     def test_preflight_requires_params_and_domain(self) -> None:
         profile = {

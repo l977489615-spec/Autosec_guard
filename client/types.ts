@@ -17,9 +17,9 @@ export enum Category {
 
 export type ParamType = 'ip' | 'port' | 'can_interface' | 'bluetooth_mac' | 'url' | 'frequency' | 'baud_rate' | 'target_mac' | 'interface' | 'usb_mount_point' | 'usb_adb_serial' | 'attacker_ip';
 
-export type ValidationTier = 'RECON' | 'PASSIVE' | 'AUTHENTICATED_CONFIG' | 'ACTIVE_PROBE' | 'REMOTE_ACTIVE' | 'LAB_EXP' | 'AUTO_EXP';
-export type ExecutionSafety = 'safe' | 'low_impact' | 'intrusive' | 'destructive_lab_only';
-export type ExpCapability = 'none' | 'supported_harness' | 'operator_supplied' | 'native_verified';
+export type ValidationTier = 'RECON' | 'PASSIVE' | 'AUTHENTICATED_CONFIG' | 'ACTIVE_PROBE' | 'ACTIVE_VALIDATION';
+export type ExecutionSafety = 'safe' | 'low_impact' | 'intrusive' | 'approval_required';
+export type ExpCapability = 'none' | 'supported_harness' | 'native_verified';
 
 export interface POC {
   id: string;
@@ -72,6 +72,8 @@ export interface ScanResult {
   requiresDisruptiveApproval?: boolean;
   requiresPostExecutionReview?: boolean;
   verificationStatus?: string;
+  evidenceContractValid?: boolean;
+  contractError?: string;
   validationTier?: ValidationTier;
   detectionConfidence?: number;
   executionSafety?: ExecutionSafety;

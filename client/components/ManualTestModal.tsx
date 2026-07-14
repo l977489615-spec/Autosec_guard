@@ -117,9 +117,6 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
       }
       if (executionParams.usbMountPoint) executionParams.usb_mount_point = executionParams.usbMountPoint;
       executionParams.allow_disruptive = Boolean(poc.requiresDisruptiveApproval);
-      executionParams.allow_lab_exp = poc.validationTier === 'LAB_EXP';
-      executionParams.allow_auto_exp = poc.validationTier === 'AUTO_EXP';
-
       const durableSession = await createV3Session('manual', {
         ip: executionParams.ip,
         bluetooth_mac: executionParams.bluetooth_mac,
@@ -357,6 +354,7 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
               <div className="mt-3 rounded border border-amber-500/50 bg-cyber-900 p-3 text-xs text-gray-200 space-y-3 shrink-0 max-h-56 overflow-y-auto">
                 <div className="font-bold text-amber-300">人工判定型 PoC</div>
                 <div>{pendingManualResult.manual_review?.prompt || '该 PoC 已完成执行，但需要人工确认目标侧效果。'}</div>
+                <div className="text-amber-300">确认成功或确认失败时，必须填写观察说明或证据文件。</div>
                 {pendingManualResult.manual_review?.required_observations?.length ? (
                   <ul className="list-disc pl-5 space-y-1 text-gray-300">
                     {pendingManualResult.manual_review.required_observations.map((item, idx) => (
@@ -377,10 +375,10 @@ const ManualTestModal: React.FC<ManualTestModalProps> = ({ poc, isOpen, onClose,
                   className="w-full rounded border border-cyber-700 bg-black p-2 text-gray-100 outline-none focus:border-amber-400"
                 />
                 <div className="grid grid-cols-2 gap-2">
-                  <button disabled={isSubmittingVerdict} onClick={() => handleManualVerdict('confirmed_vulnerable')} className="rounded bg-red-600 px-3 py-2 font-bold text-white disabled:opacity-50">
+                  <button disabled={isSubmittingVerdict || (!operatorNote.trim() && !evidenceFile.trim())} onClick={() => handleManualVerdict('confirmed_vulnerable')} className="rounded bg-red-600 px-3 py-2 font-bold text-white disabled:opacity-50">
                     确认成功
                   </button>
-                  <button disabled={isSubmittingVerdict} onClick={() => handleManualVerdict('confirmed_not_vulnerable')} className="rounded bg-emerald-600 px-3 py-2 font-bold text-white disabled:opacity-50">
+                  <button disabled={isSubmittingVerdict || (!operatorNote.trim() && !evidenceFile.trim())} onClick={() => handleManualVerdict('confirmed_not_vulnerable')} className="rounded bg-emerald-600 px-3 py-2 font-bold text-white disabled:opacity-50">
                     确认失败
                   </button>
                   <button disabled={isSubmittingVerdict} onClick={() => handleManualVerdict('inconclusive')} className="rounded border border-gray-600 px-3 py-2 font-bold text-gray-200 disabled:opacity-50">

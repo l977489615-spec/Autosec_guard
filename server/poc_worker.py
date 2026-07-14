@@ -317,16 +317,40 @@ def apply_manual_review_state(
     plugin_results: Optional[dict] = None,
 ) -> dict:
     plugin_results = plugin_results or {}
+    evidence_value = (
+        result.get("evidence")
+        or plugin_results.get("evidence")
+        or result.get("details")
+        or plugin_results.get("details")
+    )
+    if isinstance(evidence_value, (dict, list)):
+        evidence = json.dumps(evidence_value, ensure_ascii=False)
+    else:
+        evidence = str(evidence_value or "").strip()
+    if evidence:
+        result["evidence"] = evidence
+
     requires_review = poc_requires_human_review(poc_filename, security_profile, plugin_results)
     if not requires_review:
         result["requires_human_review"] = False
         result["manual_review"] = {"state": "not_required"}
-        if result.get("success"):
+        if not result.get("success"):
+            result["verification_status"] = "execution_error"
+            result["evidence_contract_valid"] = False
+        elif result.get("vulnerable") is not True and result.get("vulnerable") is not False:
+            result["vulnerable"] = None
+            result["verification_status"] = "inconclusive"
+            result["evidence_contract_valid"] = bool(evidence)
+        elif not evidence:
+            result["vulnerable"] = None
+            result["verification_status"] = "invalid_result"
+            result["evidence_contract_valid"] = False
+            result["contract_error"] = "PoC completed without evidence; a confirmed verdict is not allowed."
+        else:
             result["verification_status"] = (
                 "auto_confirmed_vulnerable" if bool(result.get("vulnerable")) else "auto_confirmed_not_vulnerable"
             )
-        else:
-            result["verification_status"] = "execution_error"
+            result["evidence_contract_valid"] = True
         return result
 
     existing_verdict = (
@@ -342,22 +366,39 @@ def apply_manual_review_state(
     }
 
     if existing_verdict == "confirmed_vulnerable":
-        result["vulnerable"] = True
-        result["verification_status"] = "manual_confirmed_vulnerable"
-        result["manual_review"]["state"] = "completed"
+        if evidence:
+            result["vulnerable"] = True
+            result["verification_status"] = "manual_confirmed_vulnerable"
+            result["manual_review"]["state"] = "completed"
+            result["evidence_contract_valid"] = True
+        else:
+            result["vulnerable"] = None
+            result["verification_status"] = "invalid_result"
+            result["manual_review"]["state"] = "invalid_evidence"
+            result["evidence_contract_valid"] = False
+            result["contract_error"] = "Manual vulnerable verdict requires recorded evidence."
     elif existing_verdict == "confirmed_not_vulnerable":
-        result["vulnerable"] = False
-        result["verification_status"] = "manual_confirmed_not_vulnerable"
-        result["manual_review"]["state"] = "completed"
+        if evidence:
+            result["vulnerable"] = False
+            result["verification_status"] = "manual_confirmed_not_vulnerable"
+            result["manual_review"]["state"] = "completed"
+            result["evidence_contract_valid"] = True
+        else:
+            result["vulnerable"] = None
+            result["verification_status"] = "invalid_result"
+            result["manual_review"]["state"] = "invalid_evidence"
+            result["evidence_contract_valid"] = False
+            result["contract_error"] = "Manual not-vulnerable verdict requires recorded evidence."
     elif existing_verdict in {"inconclusive", "needs_retest"}:
         result["vulnerable"] = None
         result["verification_status"] = f"manual_{existing_verdict}"
         result["manual_review"]["state"] = "completed"
+        result["evidence_contract_valid"] = bool(evidence)
     else:
         result["vulnerable"] = None
         result["verification_status"] = "pending_manual_review"
-        evidence = str(result.get("evidence") or plugin_results.get("evidence") or "").strip()
         result["evidence"] = evidence or "PoC executed; waiting for operator observation and verdict."
+        result["evidence_contract_valid"] = False
     return result
 
 

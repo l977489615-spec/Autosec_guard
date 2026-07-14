@@ -174,6 +174,8 @@ export interface ExecutionResult {
   errors: string[];
   vulnerable: boolean | null;
   evidence?: string;
+  evidence_contract_valid?: boolean;
+  contract_error?: string;
   cve_id?: string;
   poc_id?: string;
   trace_id?: string;
@@ -427,10 +429,6 @@ export const recordScanApprovalPolicy = async (
   payload: {
     session_id: string;
     target_ip?: string;
-    min_tier?: string;
-    max_tier?: string;
-    allow_lab_exp?: boolean;
-    allow_auto_exp?: boolean;
     allow_disruptive?: boolean;
   },
   token?: string | null,
@@ -897,6 +895,35 @@ export const approveV3SessionAction = async (
     body: JSON.stringify({ poc_filename: pocFilename, target, risk_ceiling: riskLevel }),
   });
   return String(data.approval_token || '');
+};
+
+export type ProtocolCorpusSummary = {
+  corpus_id: string;
+  corpus_sha256?: string;
+  target?: Record<string, unknown>;
+  session_count?: number;
+  message_count?: number;
+};
+
+export const uploadProtocolCorpus = async (
+  payload: Record<string, unknown>,
+  token?: string | null,
+): Promise<{ corpus_id: string; summary: ProtocolCorpusSummary }> => {
+  const data = await authedFetch('/api/v1/protocol-corpus', token || null, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return {
+    corpus_id: String(data.corpus_id || ''),
+    summary: (data.summary || {}) as ProtocolCorpusSummary,
+  };
+};
+
+export const getProtocolCorpusSummary = async (
+  corpusId: string,
+  token?: string | null,
+): Promise<ProtocolCorpusSummary> => {
+  return authedFetch(`/api/v1/protocol-corpus/${encodeURIComponent(corpusId)}`, token || null) as Promise<ProtocolCorpusSummary>;
 };
 
 export const submitV3SessionReview = async (
