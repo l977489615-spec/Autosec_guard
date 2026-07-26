@@ -136,7 +136,9 @@ class OfflineLicensingTests(unittest.TestCase):
             months=3,
             days=None,
             expires_at=None,
-            not_before=None,
+            # Keep the test independent from the wall clock used by issue().
+            # The manager deliberately evaluates at a fixed instant.
+            not_before=format_utc(self.now[0] - dt.timedelta(minutes=1)),
             license_id="LIC-GUI-TEST",
             edition="enterprise",
             features="scan,poc_execution,report_export",
