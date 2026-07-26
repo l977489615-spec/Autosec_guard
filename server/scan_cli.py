@@ -16,6 +16,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -351,6 +352,9 @@ def run_global_scan(args: argparse.Namespace) -> dict[str, Any]:
 def run_agent_scan(args: argparse.Namespace) -> dict[str, Any]:
     params = _load_params(args)
     base_url = args.api_url.rstrip("/")
+    parsed_api = urllib.parse.urlparse(base_url)
+    if parsed_api.scheme not in {"http", "https"} or not parsed_api.hostname:
+        raise ValueError("--api-url must be an http(s) URL with a hostname")
     payload = {
         "target_ip": params.get("target_ip"),
         "target_name": args.target_name,
@@ -384,7 +388,8 @@ def run_agent_scan(args: argparse.Namespace) -> dict[str, Any]:
     )
     started = time.time()
     try:
-        with urllib.request.urlopen(req, timeout=args.timeout) as resp:
+        # URL scheme and hostname were validated above.
+        with urllib.request.urlopen(req, timeout=args.timeout) as resp:  # nosec B310
             data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")

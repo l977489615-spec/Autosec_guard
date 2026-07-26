@@ -78,16 +78,21 @@ def _normalize_database_uri(uri: str | None) -> str:
     return f"sqlite:///{path_obj.as_posix()}"
 
 
+def is_packaged_runtime() -> bool:
+    return bool(
+        getattr(sys, 'frozen', False)
+        or '__compiled__' in globals()
+        or hasattr(sys, '__compiled__')
+        or os.environ.get('NUITKA_ONEFILE_PARENT')
+        or os.environ.get('PYINSTALLER_SAFE_MODE')
+    )
+
+
 def get_runtime_data_dir() -> Path:
     configured = os.environ.get('AUTOSEC_DATA_DIR')
     if configured:
         path = Path(configured).expanduser().resolve()
-    elif not (
-        getattr(sys, 'frozen', False)
-        or hasattr(sys, '__compiled__')
-        or os.environ.get('NUITKA_ONEFILE_PARENT')
-        or os.environ.get('PYINSTALLER_SAFE_MODE')
-    ):
+    elif not is_packaged_runtime():
         path = BASE_DIR
     else:
         system = platform.system().lower()
@@ -162,7 +167,8 @@ def get_runtime_warnings(config: AppConfig) -> List[str]:
         warnings.append('AUTOSEC_DB_URI not set; using local SQLite database.')
 
     # 网络暴露面警告
-    if config.flask_host == '0.0.0.0':
+    # Comparison only; actual non-loopback binds are checked by startup policy.
+    if config.flask_host == '0.0.0.0':  # nosec B104
         cors_origins = os.environ.get('AUTOSEC_CORS_ORIGINS', '').strip()
         if not cors_origins:
             warnings.append(

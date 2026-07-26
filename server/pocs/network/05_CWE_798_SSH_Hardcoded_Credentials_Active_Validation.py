@@ -135,7 +135,8 @@ class ToyotaHarmanSSHExploit(IVIVulnerabilityPlugin):
                 client = None
                 try:
                     client = paramiko.SSHClient()
-                    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                    client.load_system_host_keys()
+                    client.set_missing_host_key_policy(paramiko.RejectPolicy())
                     
                     # 尝试连接
                     client.connect(self.target_ip, port=port, username=user, 

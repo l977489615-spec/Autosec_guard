@@ -45,6 +45,14 @@ def safe_resolve_within(base_dir: str, candidate_path: str) -> str | None:
 # ─────────────────────────────────────────────────────────────
 # 云厂商 metadata 端点（AWS/GCP/Azure/阿里云等统一使用 169.254.169.254）
 _METADATA_HOSTS = {"169.254.169.254", "metadata.google.internal", "metadata"}
+_PRIVATE_MODEL_NETWORKS = (
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("::1/128"),
+)
 
 
 def _host_is_ip_literal(host: str) -> bool:
@@ -78,13 +86,17 @@ def _ip_is_dangerous(ip_str: str, *, trust_proxy_dns: bool = False) -> bool:
     return False
 
 
+def _is_allowed_private_model_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return any(ip.version == network.version and ip in network for network in _PRIVATE_MODEL_NETWORKS)
+
+
 def is_safe_outbound_url(url: str, *, allow_private: bool = False, allow_proxy_dns: bool = False) -> tuple[bool, str]:
     """
     校验一个出站 URL 是否安全（防 SSRF）。
 
     默认拒绝：非 http/https、云 metadata 主机、解析到内网/回环/link-local 的主机。
     allow_private=True 时放行私网（用于本地实验室调用场景，但仍拒绝 metadata）。
-    allow_proxy_dns=True 或 HTTPS 域名场景下，放行 198.18.0.0/15 fake-ip（常见于 Clash 代理）。
+    allow_proxy_dns=True 时放行 198.18.0.0/15 fake-ip（常见于 Clash 代理）。
 
     返回 (是否安全, 原因)。
     """
@@ -105,9 +117,7 @@ def is_safe_outbound_url(url: str, *, allow_private: bool = False, allow_proxy_d
     if host in _METADATA_HOSTS:
         return False, "cloud metadata endpoint blocked"
 
-    trust_proxy_dns = allow_proxy_dns or (
-        parsed.scheme == "https" and not _host_is_ip_literal(host)
-    )
+    trust_proxy_dns = allow_proxy_dns
 
     # 解析主机的所有 IP（防 DNS rebinding 到内网）
     try:
@@ -121,7 +131,7 @@ def is_safe_outbound_url(url: str, *, allow_private: bool = False, allow_proxy_d
         if clean in _METADATA_HOSTS:
             return False, "resolves to metadata endpoint"
         if _ip_is_dangerous(clean, trust_proxy_dns=trust_proxy_dns):
-            if allow_private and ipaddress.ip_address(clean).is_private:
+            if allow_private and _is_allowed_private_model_ip(ipaddress.ip_address(clean)):
                 continue
             return False, f"resolves to blocked address: {clean}"
 

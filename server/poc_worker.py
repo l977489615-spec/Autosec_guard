@@ -18,6 +18,8 @@ import traceback
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
+from config import get_runtime_data_dir
+from poc_registry import get_poc_code
 from poc_security import should_require_disruptive_approval
 
 logger = logging.getLogger(__name__)
@@ -29,6 +31,36 @@ if getattr(sys, "frozen", False):
 POCS_DIR = SERVER_DIR / "pocs"
 POC_WORDLISTS_DIR = POCS_DIR / "wordlists"
 SANDBOX_RUNNER = SERVER_DIR / "sandbox_runner.py"
+
+_SANDBOX_LIMITS = {
+    "cpu_seconds": ("SANDBOX_CPU_SECONDS", 60, 1, 300),
+    "memory_mb": ("SANDBOX_MEMORY_MB", 256, 64, 2048),
+    "output_mb": ("SANDBOX_OUTPUT_MB", 8, 1, 64),
+    "nofile": ("SANDBOX_NOFILE", 256, 16, 1024),
+    "timeout_seconds": ("SANDBOX_TIMEOUT_SECONDS", 60, 1, 300),
+}
+_SANDBOX_PATH_PARAMS = frozenset({
+    "android_source_fixture",
+    "android_manifest",
+    "sqlite_fixture_dir",
+    "app_data_fixture_dir",
+    "log_fixture",
+    "can_log_fixture",
+    "uds_log_fixture",
+    "media_sample_path", "sample_path", "html_sample_path", "apex_dir",
+    "webp_sample_path", "wpa_config_path", "ssh_key_file", "source_path",
+    "capture_path", "observer_file", "gpssim_path", "baseband_file",
+    "recovery_log_path", "lab_usb_path", "certfile", "keyfile",
+})
+_SANDBOX_TEXT_PARAMS = frozenset({
+    "android_source_text", "android_manifest_text", "log_text", "uds_log_text",
+})
+_MAX_INLINE_PARAM_BYTES = 1024 * 1024
+_SAFE_PARENT_ENV = frozenset({
+    "PATH", "LANG", "LC_ALL", "LC_CTYPE", "TZ",
+    "TMPDIR", "TMP", "TEMP", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT",
+    "SSL_CERT_FILE", "SSL_CERT_DIR",
+})
 
 
 MANUAL_REVIEW_FILENAME_KEYWORDS = {
@@ -93,6 +125,48 @@ def _parse_int_env(name: str, default: int) -> int:
         return int(os.environ.get(name, default))
     except Exception:
         return int(default)
+
+
+def _bounded_sandbox_limit(name: str, requested: Optional[int] = None) -> int:
+    env_name, default, minimum, maximum = _SANDBOX_LIMITS[name]
+    value = _parse_int_env(env_name, default) if requested is None else int(requested)
+    return max(minimum, min(maximum, value))
+
+
+def _sanitize_sandbox_params(params: dict) -> dict:
+    """Validate client inputs before a trusted PoC adapter may read local files."""
+    clean = dict(params or {})
+    fixture_root = (get_runtime_data_dir() / "fixtures").resolve()
+    fixture_root.mkdir(parents=True, exist_ok=True)
+
+    for key in _SANDBOX_PATH_PARAMS:
+        raw = clean.get(key)
+        if raw in (None, ""):
+            continue
+        candidate = Path(str(raw)).expanduser()
+        if not candidate.is_absolute():
+            candidate = fixture_root / candidate
+        try:
+            resolved = candidate.resolve(strict=True)
+            resolved.relative_to(fixture_root)
+        except (OSError, ValueError) as exc:
+            raise ValueError(
+                f"{key} must reference an existing path inside {fixture_root}"
+            ) from exc
+        clean[key] = str(resolved)
+
+    for key in _SANDBOX_TEXT_PARAMS:
+        value = clean.get(key)
+        if value not in (None, "") and len(str(value).encode("utf-8")) > _MAX_INLINE_PARAM_BYTES:
+            raise ValueError(f"{key} exceeds the 1 MiB inline input limit")
+
+    # Execution controls are server policy, never client parameters.
+    for key in tuple(clean):
+        if key.startswith("sandbox_") or key.startswith("AUTOSEC_"):
+            clean.pop(key, None)
+    for key in ("approval_token", "batch_approval_token", "lab_command"):
+        clean.pop(key, None)
+    return clean
 
 
 def _allowed_hosts_from_env() -> set[str]:
@@ -403,14 +477,35 @@ def apply_manual_review_state(
 
 
 def _build_sandbox_env(params: dict, allowed_hosts: Optional[List[str]] = None) -> dict:
-    env = os.environ.copy()
-    env["SANDBOX_CPU_SECONDS"] = str(params.get("sandbox_cpu_seconds", _parse_int_env("SANDBOX_CPU_SECONDS", 60)))
-    env["SANDBOX_MEMORY_MB"] = str(params.get("sandbox_memory_mb", _parse_int_env("SANDBOX_MEMORY_MB", 256)))
-    env["SANDBOX_OUTPUT_MB"] = str(params.get("sandbox_output_mb", _parse_int_env("SANDBOX_OUTPUT_MB", 8)))
-    env["SANDBOX_NOFILE"] = str(params.get("sandbox_nofile", _parse_int_env("SANDBOX_NOFILE", 256)))
+    # Do not leak server/session/license/provider secrets into untrusted PoC code.
+    env = {key: value for key, value in os.environ.items() if key in _SAFE_PARENT_ENV}
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUNBUFFERED"] = "1"
+    env["SANDBOX_CPU_SECONDS"] = str(_bounded_sandbox_limit("cpu_seconds"))
+    env["SANDBOX_MEMORY_MB"] = str(_bounded_sandbox_limit("memory_mb"))
+    env["SANDBOX_OUTPUT_MB"] = str(_bounded_sandbox_limit("output_mb"))
+    env["SANDBOX_NOFILE"] = str(_bounded_sandbox_limit("nofile"))
     env["SANDBOX_ALLOWED_HOSTS"] = ",".join(allowed_hosts or [])
     env["AUTOSEC_POC_WORDLIST_DIR"] = str(POC_WORDLISTS_DIR)
+    if _is_packaged_runtime():
+        # The wrapper needs the customer license context before it enters the
+        # sandbox runner. The entrypoint removes these values after validation.
+        env["AUTOSEC_DATA_DIR"] = str(get_runtime_data_dir())
+        if os.environ.get("AUTOSEC_LICENSE_PATH"):
+            env["AUTOSEC_LICENSE_PATH"] = os.environ["AUTOSEC_LICENSE_PATH"]
     return env
+
+
+def _packaged_builtin_name(poc_path: str) -> str:
+    normalized_path = str(poc_path).replace("\\", "/")
+    marker = "/pocs/"
+    if marker not in normalized_path:
+        raise ValueError("packaged PoC path is outside the built-in catalog")
+    candidate = normalized_path.rsplit(marker, 1)[1]
+    source_text, normalized = get_poc_code(candidate)
+    if not source_text or not normalized:
+        raise ValueError("packaged PoC is not present in the compiled catalog")
+    return normalized
 
 
 def _loads_last_json_object(raw_text: str) -> dict:
@@ -479,8 +574,8 @@ def _runtime_entrypoint() -> str:
 
 def _build_command(poc_path: str, params: dict, use_unbuffered: bool = False) -> list[str]:
     if _is_packaged_runtime():
-        return [_runtime_entrypoint(), "--run-sandbox", poc_path, json.dumps(params)]
-    runner_args = [str(SANDBOX_RUNNER), poc_path, json.dumps(params)]
+        return [_runtime_entrypoint(), "--run-sandbox", poc_path]
+    runner_args = [str(SANDBOX_RUNNER), poc_path]
     if use_unbuffered:
         return [_runtime_entrypoint(), "-u", *runner_args]
     return [_runtime_entrypoint(), *runner_args]
@@ -522,11 +617,26 @@ class LocalSandboxPocWorker:
         timeout_seconds: int = 60,
         poc_code: Optional[str] = None,
     ) -> PocWorkerPlan:
+        params = _sanitize_sandbox_params(params)
+        timeout_seconds = _bounded_sandbox_limit("timeout_seconds", timeout_seconds)
         poc_filename = os.path.basename(poc_path)
         security_profile = _extract_security_profile(
             poc_path,
             poc_code=poc_code if poc_code and not os.path.exists(poc_path) else None,
         )
+        host_exploits_enabled = os.environ.get(
+            "AUTOSEC_ENABLE_HOST_EXPLOITS", "false"
+        ).strip().lower() in {"1", "true", "yes"}
+        if (
+            _is_packaged_runtime()
+            and should_require_disruptive_approval(security_profile, params)
+            and not host_exploits_enabled
+        ):
+            raise PermissionError(
+                "Disruptive host exploit execution is disabled in customer packages. "
+                "An administrator must explicitly set AUTOSEC_ENABLE_HOST_EXPLOITS=true "
+                "on an isolated lab workstation."
+            )
         allowed_hosts = []
         target_host = str(params.get('target_ip') or '').strip()
         if target_host:
@@ -540,10 +650,10 @@ class LocalSandboxPocWorker:
                 params['target_ip'] = allowed_hosts[0]
 
         sandbox_profile = {
-            "cpu_seconds": int(params.get("sandbox_cpu_seconds", _parse_int_env("SANDBOX_CPU_SECONDS", 60))),
-            "memory_mb": int(params.get("sandbox_memory_mb", _parse_int_env("SANDBOX_MEMORY_MB", 256))),
-            "output_mb": int(params.get("sandbox_output_mb", _parse_int_env("SANDBOX_OUTPUT_MB", 8))),
-            "nofile": int(params.get("sandbox_nofile", _parse_int_env("SANDBOX_NOFILE", 256))),
+            "cpu_seconds": _bounded_sandbox_limit("cpu_seconds"),
+            "memory_mb": _bounded_sandbox_limit("memory_mb"),
+            "output_mb": _bounded_sandbox_limit("output_mb"),
+            "nofile": _bounded_sandbox_limit("nofile"),
             "allowed_hosts": allowed_hosts,
         }
 
@@ -569,15 +679,19 @@ class LocalSandboxPocWorker:
         
         env_override = dict(plan.env)
         if plan.poc_code:
-            env_override["AUTOSEC_POC_INLINE_CODE_B64"] = base64.b64encode(
-                plan.poc_code.encode("utf-8")
-            ).decode("ascii")
-            env_override["AUTOSEC_POC_INLINE_NAME"] = plan.poc_filename
+            if _is_packaged_runtime():
+                env_override["AUTOSEC_POC_BUILTIN_NAME"] = _packaged_builtin_name(plan.poc_path)
+            else:
+                env_override["AUTOSEC_POC_INLINE_CODE_B64"] = base64.b64encode(
+                    plan.poc_code.encode("utf-8")
+                ).decode("ascii")
+                env_override["AUTOSEC_POC_INLINE_NAME"] = plan.poc_filename
 
         try:
             logs.append(f"[*] Executing sandbox command: {' '.join(plan.command)}")
             proc = subprocess.Popen(
                 plan.command,
+                stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -586,7 +700,9 @@ class LocalSandboxPocWorker:
             )
             plan._proc = proc
             try:
-                stdout_text, _ = proc.communicate(timeout=plan.timeout_seconds)
+                stdout_text, _ = proc.communicate(
+                    input=json.dumps(plan.params), timeout=plan.timeout_seconds,
+                )
             except subprocess.TimeoutExpired:
                 proc.kill()
                 stdout_text, _ = proc.communicate()
@@ -636,12 +752,16 @@ class LocalSandboxPocWorker:
 
         env_override = dict(plan.env)
         if plan.poc_code:
-            env_override["AUTOSEC_POC_INLINE_CODE_B64"] = base64.b64encode(
-                plan.poc_code.encode("utf-8")
-            ).decode("ascii")
-            env_override["AUTOSEC_POC_INLINE_NAME"] = plan.poc_filename
+            if _is_packaged_runtime():
+                env_override["AUTOSEC_POC_BUILTIN_NAME"] = _packaged_builtin_name(plan.poc_path)
+            else:
+                env_override["AUTOSEC_POC_INLINE_CODE_B64"] = base64.b64encode(
+                    plan.poc_code.encode("utf-8")
+                ).decode("ascii")
+                env_override["AUTOSEC_POC_INLINE_NAME"] = plan.poc_filename
         proc = subprocess.Popen(
             _build_command(plan.poc_path, plan.params, use_unbuffered=True),
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -650,6 +770,9 @@ class LocalSandboxPocWorker:
             start_new_session=True,
         )
         plan._proc = proc  # 供 cancel() 调用
+        assert proc.stdin is not None
+        proc.stdin.write(json.dumps(plan.params))
+        proc.stdin.close()
 
         result_chunks: list[str] = []
         collecting_result = False

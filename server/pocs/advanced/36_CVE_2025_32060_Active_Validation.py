@@ -109,7 +109,7 @@ def _run_poc(plugin) -> dict:
     if target_ip and target_ip != "127.0.0.1":
         try:
             result = subprocess.run(
-                ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5",
+                ["ssh", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=5",
                  "-o", "BatchMode=yes", f"root@{target_ip}",
                  "cat /proc/sys/kernel/modules_disabled 2>/dev/null; "
                  "cat /sys/module/module/parameters/sig_enforce 2>/dev/null; "

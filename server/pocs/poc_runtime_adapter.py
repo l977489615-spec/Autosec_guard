@@ -33,10 +33,6 @@ def inject_runtime_env(params: dict[str, Any]) -> None:
         if value not in (None, ""):
             os.environ[env_name] = str(value)
 
-    for key, value in params.items():
-        if str(key).startswith("AUTOSEC_") and value not in (None, ""):
-            os.environ[str(key)] = str(value)
-
     for key in ("expected_usb_serial", "serial", "can_interface", "bluetooth_mac"):
         value = params.get(key)
         if value not in (None, ""):

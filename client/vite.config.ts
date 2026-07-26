@@ -36,6 +36,11 @@ export default defineConfig(() => {
       },
       plugins: [react()],
       build: {
+        // Customer packages must not contain source maps. The browser bundle is
+        // still client-visible by design, so proprietary logic belongs in the
+        // compiled backend rather than in React components.
+        sourcemap: false,
+        minify: 'oxc',
         // Three.js is route-lazy and remains 134.76 kB gzip; its uncompressed
         // module is intentionally larger than Vite's generic 500 kB warning.
         chunkSizeWarningLimit: 600,

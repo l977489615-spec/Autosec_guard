@@ -1,8 +1,9 @@
 import React, { lazy, Suspense, useEffect, useState } from 'react';
-import { LayoutDashboard, Radio, Database, Shield, Github, History, User, AlertTriangle, ServerCrash, Cpu } from 'lucide-react';
+import { LayoutDashboard, Radio, Database, Shield, Github, History, User, AlertTriangle, ServerCrash, Cpu, FileKey2 } from 'lucide-react';
 import AuthPage from './components/AuthPage';
+import LicenseActivation from './components/LicenseActivation';
 import { ScanSession } from './types';
-import { fetchCurrentProfile, getBackendHealth, getBackendUrl, logoutCurrentSession, setUnauthorizedHandler } from './services/api';
+import { fetchCurrentProfile, getBackendHealth, getBackendUrl, getLicenseStatus, LicenseStatus, logoutCurrentSession, setUnauthorizedHandler } from './services/api';
 import { sanitizeUserForStorage } from './utils/security';
 
 const Dashboard = lazy(() => import('./components/Dashboard'));
@@ -148,6 +149,8 @@ const App: React.FC = () => {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(null);
+  const [licenseLoading, setLicenseLoading] = useState(true);
 
   // Lifted state for history so it persists
   const [scanHistory, setScanHistory] = useState<ScanSession[]>([]);
@@ -181,6 +184,8 @@ const App: React.FC = () => {
     sessionStorage.removeItem('autosec_agent_scan_state');
     setToken(null);
     setUser(null);
+    setLicenseStatus(null);
+    setLicenseLoading(true);
     setCurrentView(View.DASHBOARD);
     setScannerMode('SELECTION');
     setScannerSession(buildDefaultScannerSession());
@@ -269,6 +274,27 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (!token || !user) return;
+    let cancelled = false;
+    setLicenseLoading(true);
+    const refreshLicense = () => getLicenseStatus()
+      .then((status) => { if (!cancelled) setLicenseStatus(status); })
+      .catch((error: any) => {
+        if (!cancelled) setLicenseStatus({
+          enforced: true, valid: false, state: 'backend_error',
+          message: error?.message || '无法读取许可证状态。', machine_code: '', product: 'autosec-guard-edge',
+        });
+      })
+      .finally(() => { if (!cancelled) setLicenseLoading(false); });
+    refreshLicense();
+    const intervalId = window.setInterval(refreshLicense, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [token, user?.id]);
+
+  useEffect(() => {
     const handlePopState = () => setCurrentView(readViewFromPath() || View.DASHBOARD);
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
@@ -334,6 +360,14 @@ const App: React.FC = () => {
 
   if (!token || !user) {
     return <AuthPage onLogin={handleLogin} />;
+  }
+
+  if (licenseLoading || !licenseStatus) {
+    return <ViewLoading />;
+  }
+
+  if (!licenseStatus.valid) {
+    return <LicenseActivation status={licenseStatus} onActivated={setLicenseStatus} onLogout={handleLogout} />;
   }
 
   return (
@@ -455,6 +489,11 @@ const App: React.FC = () => {
             {currentView === View.USER_MANAGEMENT && '用户与权限'}
           </h1>
           <div className="flex items-center gap-4">
+            {licenseStatus.enforced && typeof licenseStatus.remaining_days === 'number' && (
+              <div className={`hidden items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-mono sm:flex ${licenseStatus.remaining_days <= 7 ? 'border-amber-400/25 bg-amber-400/[0.07] text-amber-200' : 'border-cyan-300/15 bg-cyan-300/[0.04] text-cyan-200/70'}`}>
+                <FileKey2 size={13} />授权剩余 {licenseStatus.remaining_days} 天
+              </div>
+            )}
             <div className="flex items-center gap-2">
               <span className={`w-2 h-2 rounded-full animate-pulse ${globalBackendHealth.ok ? 'bg-green-500' : 'bg-red-500'}`}></span>
               <span className={`text-xs font-mono ${globalBackendHealth.ok ? 'text-green-500' : 'text-red-400'}`}>

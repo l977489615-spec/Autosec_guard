@@ -2,6 +2,7 @@
 import argparse
 import ast
 import json
+import os
 import sys
 import time
 from collections import Counter
@@ -492,10 +493,14 @@ def run_agent_tasks(config: dict, output_dir: Path) -> list[dict]:
         started = time.time()
         report_file = output_dir / "agent_runs" / f"{task.get('task_id')}_{now_id()}.json"
         try:
+            llm_config = dict(config.get("ai_config", {}))
+            llm_config["api_key"] = os.environ.get("DASHSCOPE_API_KEY", "").strip()
+            if not llm_config["api_key"]:
+                raise RuntimeError("DASHSCOPE_API_KEY is required for agent experiments")
             orch = AgentOrchestrator(
                 target_ip=task["target_ip"],
                 target_name=task.get("target_name", task["task_id"]),
-                llm_config=config.get("ai_config", {}),
+                llm_config=llm_config,
                 can_interface=task.get("can_interface", ""),
                 bluetooth_mac=task.get("bluetooth_mac", ""),
                 wifi_interface=task.get("wifi_interface", ""),

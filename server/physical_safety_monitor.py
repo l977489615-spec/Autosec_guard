@@ -231,7 +231,8 @@ class AuthStateDetector:
             req = urllib.request.Request(f"{proto}://{target_ip}:{port}/")
             req.add_header("User-Agent", "AutoSecGuard/1.0")
             try:
-                urllib.request.urlopen(req, timeout=4)
+                # proto is constrained to http(s), target_ip and port are scanner-owned.
+                urllib.request.urlopen(req, timeout=4)  # nosec B310
                 result["auth_type"] = AuthType.NONE
                 result["recommended_strategy"] = "direct_exploit"
             except Exception as e:

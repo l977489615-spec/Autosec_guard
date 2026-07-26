@@ -658,7 +658,8 @@ def ssh_exec(
     try:
         import paramiko  # optional dependency
         client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.load_system_host_keys()
+        client.set_missing_host_key_policy(paramiko.RejectPolicy())
         kw: Dict[str, Any] = {"hostname": host, "port": port, "username": username,
                                "timeout": timeout, "banner_timeout": timeout}
         if key_file:
@@ -674,7 +675,7 @@ def ssh_exec(
     except ImportError:
         # Fall back to subprocess ssh if paramiko not available
         try:
-            args = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", f"ConnectTimeout={timeout}",
+            args = ["ssh", "-o", "StrictHostKeyChecking=yes", "-o", f"ConnectTimeout={timeout}",
                     f"{username}@{host}", "-p", str(port), command]
             r = subprocess.run(args, capture_output=True, text=True, timeout=timeout + 5)
             result["stdout"] = r.stdout.strip()

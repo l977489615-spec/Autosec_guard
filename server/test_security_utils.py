@@ -1,4 +1,5 @@
 import unittest
+from unittest import mock
 
 from security_utils import is_safe_outbound_url
 
@@ -22,6 +23,21 @@ class SecurityUtilsTests(unittest.TestCase):
     def test_private_literal_still_blocked_without_allow_private(self):
         safe, _ = is_safe_outbound_url("http://192.168.1.10:11434/v1")
         self.assertFalse(safe)
+
+    def test_https_does_not_implicitly_trust_proxy_fake_ip(self):
+        fake_dns = [(2, 1, 6, '', ('198.18.1.20', 0))]
+        with mock.patch('security_utils.socket.getaddrinfo', return_value=fake_dns):
+            safe, reason = is_safe_outbound_url('https://provider.example/v1')
+        self.assertFalse(safe)
+        self.assertIn('blocked', reason)
+
+    def test_allow_private_does_not_allow_link_local_services(self):
+        safe, reason = is_safe_outbound_url(
+            'http://169.254.20.10/v1',
+            allow_private=True,
+        )
+        self.assertFalse(safe)
+        self.assertIn('blocked', reason)
 
 
 if __name__ == "__main__":

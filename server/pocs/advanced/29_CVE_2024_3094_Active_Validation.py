@@ -149,7 +149,7 @@ def _run_poc(plugin) -> dict:
     if target_ip and target_ip != "127.0.0.1":
         try:
             result = subprocess.run(
-                ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5",
+                ["ssh", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=5",
                  "-o", "BatchMode=yes", f"root@{target_ip}",
                  "xz --version 2>&1 | head -2; strings /usr/lib/liblzma.so* 2>/dev/null | grep -E 'N3/1t|jWgdh4|lHiAg' | head -3"],
                 capture_output=True, text=True, timeout=15

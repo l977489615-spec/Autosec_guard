@@ -225,12 +225,12 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
                       <input
                         type={showPassword ? 'text' : 'password'}
                         required
-                        minLength={8}
+                        minLength={12}
                         autoComplete={isRegistration ? 'new-password' : 'current-password'}
                         value={password}
                         onChange={(event) => setPassword(event.target.value)}
                         className="control-input w-full rounded-xl py-3.5 pl-11 pr-12 text-sm text-white"
-                        placeholder="至少 8 个字符"
+                        placeholder="至少 12 个字符"
                       />
                       <button
                         type="button"
@@ -247,7 +247,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
                       <input
                         type={showPassword ? 'text' : 'password'}
                         required
-                        minLength={8}
+                        minLength={12}
                         autoComplete="new-password"
                         value={confirmPassword}
                         onChange={(event) => setConfirmPassword(event.target.value)}

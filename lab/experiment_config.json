@@ -2,7 +2,7 @@
   "api_base": "http://127.0.0.1:5002",
   "output_note": "Condition-driven experiment config. Fill target conditions only; run_experiment.py will auto-expand corresponding PoCs by metadata profiles into lab/evidence/resolved_scan_targets.json.",
   "ai_config": {
-    "api_key": "sk-6789efc62f93430780e12fbb07e36229",
+    "api_key": "",
     "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "fast_model": "qwen-plus",
     "strong_model": "qwen-max",

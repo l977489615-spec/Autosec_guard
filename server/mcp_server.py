@@ -268,6 +268,7 @@ def _tool_run_poc(params: dict) -> dict:
             },
             headers=_api_headers(),
             timeout=60,
+            allow_redirects=False,
         )
         if resp.ok:
             data = resp.json()
@@ -327,7 +328,7 @@ def _tool_check_safety(params: dict) -> dict:
     # 尝试获取 PoC 详细信息以确定是否具有破坏性
     is_disruptive = False
     try:
-        resp = requests.get(f"{AUTOSEC_API}/api/v1/list_pocs", headers=_api_headers(), timeout=5)
+        resp = requests.get(f"{AUTOSEC_API}/api/v1/list_pocs", headers=_api_headers(), timeout=5, allow_redirects=False)
         if resp.ok:
             pocs = resp.json().get("pocs", [])
             for p in pocs:
@@ -349,7 +350,7 @@ def _tool_check_safety(params: dict) -> dict:
 def _tool_list_pocs(params: dict) -> dict:
     category_filter = params.get("category")
     try:
-        resp = requests.get(f"{AUTOSEC_API}/api/v1/list_pocs", headers=_api_headers(), timeout=10)
+        resp = requests.get(f"{AUTOSEC_API}/api/v1/list_pocs", headers=_api_headers(), timeout=10, allow_redirects=False)
         if resp.ok:
             pocs = resp.json().get("pocs", [])
             if category_filter:

@@ -273,19 +273,21 @@ class TopologyAwareScanner:
             recv_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             recv_sock.settimeout(2.0)
             try:
-                recv_sock.bind(("0.0.0.0", 0))  # 使用随机端口，不抢占 30490
+                # Connected UDP scopes both send and receive to the authorized target
+                # and lets the kernel select the correct local interface/port.
+                recv_sock.connect((self.target_ip, SD_PORT))
             except OSError:
+                recv_sock.close()
                 return
 
             # 只向目标 IP 发送单播 SOME/IP SD，不发广播
-            send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            send_sock.sendto(find_msg, (self.target_ip, SD_PORT))
-            send_sock.close()
+            recv_sock.send(find_msg)
 
             deadline = time.time() + 2.0
             while time.time() < deadline:
                 try:
-                    data, addr = recv_sock.recvfrom(4096)
+                    data = recv_sock.recv(4096)
+                    addr = (self.target_ip, SD_PORT)
                     # 严格限定：只接受来自目标 IP 的响应
                     if addr[0] == self.target_ip:
                         existing_ips = {n.ip for n in self.topo_map.nodes}

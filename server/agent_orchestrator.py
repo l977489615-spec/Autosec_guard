@@ -80,6 +80,20 @@ from agent_execution_policy import (
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s][%(levelname)s] %(message)s')
 
+_SENSITIVE_PARAM_PARTS = ('password', 'passwd', 'api_key', 'apikey', 'token', 'secret', 'authorization', 'credential')
+
+
+def _redact_tool_params(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: ('***REDACTED***' if any(part in str(key).lower() for part in _SENSITIVE_PARAM_PARTS)
+                  else _redact_tool_params(item))
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_tool_params(item) for item in value]
+    return value
+
 CONFIG = get_config()
 DYNAMIC_PROBE_TOKEN = "dynamic_unknown_service_probe"
 DYNAMIC_PROBE_LEGACY_TOKENS = {"dynamic_0day"}
@@ -397,7 +411,7 @@ def _load_poc_catalog(tool_state: Optional[Dict[str, Any]] = None) -> List[Dict[
     try:
         auth_header = (tool_state or {}).get('auth_token')
         headers = {'Authorization': auth_header} if auth_header else {}
-        resp = requests.get(f"{AUTOSEC_API}/api/v1/list_pocs", headers=headers, timeout=10)
+        resp = requests.get(f"{AUTOSEC_API}/api/v1/list_pocs", headers=headers, timeout=10, allow_redirects=False)
         if resp.ok:
             pocs = resp.json().get("pocs", [])
             if tool_state is not None:
@@ -617,6 +631,7 @@ def _direct_tool_call(
                     json={"filename": poc_name, "params": poc_params, "session_id": poc_session_id},
                     headers=req_headers,
                     timeout=90,
+                    allow_redirects=False,
                 )
                 # 破坏性 PoC：服务端以 403+approval_token 应答。仅当本次执行已获操作员批准
                 # （orchestrator 设置了 allow_disruptive）时，携带令牌重试一次；否则尊重审批门。
@@ -638,6 +653,7 @@ def _direct_tool_call(
                             json={"filename": poc_name, "params": retry_params, "session_id": poc_session_id},
                             headers=req_headers,
                             timeout=90,
+                            allow_redirects=False,
                         )
                     elif on_log:
                         on_log({"type": "warning", "message": f"[Executor] PoC {poc_name} 需要破坏性执行审批，未获批准，跳过。"})
@@ -672,10 +688,12 @@ def call_mcp_tool(
         return _direct_tool_call(tool_name, params, on_log=on_log, tool_state=tool_state)
 
     try:
-        resp = requests.post(
+        # The timeout argument below is explicitly bounded.
+        resp = requests.post(  # nosec B113
             f"{MCP_SERVER}/mcp/call",
             json={"tool": tool_name, "params": params},
             timeout=min(timeout, 5),  # MCP 连接探测用短超时
+            allow_redirects=False,
         )
         if resp.ok:
             result = resp.json().get("result", {})
@@ -869,6 +887,7 @@ class QwenAgent:
             json=payload,
             timeout=(self._connect_timeout_seconds, self._request_timeout_seconds),
             stream=use_stream,
+            allow_redirects=False,
         )
         if response.status_code >= 400:
             raise RuntimeError(f"HTTP {response.status_code}: {response.text[:500]}")
@@ -1123,9 +1142,10 @@ class QwenAgent:
                 except Exception:
                     tool_params = {}
                 
-                logger.info(f"[{self.agent_name}] → MCP Tool Call: {tool_name}({json.dumps(tool_params, ensure_ascii=False)[:80]})")
+                display_params = json.dumps(_redact_tool_params(tool_params), ensure_ascii=False)
+                logger.info(f"[{self.agent_name}] → MCP Tool Call: {tool_name}({display_params[:80]})")
                 if self.on_log:
-                    self.on_log({"type": "info", "message": f"[{self.agent_name}] 调用工具: {tool_name}({json.dumps(tool_params, ensure_ascii=False)[:60]}...)"})
+                    self.on_log({"type": "info", "message": f"[{self.agent_name}] 调用工具: {tool_name}({display_params[:60]}...)"})
 
                 tool_start_ts = time.time()
                 result = self._pre_tool_supervisor_guard(tool_name, tool_params)
@@ -1491,7 +1511,7 @@ def create_assessment_agent(
         connect_timeout_seconds=connect_timeout_seconds,
         max_output_tokens=4096,
         stream_responses=True,
-        transport_retries=1,
+        transport_retries=0,
         disable_thinking=True,
     )
 
@@ -2022,6 +2042,7 @@ class AgentOrchestrator:
                     "evidence_file": evidence_file,
                 },
                 timeout=120,
+                allow_redirects=False,
             )
             if response.ok:
                 payload = response.json()
@@ -5108,7 +5129,7 @@ class AgentOrchestrator:
     def _load_mcp_tools(self) -> List[dict]:
         """从 MCP Server 加载工具列表"""
         try:
-            resp = requests.get(f"{MCP_SERVER}/mcp/tools", timeout=5)
+            resp = requests.get(f"{MCP_SERVER}/mcp/tools", timeout=5, allow_redirects=False)
             if resp.ok:
                 tools = resp.json().get("tools", [])
                 logger.info(f"[Orchestrator] 成功加载 {len(tools)} 个 MCP 工具")

@@ -158,7 +158,7 @@ def _run_poc(plugin) -> dict:
 
     try:
         ssh_result = subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5",
+                ["ssh", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=5",
              "-o", "BatchMode=yes", f"root@{target_ip}", "uname -a"],
             capture_output=True, text=True, timeout=8
         )

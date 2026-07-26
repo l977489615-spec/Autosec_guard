@@ -125,7 +125,9 @@ def _load_module_from_source(module_name, source_text, source_path):
     module = ModuleType(module_name)
     module.__file__ = source_path
     sys.modules[module_name] = module
-    exec(compile(source_text, source_path, "exec"), module.__dict__)
+    # Deliberate plugin loader. Only build-time embedded registry code reaches
+    # this boundary; the server does not accept user-supplied Python source.
+    exec(compile(source_text, source_path, "exec"), module.__dict__)  # nosec B102
     return module
 
 
@@ -151,9 +153,6 @@ def _inject_params_env(params):
         value = params.get(key)
         if value not in (None, ""):
             os.environ[env_name] = str(value)
-    for key, value in params.items():
-        if str(key).startswith("AUTOSEC_") and value not in (None, ""):
-            os.environ[str(key)] = str(value)
     for key in ("expected_usb_serial", "serial", "can_interface", "bluetooth_mac"):
         value = params.get(key)
         if value not in (None, ""):
@@ -181,14 +180,15 @@ def _ensure_embedded_support_modules(pocs_dir):
         _load_module_from_source(module_name, source_text, normalized_name or registry_key)
 
 def main():
-    if len(sys.argv) < 3:
-        print("Usage: python3 sandbox_runner.py <poc_path> <params_json>")
+    if len(sys.argv) < 2:
+        print("Usage: python3 sandbox_runner.py <poc_path> (params JSON on stdin)")
         sys.exit(1)
 
     poc_path = sys.argv[1]
     inline_code_b64 = os.environ.get("AUTOSEC_POC_INLINE_CODE_B64", "")
+    builtin_name = os.environ.get("AUTOSEC_POC_BUILTIN_NAME", "")
     try:
-        params = json.loads(sys.argv[2])
+        params = json.loads(sys.stdin.read())
     except Exception as e:
         print(f"Error parsing params: {e}")
         sys.exit(1)
@@ -200,7 +200,9 @@ def main():
         # Fallback if runner is already inside the pocs directory or in a sibling folder
         pocs_dir = current_dir if (current_dir / "iv_plugin_base.py").exists() else current_dir.parent / "pocs"
     
-    poc_filename = os.environ.get("AUTOSEC_POC_INLINE_NAME") or os.path.basename(poc_path)
+    poc_filename = os.path.basename(
+        builtin_name or os.environ.get("AUTOSEC_POC_INLINE_NAME") or poc_path
+    )
     poc_dir = os.path.dirname(poc_path)
     _apply_resource_limits()
     _install_socket_guard()
@@ -212,7 +214,13 @@ def main():
     try:
         module_name = poc_filename.replace('.py', '')
         _ensure_embedded_support_modules(pocs_dir)
-        if inline_code_b64:
+        if builtin_name:
+            builtin_code, normalized_name = get_poc_code(builtin_name)
+            if not builtin_code or normalized_name != builtin_name:
+                print(json.dumps({"error": "Built-in PoC is unavailable or invalid"}))
+                sys.exit(1)
+            module = _load_module_from_source(module_name, builtin_code, normalized_name)
+        elif inline_code_b64:
             inline_code = base64.b64decode(inline_code_b64).decode("utf-8")
             module = _load_module_from_source(module_name, inline_code, poc_path)
         else:

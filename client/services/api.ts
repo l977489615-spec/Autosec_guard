@@ -166,7 +166,55 @@ export interface BackendHealthStatus {
   ai_reports_enabled?: boolean;
   warnings?: string[];
   error?: string;
+  license?: Pick<LicenseStatus, 'enforced' | 'valid' | 'state' | 'expires_at' | 'remaining_days'>;
 }
+
+export interface LicenseStatus {
+  enforced: boolean;
+  valid: boolean;
+  state: string;
+  message?: string;
+  machine_code: string;
+  product: string;
+  license_id?: string;
+  customer?: string;
+  edition?: string;
+  expires_at?: string;
+  remaining_days?: number;
+  features?: string[];
+  key_id?: string;
+}
+
+export const getLicenseStatus = async (): Promise<LicenseStatus> => {
+  const res = await fetch('/api/v1/license/status', { credentials: 'same-origin' });
+  handleResponseAuth(res);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiRequestError(data?.error?.message || '无法获取许可证状态。', res.status, data?.error?.code, data?.trace_id);
+  }
+  return data as LicenseStatus;
+};
+
+export const activateOfflineLicense = async (licenseText: string): Promise<LicenseStatus> => {
+  let document: unknown;
+  try {
+    document = JSON.parse(licenseText);
+  } catch {
+    throw new ApiRequestError('许可证文件不是有效的 JSON。', 400, 'LICENSE_INVALID_FORMAT');
+  }
+  const res = await fetch('/api/v1/license/activate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({ license: document }),
+  });
+  handleResponseAuth(res);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiRequestError(data?.error?.message || '许可证激活失败。', res.status, data?.error?.code, data?.trace_id);
+  }
+  return data as LicenseStatus;
+};
 
 export interface ExecutionResult {
   success: boolean;

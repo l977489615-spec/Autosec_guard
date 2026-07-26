@@ -28,13 +28,14 @@ from flask import Flask, request, jsonify, Response, send_from_directory, g, has
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate, stamp as migrate_stamp, upgrade as migrate_upgrade
-from sqlalchemy import inspect as sqlalchemy_inspect, event
+from sqlalchemy import inspect as sqlalchemy_inspect, event, text as sqlalchemy_text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError
 from functools import wraps
 from urllib.parse import urlparse
 from cryptography.fernet import Fernet, InvalidToken
-from config import get_config, get_runtime_data_dir, get_runtime_warnings
+from config import get_config, get_runtime_data_dir, get_runtime_warnings, is_packaged_runtime
+from licensing import LicenseManager
 
 
 _ACTIVE_POC_PLANS: dict[str, list[tuple[Any, Any]]] = {}
@@ -188,6 +189,7 @@ def _professional_policy_for_poc(poc_path: str, rel_path: str, profile: dict | N
 # Configure Logging
 # ==========================================
 RUNTIME_DATA_DIR = get_runtime_data_dir()
+LICENSE_MANAGER = LicenseManager(RUNTIME_DATA_DIR)
 LOGS_DIR = str(RUNTIME_DATA_DIR / 'logs')
 os.makedirs(LOGS_DIR, exist_ok=True)
 log_file = os.path.join(LOGS_DIR, 'autosec.log')
@@ -247,7 +249,10 @@ _MAX_CONCURRENT_POCS = int(os.environ.get("AUTOSEC_MAX_CONCURRENT_POCS", "5"))
 _POC_SEMAPHORE = _threading_sem.Semaphore(_MAX_CONCURRENT_POCS)
 
 # ── 任意脚本执行开关（最高危能力，默认关闭） ─────────────────
-_ENABLE_SCRIPT_EXECUTION = os.environ.get("AUTOSEC_ENABLE_SCRIPT_EXECUTION", "false").strip().lower() in ("true", "1", "yes")
+_ENABLE_SCRIPT_EXECUTION = (
+    not is_packaged_runtime()
+    and os.environ.get("AUTOSEC_ENABLE_SCRIPT_EXECUTION", "false").strip().lower() in ("true", "1", "yes")
+)
 
 # ── 开放注册开关（默认关闭；首用户 bootstrap 除外） ──────────
 _ALLOW_OPEN_REGISTRATION = os.environ.get("AUTOSEC_ALLOW_OPEN_REGISTRATION", "false").strip().lower() in ("true", "1", "yes")
@@ -332,6 +337,10 @@ app.config['AI_CONFIG_KEY'] = CONFIG.ai_config_key
 # Database Configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = CONFIG.database_uri
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['MAX_CONTENT_LENGTH'] = max(
+    1024 * 1024,
+    min(16 * 1024 * 1024, int(os.environ.get('AUTOSEC_MAX_REQUEST_BYTES', str(8 * 1024 * 1024)))),
+)
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'connect_args': {'timeout': 15},
     'pool_pre_ping': True,
@@ -361,16 +370,19 @@ import threading as _threading
 import collections as _collections
 _LOGIN_FAIL_CACHE: dict = {}  # {key: fail_count}
 _LOGIN_FAIL_TIMESTAMPS: dict = {}  # {key: last_fail_time}
+_LOGIN_FAIL_LOCK = _threading.Lock()
+_DUMMY_PASSWORD_HASH = bcrypt.hashpw(b"timing-equalizer-password", bcrypt.gensalt())
 
 def _rate_limit_cleanup():
     """每 60 秒清理过期的失败计数。"""
     while True:
         _threading.Event().wait(60)
         now = time.time()
-        expired = [k for k, t in _LOGIN_FAIL_TIMESTAMPS.items() if now - t > 60]
-        for k in expired:
-            _LOGIN_FAIL_CACHE.pop(k, None)
-            _LOGIN_FAIL_TIMESTAMPS.pop(k, None)
+        with _LOGIN_FAIL_LOCK:
+            expired = [k for k, t in _LOGIN_FAIL_TIMESTAMPS.items() if now - t > 60]
+            for k in expired:
+                _LOGIN_FAIL_CACHE.pop(k, None)
+                _LOGIN_FAIL_TIMESTAMPS.pop(k, None)
 
 _cleanup_thread = _threading.Thread(target=_rate_limit_cleanup, daemon=True)
 _cleanup_thread.start()
@@ -387,6 +399,19 @@ def _redact_sensitive(value):
     if isinstance(value, list):
         return [_redact_sensitive(item) for item in value]
     return value
+
+
+def _sanitize_provider_error(value: object, api_key: str = "") -> str:
+    """Bound and redact untrusted model-provider errors before returning them."""
+    message = str(value or "AI provider request failed.")
+    if api_key:
+        message = message.replace(api_key, "***REDACTED***")
+    message = re.sub(
+        r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s,;]+",
+        r"\1***REDACTED***",
+        message,
+    )
+    return message[:500]
 
 
 _LOOPBACK_HOSTS = frozenset({'127.0.0.1', 'localhost', '::1'})
@@ -426,14 +451,20 @@ def _loopback_origin_aliases(origin: str) -> set[str]:
 
 def _allowed_request_origins() -> set[str]:
     allowed: set[str] = {item.rstrip('/') for item in _cors_origins if item}
-    scheme = (request.headers.get('X-Forwarded-Proto') or request.scheme or 'http').split(',')[0].strip()
+    trust_proxy_headers = os.environ.get('AUTOSEC_TRUST_PROXY_HEADERS', 'false').strip().lower() in ('1', 'true', 'yes')
+    scheme = request.scheme or 'http'
+    host_headers = [request.host]
+    if trust_proxy_headers:
+        scheme = (request.headers.get('X-Forwarded-Proto') or scheme).split(',')[0].strip()
+        host_headers.append(request.headers.get('X-Forwarded-Host'))
 
-    for host_header in (request.headers.get('X-Forwarded-Host'), request.host):
-        if not host_header:
-            continue
-        allowed.update(_loopback_origin_aliases(_origin_from_host(scheme, host_header)))
-
-    allowed.update(_loopback_origin_aliases(request.host_url.rstrip('/')))
+    # A Host header is attacker-controlled. Derive implicit origins only for
+    # loopback names; network deployments must configure an explicit origin.
+    for host_header in host_headers:
+        origin = _origin_from_host(scheme, host_header or '')
+        parsed = urlparse(origin)
+        if parsed.hostname and parsed.hostname.lower() in _LOOPBACK_HOSTS:
+            allowed.update(_loopback_origin_aliases(origin))
 
     trusted_ui = os.environ.get('AUTOSEC_TRUSTED_UI_ORIGINS', '').strip()
     if not trusted_ui and CONFIG.flask_debug:
@@ -477,6 +508,72 @@ def _enforce_cookie_csrf_and_origin():
         return _api_error('ORIGIN_REJECTED', '请求来源未授权。', 403)
     return None
 
+
+def _license_feature_for_request() -> str | None:
+    """Map security-sensitive API operations to licensed capabilities."""
+    if request.method == 'OPTIONS' or not request.path.startswith('/api/v1/'):
+        return None
+    path = request.path
+    if path.startswith('/api/v1/license/') or path in {
+        '/api/v1/auth/status', '/api/v1/auth/login', '/api/v1/auth/logout', '/api/v1/auth/register',
+    }:
+        return None
+    if path.startswith('/api/v1/run_poc') or path == '/api/v1/execute':
+        return 'poc_execution'
+    if path.startswith('/api/v1/report/'):
+        return 'report_export' if request.method != 'GET' else None
+    if path == '/api/v1/auto_discovery':
+        return 'scan'
+    if path.startswith('/api/v1/sessions') and request.method != 'GET':
+        return 'scan'
+    if path in {
+        '/api/v1/agent-scan',
+        '/api/v1/fingerprint',
+        '/api/v1/protocol-corpus',
+        '/api/v1/topology',
+        '/api/v1/adaptive-context',
+        '/api/v1/attack-graph/generate',
+        '/api/v1/attack-graph/update',
+        '/api/v1/attack-graph/multihop',
+        '/api/v1/attack-graph/multihop/update',
+        '/api/v1/exploration/next-actions',
+        '/api/v1/physical-impact/assess',
+        '/api/v1/remediation/simulate',
+        '/api/v1/evaluation/run-suite',
+        '/api/v1/evaluation/score',
+        '/api/v1/poc_manual_verdict',
+        '/api/v1/poc_manual_verdict_batch',
+        '/api/v1/scan_approval_policy',
+        '/api/v1/save_session',
+    }:
+        return 'scan'
+    return None
+
+
+def _enforce_product_license_for_authenticated_request():
+    feature = _license_feature_for_request()
+    if not feature:
+        return None
+    allowed, status = LICENSE_MANAGER.feature_allowed(feature)
+    if allowed:
+        return None
+    logger.warning(
+        "License blocked feature=%s path=%s state=%s",
+        feature,
+        request.path,
+        status.get('state'),
+    )
+    return _api_error(
+        'LICENSE_REQUIRED' if status.get('state') == 'missing' else 'LICENSE_NOT_VALID',
+        str(status.get('message') or '当前许可证不允许此操作。'),
+        403,
+        {
+            'license_state': status.get('state'),
+            'required_feature': feature,
+            'expires_at': status.get('expires_at'),
+        },
+    )
+
 # ── 全局错误处理器 ────────────────────────────────────────────
 @app.errorhandler(400)
 def bad_request(e):
@@ -518,6 +615,19 @@ def _apply_security_headers(response):
                 payload['error']['details'] = _redact_sensitive(details)
             response.set_data(json.dumps(payload, ensure_ascii=False))
             response.content_type = 'application/json; charset=utf-8'
+        if response.status_code >= 500:
+            normalized = response.get_json(silent=True) or {}
+            error = normalized.get('error') if isinstance(normalized, dict) else {}
+            code = error.get('code') if isinstance(error, dict) else f'HTTP_{response.status_code}'
+            trace_id = normalized.get('trace_id') if isinstance(normalized, dict) else None
+            response.set_data(json.dumps({
+                'error': {
+                    'code': str(code or f'HTTP_{response.status_code}'),
+                    'message': '服务暂时无法完成请求，请使用追踪编号联系管理员。',
+                },
+                'trace_id': trace_id or request.headers.get('X-Trace-Id') or uuid.uuid4().hex,
+            }, ensure_ascii=False))
+            response.content_type = 'application/json; charset=utf-8'
     response.headers.setdefault('X-Content-Type-Options', 'nosniff')
     response.headers.setdefault('X-Frame-Options', 'DENY')
     response.headers.setdefault('Referrer-Policy', 'no-referrer')
@@ -529,6 +639,11 @@ def _apply_security_headers(response):
         "object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
     )
     response.headers.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+    response.headers.setdefault('Cross-Origin-Opener-Policy', 'same-origin')
+    response.headers.setdefault('Cross-Origin-Resource-Policy', 'same-origin')
+    if request.path.startswith('/api/'):
+        response.headers['Cache-Control'] = 'no-store, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
     # HSTS 仅在 HTTPS 场景由前置代理注入更合适；此处在启用 TLS 时补充。
     if os.environ.get('AUTOSEC_BEHIND_TLS', 'false').strip().lower() in ('true', '1', 'yes'):
         response.headers.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
@@ -803,7 +918,7 @@ def _validate_ai_config(payload: dict | None) -> tuple[dict, str | None]:
     # SSRF 防护：AI base_url 必须是安全的出站 URL（拒绝内网/回环/link-local/云 metadata）。
     # allow_private：本地自建模型网关；allow_proxy_dns：Clash fake-ip（198.18.0.0/15）。
     allow_private = os.environ.get("AUTOSEC_ALLOW_PRIVATE_AI_URL", "false").strip().lower() in ("true", "1", "yes")
-    allow_proxy_dns = os.environ.get("AUTOSEC_ALLOW_PROXY_DNS", "true").strip().lower() in ("true", "1", "yes")
+    allow_proxy_dns = os.environ.get("AUTOSEC_ALLOW_PROXY_DNS", "false").strip().lower() in ("true", "1", "yes")
     safe, reason = is_safe_outbound_url(
         config["base_url"],
         allow_private=allow_private,
@@ -854,6 +969,47 @@ def _generate_unified_assessment_report(session: dict, ai_config: dict, tester_n
 # Database Startup Migration Helper
 # ==========================================
 
+_PACKAGED_SCHEMA_REVISION = '9b71c8d2f301'
+_PACKAGED_KNOWN_REVISIONS = {'8763c54bbdfd', _PACKAGED_SCHEMA_REVISION}
+
+
+def _upgrade_packaged_schema(existing_tables: set[str]) -> None:
+    """Upgrade the current additive schema without shipping Alembic source files."""
+    if 'alembic_version' in existing_tables:
+        revisions = {
+            str(row[0])
+            for row in db.session.execute(sqlalchemy_text('SELECT version_num FROM alembic_version'))
+            if row[0]
+        }
+        unknown = revisions - _PACKAGED_KNOWN_REVISIONS
+        if unknown:
+            raise RuntimeError('database schema revision is newer or unsupported')
+    elif existing_tables:
+        required_legacy_tables = {'users', 'scan_history'}
+        if not required_legacy_tables.issubset(existing_tables):
+            raise RuntimeError('unversioned database does not match the supported legacy schema')
+
+    # Both released migrations are additive. SQLAlchemy creates only missing
+    # tables and indexes, preserving customer records already present.
+    db.create_all()
+    db.session.execute(sqlalchemy_text(
+        'CREATE TABLE IF NOT EXISTS alembic_version '
+        '(version_num VARCHAR(32) NOT NULL PRIMARY KEY)'
+    ))
+    db.session.execute(sqlalchemy_text('DELETE FROM alembic_version'))
+    db.session.execute(
+        sqlalchemy_text('INSERT INTO alembic_version (version_num) VALUES (:revision)'),
+        {'revision': _PACKAGED_SCHEMA_REVISION},
+    )
+    db.session.commit()
+
+    actual_tables = set(sqlalchemy_inspect(db.engine).get_table_names())
+    expected_tables = set(db.metadata.tables) | {'alembic_version'}
+    missing_tables = expected_tables - actual_tables
+    if missing_tables:
+        raise RuntimeError('packaged schema upgrade is incomplete')
+    logger.info('Packaged database schema is at revision %s.', _PACKAGED_SCHEMA_REVISION)
+
 def _startup_db_migrate() -> None:
     """Back up SQLite, adopt the legacy baseline, and migrate atomically or refuse startup."""
     from pathlib import Path as _Path
@@ -871,15 +1027,18 @@ def _startup_db_migrate() -> None:
             shutil.copy2(database_path, backup_path)
 
     try:
-        if not has_migrations:
+        if is_packaged_runtime():
+            _upgrade_packaged_schema(existing_tables)
+        elif not has_migrations:
             raise RuntimeError('migrations directory is missing or incomplete')
-        if existing_tables and 'alembic_version' not in existing_tables:
+        elif existing_tables and 'alembic_version' not in existing_tables:
             required_legacy_tables = {'users', 'scan_history'}
             if not required_legacy_tables.issubset(existing_tables):
                 raise RuntimeError('unversioned database does not match the supported legacy schema')
             migrate_stamp(directory=str(migrations_dir), revision='8763c54bbdfd')
             logger.info('Adopted existing database at the v2 legacy migration baseline.')
-        migrate_upgrade(directory=str(migrations_dir), revision='head')
+        if not is_packaged_runtime():
+            migrate_upgrade(directory=str(migrations_dir), revision='head')
         _backfill_v3_sessions()
         _sync_legacy_history_into_v3_sessions()
         logger.info('Database migration and v3 backfill completed.')
@@ -889,6 +1048,29 @@ def _startup_db_migrate() -> None:
         if database_path and backup_path and backup_path.exists():
             shutil.copy2(backup_path, database_path)
         raise RuntimeError(f'Database migration failed; startup refused and backup restored: {exc}') from exc
+
+
+def _secure_runtime_file_permissions() -> None:
+    """Restrict local secrets, databases, licenses and migration backups on POSIX."""
+    if os.name == 'nt':
+        return
+    data_dir = get_runtime_data_dir()
+    candidates = list(data_dir.glob('*.db*')) + [
+        data_dir / '.session-secret',
+        data_dir / '.ai-config-secret',
+        data_dir / '.license-installation-id',
+        data_dir / '.license-state-key',
+        data_dir / '.license-clock-state',
+    ]
+    license_path = Path(os.environ.get('AUTOSEC_LICENSE_PATH') or data_dir / 'license.autosec')
+    candidates.append(license_path)
+    for path in candidates:
+        if not path.exists() or not path.is_file():
+            continue
+        try:
+            path.chmod(0o600)
+        except OSError as exc:
+            raise RuntimeError(f'Unable to restrict runtime file permissions for {path}') from exc
 
 
 # ==========================================
@@ -1433,7 +1615,7 @@ def _disruptive_execution_authorized(
 
 
 def _build_execution_artifact_payload(**kwargs) -> dict:
-    payload = dict(kwargs)
+    payload = _redact_sensitive(dict(kwargs))
     payload.setdefault("created_at", _get_utc_now().strftime('%Y-%m-%dT%H:%M:%SZ'))
     return payload
 
@@ -1708,6 +1890,10 @@ def token_required(f):
                 'required_scope': required_scope,
             })
 
+        license_denial = _enforce_product_license_for_authenticated_request()
+        if license_denial is not None:
+            return license_denial
+
         return f(current_user, *args, **kwargs)
     decorated._auth_required = True
     return decorated
@@ -1729,6 +1915,35 @@ def admin_required(f):
 # ==========================================
 # Auth Helpers & Endpoints
 # ==========================================
+
+_PASSWORD_MIN_CHARS = 12
+_PASSWORD_MAX_BYTES = 72  # bcrypt's defined input boundary
+
+
+def _username_validation_error(username: str) -> str | None:
+    if len(username) < 3 or len(username) > 64:
+        return "Username must be 3-64 characters."
+    if any(ord(char) < 32 or ord(char) == 127 for char in username):
+        return "Username must not contain control characters."
+    return None
+
+
+def _password_validation_error(password: str) -> str | None:
+    if len(password) < _PASSWORD_MIN_CHARS:
+        return f"Password must be at least {_PASSWORD_MIN_CHARS} characters."
+    if len(password.encode('utf-8')) > _PASSWORD_MAX_BYTES:
+        return "Password must be at most 72 UTF-8 bytes."
+    return None
+
+
+def _revoke_user_credentials(user_id: int) -> None:
+    now = _get_utc_now()
+    AuthSession.query.filter_by(user_id=user_id, revoked_at=None).update(
+        {AuthSession.revoked_at: now}, synchronize_session=False,
+    )
+    ApiToken.query.filter_by(user_id=user_id, revoked_at=None).update(
+        {ApiToken.revoked_at: now}, synchronize_session=False,
+    )
 
 def _auth_status_payload() -> dict:
     """返回当前认证/注册策略状态，供前端与运维判断。"""
@@ -1768,7 +1983,8 @@ def _log_bootstrap_security_warnings() -> None:
     logger.warning(
         "SECURITY: System bootstrap pending — the first successful web initialization will create an administrator account."
     )
-    if CONFIG.flask_host == "0.0.0.0":
+    # Comparison only; actual non-loopback binds are checked by startup policy.
+    if CONFIG.flask_host == "0.0.0.0":  # nosec B104
         logger.warning(
             "SECURITY: Bootstrap is reachable on all network interfaces (AUTOSEC_HOST=0.0.0.0). "
             "Set AUTOSEC_BOOTSTRAP_TOKEN or AUTOSEC_HOST=127.0.0.1 before exposing the service."
@@ -1776,6 +1992,31 @@ def _log_bootstrap_security_warnings() -> None:
     if not _BOOTSTRAP_TOKEN:
         logger.warning(
             "SECURITY: AUTOSEC_BOOTSTRAP_TOKEN is not set. Anyone who can reach /api/v1/auth/register first may become admin."
+        )
+
+
+def _validate_startup_security() -> None:
+    """Fail closed when a network-facing deployment lacks required controls."""
+    host = str(CONFIG.flask_host or '').strip().strip('[]').lower()
+    try:
+        loopback_bind = ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        loopback_bind = host == 'localhost'
+
+    if is_packaged_runtime() and CONFIG.flask_debug:
+        raise RuntimeError('AUTOSEC_DEBUG must be disabled in packaged builds.')
+    if loopback_bind:
+        return
+
+    if _BOOTSTRAP_MODE != 'cli_only' and not _BOOTSTRAP_TOKEN:
+        raise RuntimeError(
+            'Network binding requires AUTOSEC_BOOTSTRAP_MODE=cli_only or a strong AUTOSEC_BOOTSTRAP_TOKEN.'
+        )
+    if os.environ.get('AUTOSEC_BEHIND_TLS', 'false').strip().lower() not in ('1', 'true', 'yes'):
+        raise RuntimeError('Network binding requires TLS and AUTOSEC_BEHIND_TLS=true.')
+    if not (_cors_origins or os.environ.get('AUTOSEC_TRUSTED_UI_ORIGINS', '').strip()):
+        raise RuntimeError(
+            'Network binding requires an exact AUTOSEC_TRUSTED_UI_ORIGINS or AUTOSEC_CORS_ORIGINS allowlist.'
         )
 
 
@@ -1795,10 +2036,9 @@ def register():
         return jsonify({"message": "Username and password are required!"}), 400
 
     # 基本强度校验
-    if len(username) < 3 or len(username) > 64:
-        return jsonify({"message": "Username must be 3-64 characters."}), 400
-    if len(password) < 8:
-        return jsonify({"message": "Password must be at least 8 characters."}), 400
+    validation_error = _username_validation_error(username) or _password_validation_error(password)
+    if validation_error:
+        return jsonify({"message": validation_error}), 400
 
     # Bootstrap / 开放注册策略（见 AUTOSEC_BOOTSTRAP_MODE、AUTOSEC_ALLOW_OPEN_REGISTRATION）
     with _REGISTRATION_LOCK:
@@ -1878,7 +2118,8 @@ def login():
     # ── 简单速率限制：同一 IP 最多 10 次/分钟失败尝试 ────────
     _remote = request.remote_addr or "unknown"
     _rate_key = f"login_fail:{_remote}"
-    _fail_count = _LOGIN_FAIL_CACHE.get(_rate_key, 0)
+    with _LOGIN_FAIL_LOCK:
+        _fail_count = _LOGIN_FAIL_CACHE.get(_rate_key, 0)
     if _fail_count >= 10:
         logger.warning(f"Login rate limit exceeded for IP: {_remote}")
         return jsonify({"message": "Too many failed attempts. Please wait 60 seconds."}), 429
@@ -1887,9 +2128,12 @@ def login():
 
     # 防用户名枚举：无论用户是否存在，都执行一次 bcrypt 比对（恒定时间行为），
     # 且失败响应统一为 401 "Invalid username or password."。
-    password_bytes = data.get('password').encode('utf-8')
-    if user and bcrypt.checkpw(password_bytes, user.password_hash.encode('utf-8')):
-        _LOGIN_FAIL_CACHE.pop(_rate_key, None)  # 登录成功，清除失败计数
+    password_bytes = str(data.get('password')).encode('utf-8')
+    password_within_bcrypt_limit = len(password_bytes) <= _PASSWORD_MAX_BYTES
+    if user and password_within_bcrypt_limit and bcrypt.checkpw(password_bytes, user.password_hash.encode('utf-8')):
+        with _LOGIN_FAIL_LOCK:
+            _LOGIN_FAIL_CACHE.pop(_rate_key, None)  # 登录成功，清除失败计数
+            _LOGIN_FAIL_TIMESTAMPS.pop(_rate_key, None)
         logger.info(f"User logged in: {user.username}")
         user_payload = user.to_dict()
         user_payload["ai_config"] = _mask_ai_config_for_client(_load_user_ai_config(user.id))
@@ -1934,12 +2178,13 @@ def login():
         )
         return response
 
-    if not user:
+    if not user and password_within_bcrypt_limit:
         # 执行一次伪比对，抹平存在/不存在用户的响应时间差异
-        bcrypt.checkpw(password_bytes, bcrypt.hashpw(b"timing_equalizer", bcrypt.gensalt()))
+        bcrypt.checkpw(password_bytes, _DUMMY_PASSWORD_HASH)
 
-    _LOGIN_FAIL_CACHE[_rate_key] = _fail_count + 1
-    _LOGIN_FAIL_TIMESTAMPS[_rate_key] = time.time()
+    with _LOGIN_FAIL_LOCK:
+        _LOGIN_FAIL_CACHE[_rate_key] = _fail_count + 1
+        _LOGIN_FAIL_TIMESTAMPS[_rate_key] = time.time()
     return jsonify({"message": "Invalid username or password."}), 401
 
 
@@ -1990,6 +2235,11 @@ def profile(current_user):
         
         updates_made = False
         
+        if new_username:
+            new_username = str(new_username).strip()
+            validation_error = _username_validation_error(new_username)
+            if validation_error:
+                return jsonify({"message": validation_error}), 400
         if new_username and new_username != current_user.username:
             # Check if username is already taken by someone else
             existing_user = User.query.filter_by(username=new_username).first()
@@ -1999,10 +2249,13 @@ def profile(current_user):
             updates_made = True
             
         if new_password:
-            if len(new_password) < 8:
-                return jsonify({"message": "Password must be at least 8 characters long."}), 400
+            new_password = str(new_password)
+            validation_error = _password_validation_error(new_password)
+            if validation_error:
+                return jsonify({"message": validation_error}), 400
             hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
             current_user.password_hash = hashed_password
+            _revoke_user_credentials(current_user.id)
             updates_made = True
 
         if isinstance(ai_config, dict):
@@ -2040,15 +2293,16 @@ def admin_get_users(current_user):
 @admin_required
 def admin_create_user(current_user):
     data = request.json
-    username = data.get('username')
-    password = data.get('password')
+    username = str(data.get('username') or '').strip()
+    password = str(data.get('password') or '')
     role = data.get('role', 'user')
 
     if not username or not password:
         return jsonify({"message": "Username and password are required!"}), 400
 
-    if len(password) < 8:
-        return jsonify({"message": "Password must be at least 8 characters long."}), 400
+    validation_error = _username_validation_error(username) or _password_validation_error(password)
+    if validation_error:
+        return jsonify({"message": validation_error}), 400
 
     if User.query.filter_by(username=username).first():
         return jsonify({"message": "Username already exists!"}), 400
@@ -2076,12 +2330,16 @@ def admin_update_user(current_user, user_id):
         return jsonify({"message": "User not found!"}), 404
 
     data = request.json
-    new_username = data.get('username')
+    new_username = str(data.get('username') or '').strip()
     new_password = data.get('password')
     new_role = data.get('role')
 
     updates_made = False
 
+    if new_username:
+        validation_error = _username_validation_error(new_username)
+        if validation_error:
+            return jsonify({"message": validation_error}), 400
     if new_username and new_username != target_user.username:
         if User.query.filter_by(username=new_username).first():
             return jsonify({"message": "Username already exists!"}), 400
@@ -2098,8 +2356,13 @@ def admin_update_user(current_user, user_id):
         updates_made = True
 
     if new_password:
+        new_password = str(new_password)
+        validation_error = _password_validation_error(new_password)
+        if validation_error:
+            return jsonify({"message": validation_error}), 400
         hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
         target_user.password_hash = hashed_password
+        _revoke_user_credentials(target_user.id)
         updates_made = True
 
     if updates_made:
@@ -2163,12 +2426,76 @@ def serve_frontend(path: str):
 @app.route('/health', methods=['GET'])
 def health_check():
     """Check if the execution engine is online. 仅返回存活状态，不泄露内部路径/配置。"""
+    license_status = LICENSE_MANAGER.evaluate()
     return jsonify({
         "status": "online",
         "product": "AutoSec Guard Edge Workstation",
         "product_mode": "edge-local",
         "ai_reports_enabled": True,
+        "license": {
+            "enforced": license_status.get("enforced"),
+            "valid": license_status.get("valid"),
+            "state": license_status.get("state"),
+            "expires_at": license_status.get("expires_at"),
+            "remaining_days": license_status.get("remaining_days"),
+        },
     })
+
+
+def _license_status_response() -> dict:
+    status = dict(LICENSE_MANAGER.evaluate())
+    # Do not disclose workstation filesystem layout to the browser/API client.
+    status.pop('license_path', None)
+    return status
+
+
+@app.route('/api/v1/license/status', methods=['GET'])
+@token_required
+def license_status(current_user):
+    return jsonify(_license_status_response())
+
+
+@app.route('/api/v1/license/machine-code', methods=['GET'])
+@token_required
+def license_machine_code(current_user):
+    return jsonify({
+        'machine_code': LICENSE_MANAGER.machine_code,
+        'product': 'autosec-guard-edge',
+    })
+
+
+@app.route('/api/v1/license/activate', methods=['POST'])
+@token_required
+def activate_license(current_user):
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _api_error('LICENSE_INVALID_FORMAT', '请提交有效的许可证 JSON。', 400)
+    document = data.get('license', data)
+    if isinstance(document, str):
+        try:
+            document = json.loads(document)
+        except json.JSONDecodeError:
+            return _api_error('LICENSE_INVALID_FORMAT', '许可证文本不是有效 JSON。', 400)
+    if not isinstance(document, dict):
+        return _api_error('LICENSE_INVALID_FORMAT', '许可证内容必须是 JSON 对象。', 400)
+    status = LICENSE_MANAGER.install(document)
+    if not status.get('valid'):
+        return _api_error(
+            'LICENSE_ACTIVATION_FAILED',
+            str(status.get('message') or '许可证激活失败。'),
+            400,
+            {'license_state': status.get('state')},
+        )
+    logger.info(
+        "License activated by user=%s license_id=%s customer=%s expires_at=%s",
+        current_user.username,
+        status.get('license_id'),
+        status.get('customer'),
+        status.get('expires_at'),
+    )
+    response = dict(status)
+    response.pop('license_path', None)
+    return jsonify(response), 201
 
 
 @app.route('/api/v1/local/capabilities', methods=['GET'])
@@ -2764,13 +3091,13 @@ def _execute_poc_for_user(
                 user_id=user_id,
                 action='run_disruptive_poc',
                 target=target,
-                details_json=json.dumps({
+                details_json=json.dumps(_redact_sensitive({
                     "poc": poc_filename,
-                    "params": {k: v for k, v in params.items() if k not in ("approval_token",)},
+                    "params": params,
                     "security_profile": security_profile,
                     "trace_id": trace_id,
                     "reason": "approval_required",
-                }, ensure_ascii=False),
+                }), ensure_ascii=False),
                 ip_address=remote_addr
             )
             db.session.add(audit)
@@ -2978,14 +3305,14 @@ def run_poc_stream(current_user):
                 user_id=None,
                 action='run_disruptive_poc',
                 target=_stream_target,
-                details_json=json.dumps({
+                details_json=json.dumps(_redact_sensitive({
                     "poc": poc_filename,
-                    "params": {k: v for k, v in params.items() if k not in ("approval_token",)},
+                    "params": params,
                     "security_profile": security_profile,
                     "trace_id": trace_id,
                     "mode": "stream",
                     "reason": "approval_required",
-                }, ensure_ascii=False),
+                }), ensure_ascii=False),
                 ip_address=remote_addr
             )
             db.session.add(audit)
@@ -3009,13 +3336,13 @@ def run_poc_stream(current_user):
                 user_id=None,
                 action='run_disruptive_poc',
                 target=target,
-                details_json=json.dumps({
+                details_json=json.dumps(_redact_sensitive({
                     "poc": poc_filename,
                     "params": params,
                     "mode": "stream",
                     "security_profile": security_profile,
                     "trace_id": trace_id,
-                }, ensure_ascii=False),
+                }), ensure_ascii=False),
                 ip_address=remote_addr
             )
             db.session.add(audit)
@@ -3788,6 +4115,8 @@ def execute_script(current_user):
     if not script_content:
         logger.warning("Received execute_script request with no script content.")
         return jsonify({"error": "No script content provided"}), 400
+    if not isinstance(script_content, str) or len(script_content.encode('utf-8')) > 256 * 1024:
+        return jsonify({"error": "Script content exceeds the 256 KiB limit"}), 413
 
     logger.info(f"Interactive execution request by admin={current_user.username} (Script size: {len(script_content)} bytes)")
     start_time = time.time()
@@ -3961,7 +4290,8 @@ def test_ai_config(current_user):
                 "messages": [{"role": "user", "content": "ping"}],
                 "max_tokens": 5
             },
-            timeout=10
+            timeout=10,
+            allow_redirects=False,
         )
         
         if response.status_code == 200:
@@ -3976,6 +4306,7 @@ def test_ai_config(current_user):
                 msg = err_data.get('error', {}).get('message', response.text)
             except:
                 msg = response.text
+            msg = _sanitize_provider_error(msg, normalized['api_key'])
             return jsonify({
                 "success": False, 
                 "message": f"API returned error ({response.status_code}): {msg}"
@@ -4434,6 +4765,7 @@ def stream_v3_session_events(current_user, session_id):
 
 @app.route('/api/v1/sessions/<session_id>/approvals', methods=['POST'])
 @token_required
+@admin_required
 def approve_v3_session_action(current_user, session_id):
     session = _owned_v3_session(session_id, current_user)
     if not session:
@@ -4515,14 +4847,13 @@ import click
 
 @app.cli.command("create-admin")
 @click.option("--username", required=True, help="Administrator username (3-64 characters)")
-@click.option("--password", prompt=True, hide_input=True, confirmation_prompt=True, help="Administrator password (min 8 characters)")
+@click.option("--password", prompt=True, hide_input=True, confirmation_prompt=True, help="Administrator password (min 12 characters)")
 def create_admin_cli(username: str, password: str):
     """Create an administrator account via CLI (enterprise bootstrap; bypasses web registration)."""
     username = username.strip()
-    if len(username) < 3 or len(username) > 64:
-        raise click.ClickException("Username must be 3-64 characters.")
-    if len(password) < 8:
-        raise click.ClickException("Password must be at least 8 characters.")
+    validation_error = _username_validation_error(username) or _password_validation_error(password)
+    if validation_error:
+        raise click.ClickException(validation_error)
 
     with app.app_context():
         if User.query.filter_by(username=username).first():
@@ -4555,12 +4886,13 @@ def create_admin_cli(username: str, password: str):
 
 @app.cli.command("reset-password")
 @click.option("--username", required=True, help="Existing username")
-@click.option("--password", prompt=True, hide_input=True, confirmation_prompt=True, help="New password (min 8 characters)")
+@click.option("--password", prompt=True, hide_input=True, confirmation_prompt=True, help="New password (min 12 characters)")
 def reset_password_cli(username: str, password: str):
     """Reset an existing user's password without exposing the previous password."""
     username = username.strip()
-    if len(password) < 8:
-        raise click.ClickException("Password must be at least 8 characters.")
+    validation_error = _password_validation_error(password)
+    if validation_error:
+        raise click.ClickException(validation_error)
 
     with app.app_context():
         user = User.query.filter_by(username=username).first()
@@ -4568,11 +4900,7 @@ def reset_password_cli(username: str, password: str):
             raise click.ClickException(f"User does not exist: {username}")
 
         user.password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-        now = _get_utc_now()
-        AuthSession.query.filter_by(user_id=user.id, revoked_at=None).update(
-            {AuthSession.revoked_at: now},
-            synchronize_session=False,
-        )
+        _revoke_user_credentials(user.id)
         db.session.add(AuditLog(
             user_id=user.id,
             action="password_reset_cli",
@@ -4585,18 +4913,48 @@ def reset_password_cli(username: str, password: str):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) >= 4 and sys.argv[1] == '--run-sandbox':
-        sys.argv = [sys.argv[0], sys.argv[2], sys.argv[3]]
+    if len(sys.argv) >= 3 and sys.argv[1] == '--run-sandbox':
+        if is_packaged_runtime():
+            from poc_registry import get_poc_code
+            builtin_name = os.environ.get('AUTOSEC_POC_BUILTIN_NAME', '')
+            builtin_code, normalized_name = get_poc_code(builtin_name)
+            if (
+                not builtin_code
+                or normalized_name != builtin_name
+                or os.environ.get('AUTOSEC_POC_INLINE_CODE_B64')
+            ):
+                print('SANDBOX_BLOCKED: only compiled built-in PoCs may run.', file=sys.stderr)
+                raise SystemExit(77)
+        license_allowed, license_status = LICENSE_MANAGER.feature_allowed('poc_execution')
+        if not license_allowed:
+            print(
+                f"LICENSE_BLOCKED: {license_status.get('state')}: {license_status.get('message')}",
+                file=sys.stderr,
+            )
+            raise SystemExit(78)
+        os.environ.pop('AUTOSEC_DATA_DIR', None)
+        os.environ.pop('AUTOSEC_LICENSE_PATH', None)
+        sys.argv = [sys.argv[0], sys.argv[2]]
         from sandbox_runner import main as sandbox_main
         raise SystemExit(sandbox_main())
 
     logger.info(f"AutoSec Execution Engine starting on port {CONFIG.flask_port}...")
+    startup_license = LICENSE_MANAGER.evaluate()
+    logger.info(
+        "License state=%s enforced=%s valid=%s expires_at=%s",
+        startup_license.get('state'),
+        startup_license.get('enforced'),
+        startup_license.get('valid'),
+        startup_license.get('expires_at'),
+    )
     logger.info(f"PoCs directory: {POCS_DIR}")
     for warning in RUNTIME_WARNINGS:
         logger.warning(warning)
 
+    _validate_startup_security()
     with app.app_context():
         _startup_db_migrate()
+        _secure_runtime_file_permissions()
         _log_bootstrap_security_warnings()
 
     # ── 初始化自适应上下文引擎（Patent-1: Adaptive Context for IVI Lab）──
@@ -4624,4 +4982,15 @@ if __name__ == '__main__':
     # Disable flask default click logger to favor our custom logger
     log = logging.getLogger('werkzeug')
     log.setLevel(logging.ERROR)
-    app.run(host=CONFIG.flask_host, port=CONFIG.flask_port, debug=CONFIG.flask_debug, use_reloader=False)
+    from waitress import serve
+    serve(
+        app,
+        host=CONFIG.flask_host,
+        port=CONFIG.flask_port,
+        threads=max(4, _MAX_CONCURRENT_POCS + 2),
+        channel_timeout=120,
+        max_request_body_size=app.config['MAX_CONTENT_LENGTH'],
+        clear_untrusted_proxy_headers=True,
+        expose_tracebacks=False,
+        ident='AutoSec-Guard',
+    )

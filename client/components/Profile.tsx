@@ -46,8 +46,8 @@ const Profile: React.FC<ProfileProps> = ({ currentUser, token, onUpdateSuccess }
     event.preventDefault();
     setError('');
     setSuccess('');
-    if (newPassword && newPassword.length < 8) {
-      setError('新密码至少需要 8 个字符。');
+    if (newPassword && newPassword.length < 12) {
+      setError('新密码至少需要 12 个字符。');
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -155,14 +155,14 @@ const Profile: React.FC<ProfileProps> = ({ currentUser, token, onUpdateSuccess }
               <div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-slate-200">修改密码</span>
-                  <span className="text-[11px] text-slate-500">可选 · 至少 8 位</span>
+                  <span className="text-[11px] text-slate-500">可选 · 至少 12 位</span>
                 </div>
                 <div className="mt-3 space-y-3">
                   <label className="field-label">
                     新密码
                     <input
                       type="password"
-                      minLength={8}
+                      minLength={12}
                       autoComplete="new-password"
                       value={newPassword}
                       onChange={(event) => setNewPassword(event.target.value)}
@@ -174,7 +174,7 @@ const Profile: React.FC<ProfileProps> = ({ currentUser, token, onUpdateSuccess }
                     确认新密码
                     <input
                       type="password"
-                      minLength={8}
+                      minLength={12}
                       autoComplete="new-password"
                       value={confirmPassword}
                       onChange={(event) => setConfirmPassword(event.target.value)}

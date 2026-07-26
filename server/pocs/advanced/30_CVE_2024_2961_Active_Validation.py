@@ -117,7 +117,7 @@ def _run_poc(plugin) -> dict:
     if target_ip and target_ip != "127.0.0.1":
         try:
             result = subprocess.run(
-                ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5",
+                ["ssh", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=5",
                  "-o", "BatchMode=yes", f"root@{target_ip}",
                  "ldd --version 2>&1 | head -2; getconf GNU_LIBC_VERSION 2>/dev/null"],
                 capture_output=True, text=True, timeout=10

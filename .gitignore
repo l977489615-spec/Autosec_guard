@@ -46,13 +46,23 @@ venv/
 # ── Secrets & local env ───────────────────────────────────────
 .env
 .env.*
+.env old
+*.env
 !.env.example
 claude_code_env.sh
 **/.session-secret
 **/.ai-config-secret
+private/
+*.autosec
+**/.license-installation-id
+**/.license-state-key
+**/.license-clock-state
 
 # ── Local databases ───────────────────────────────────────────
 *.db
+*.db-shm
+*.db-wal
+*.db-journal
 *.sqlite
 *.sqlite3
 

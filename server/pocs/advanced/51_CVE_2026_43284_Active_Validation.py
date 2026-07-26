@@ -151,7 +151,9 @@ def _compile_and_run(allow_disruptive: bool, lab_cmd: str) -> dict:
 def _run_poc(plugin) -> dict:
     allow_disruptive = getattr(plugin, "_allow_disruptive", False) or \
         bool((plugin.params or {}).get("allow_disruptive"))
-    lab_cmd = (plugin.params or {}).get("lab_command", "id")
+    # Never accept a client-provided local command. The fixed identity probe is
+    # sufficient to record the post-exploit privilege level.
+    lab_cmd = "id"
 
     evidence: dict = {
         "cve": "CVE-2026-43284",

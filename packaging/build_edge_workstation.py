@@ -10,6 +10,9 @@ is compiled into one executable and serves the prebuilt frontend bundle.
 from __future__ import annotations
 
 import argparse
+import ast
+import base64
+import hashlib
 import os
 import platform
 import shutil
@@ -28,6 +31,8 @@ CLIENT_DIST = CLIENT_DIR / "dist"
 POC_WORDLISTS_DIR = SERVER_DIR / "pocs" / "wordlists"
 ENTRYPOINT = SERVER_DIR / "server.py"
 REGISTRY_GENERATOR = SERVER_DIR / "generate_poc_registry.py"
+LICENSE_PUBLIC_KEY_MODULE = SERVER_DIR / "generated_license_public_key.py"
+FORBIDDEN_RELEASE_SUFFIXES = {".py", ".pyc", ".pyo", ".map", ".ts", ".tsx"}
 
 
 def _run(cmd: list[str], cwd: Path | None = None, env: dict[str, str] | None = None) -> None:
@@ -62,11 +67,18 @@ AUTOSEC_DEBUG=false
 # Optional. Defaults to a per-user application data directory.
 # AUTOSEC_DATA_DIR=/opt/autosec-guard-edge/data
 
+# Optional custom location for the signed offline license.
+# AUTOSEC_LICENSE_PATH=/opt/autosec-guard-edge/license.autosec
+
 # Optional sandbox limits.
 SANDBOX_CPU_SECONDS=60
 SANDBOX_MEMORY_MB=256
 SANDBOX_OUTPUT_MB=8
 SANDBOX_NOFILE=256
+
+# High-risk local exploit binaries remain disabled in customer packages unless
+# an administrator explicitly enables them on an isolated lab workstation.
+AUTOSEC_ENABLE_HOST_EXPLOITS=false
 """
     (release_dir / ".env.template").write_text(env_template, encoding="utf-8")
 
@@ -93,6 +105,27 @@ Then open:
 ```text
 http://127.0.0.1:5002
 ```
+
+Before starting, verify the adjacent checksum file from the directory that
+contains the ZIP. On macOS or Linux:
+
+```bash
+shasum -a 256 -c {release_dir.name}.zip.sha256
+```
+
+On first use, sign in and copy the device code shown on the license activation
+page. Send that code to your AutoSec supplier, then import the returned signed
+`.autosec` license file. Renewals only require a new license file; the program
+does not need to be reinstalled.
+
+## Customer-owned AI configuration
+
+After login, open Profile and enter the model Base URL, API key, and model
+names. The API key is encrypted in the local customer data directory, is never
+returned by profile APIs, and is sent only to the model endpoint configured by
+the customer. The AutoSec supplier is not in that request path. A cloud model
+provider will necessarily receive the key and submitted prompts; use a
+customer-hosted local model endpoint when data must remain fully on premises.
 
 ## Delivery Boundary
 
@@ -133,6 +166,28 @@ def _generate_registry() -> None:
     _run([sys.executable, str(REGISTRY_GENERATOR)], cwd=SERVER_DIR)
 
 
+def _validate_license_public_key() -> None:
+    """Fail a customer build if its embedded verifier key is absent or malformed."""
+    try:
+        tree = ast.parse(LICENSE_PUBLIC_KEY_MODULE.read_text(encoding="utf-8"))
+        public_b64 = ""
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and any(
+                isinstance(target, ast.Name) and target.id == "LICENSE_PUBLIC_KEY_B64"
+                for target in node.targets
+            ):
+                public_b64 = str(ast.literal_eval(node.value))
+                break
+        raw = base64.b64decode(public_b64, validate=True)
+        if len(raw) != 32:
+            raise ValueError
+    except (OSError, SyntaxError, ValueError, TypeError) as exc:
+        raise RuntimeError(
+            "A valid Ed25519 public license key is required before customer packaging. "
+            "Run server/license_cli.py generate-keypair first."
+        ) from exc
+
+
 def _copy_runtime_resources(release_dir: Path) -> None:
     if POC_WORDLISTS_DIR.exists():
         destination = release_dir / "pocs" / "wordlists"
@@ -141,12 +196,36 @@ def _copy_runtime_resources(release_dir: Path) -> None:
         shutil.copytree(POC_WORDLISTS_DIR, destination)
 
 
+def _verify_release_boundary(release_dir: Path) -> None:
+    """Fail closed if source, maps, private keys, or local data enter a package."""
+    findings: list[str] = []
+    for path in release_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(release_dir).as_posix()
+        lowered = path.name.lower()
+        if path.suffix.lower() in FORBIDDEN_RELEASE_SUFFIXES:
+            findings.append(f"source/debug artifact: {relative}")
+        if lowered in {".env", ".env.local"} or lowered.endswith((".db", ".db-wal", ".db-shm")):
+            findings.append(f"runtime data or secret configuration: {relative}")
+        try:
+            prefix = path.read_bytes()[:8192]
+        except OSError:
+            continue
+        private_marker = b"-----BEGIN " + b"PRIVATE KEY-----"
+        encrypted_marker = b"-----BEGIN ENCRYPTED " + b"PRIVATE KEY-----"
+        if private_marker in prefix or encrypted_marker in prefix:
+            findings.append(f"private key material: {relative}")
+    if findings:
+        raise RuntimeError("customer release boundary violation:\n- " + "\n- ".join(sorted(findings)))
+
+
 def _build_with_nuitka(work_dir: Path, output_name: str) -> Path:
     out_dir = work_dir / "nuitka"
     cache_dir = work_dir / "nuitka-cache"
     out_dir.mkdir(parents=True, exist_ok=True)
     cache_dir.mkdir(parents=True, exist_ok=True)
-    nuitka_mode = os.environ.get("AUTOSEC_NUITKA_MODE", "standalone").strip().lower()
+    nuitka_mode = os.environ.get("AUTOSEC_NUITKA_MODE", "onefile").strip().lower()
     if nuitka_mode not in {"standalone", "onefile"}:
         raise RuntimeError("AUTOSEC_NUITKA_MODE must be 'standalone' or 'onefile'")
     nuitka_jobs = os.environ.get("AUTOSEC_NUITKA_JOBS", "1").strip() or "1"
@@ -157,13 +236,14 @@ def _build_with_nuitka(work_dir: Path, output_name: str) -> Path:
         "--standalone",
         "--low-memory",
         f"--jobs={nuitka_jobs}",
-        "--lto=no",
+        "--lto=yes",
+        "--python-flag=no_docstrings",
+        "--python-flag=no_asserts",
         "--assume-yes-for-downloads",
         f"--output-dir={out_dir}",
         f"--output-filename={output_name}",
         f"--include-data-dir={CLIENT_DIST}=web_dist",
         f"--include-data-dir={POC_WORDLISTS_DIR}=pocs/wordlists",
-        f"--include-data-dir={SERVER_DIR / 'migrations'}=migrations",
         "--include-module=sandbox_runner",
         "--include-module=local_capability_probe",
         "--include-module=poc_worker",
@@ -173,6 +253,8 @@ def _build_with_nuitka(work_dir: Path, output_name: str) -> Path:
         "--include-module=poc_catalog",
         "--include-module=local_requirements",
         "--include-module=config",
+        "--include-module=licensing",
+        "--include-module=generated_license_public_key",
         "--include-module=assessment_engine",
         "--include-module=benchmark_suite",
         "--include-module=logging.config",
@@ -191,13 +273,10 @@ def _build_with_nuitka(work_dir: Path, output_name: str) -> Path:
         "--include-module=can.interfaces.serial",
         "--include-module=paramiko",
         "--include-module=requests",
+        "--include-module=waitress",
         "--include-module=cryptography",
         "--include-module=bcrypt",
         "--nofollow-import-to=openai",
-        "--nofollow-import-to=sqlalchemy.dialects.mysql",
-        "--nofollow-import-to=sqlalchemy.dialects.postgresql",
-        "--nofollow-import-to=sqlalchemy.dialects.oracle",
-        "--nofollow-import-to=sqlalchemy.dialects.mssql",
         "--nofollow-import-to=PIL",
         "--nofollow-import-to=MySQLdb",
         "--nofollow-import-to=matplotlib",
@@ -214,7 +293,6 @@ def _build_with_nuitka(work_dir: Path, output_name: str) -> Path:
         cmd.insert(8, "--show-memory")
     if nuitka_mode == "onefile":
         cmd.insert(4, "--onefile")
-        cmd.insert(5, "--onefile-no-compression")
     env = os.environ.copy()
     env["NUITKA_CACHE_DIR"] = str(cache_dir)
     _run(cmd, cwd=SERVER_DIR, env=env)
@@ -302,6 +380,10 @@ def _build_with_pyinstaller(work_dir: Path, output_name: str) -> Path:
         "--hidden-import",
         "config",
         "--hidden-import",
+        "licensing",
+        "--hidden-import",
+        "generated_license_public_key",
+        "--hidden-import",
         "assessment_engine",
         "--hidden-import",
         "benchmark_suite",
@@ -342,6 +424,8 @@ def _build_with_pyinstaller(work_dir: Path, output_name: str) -> Path:
         "--hidden-import",
         "requests",
         "--hidden-import",
+        "waitress",
+        "--hidden-import",
         "cryptography",
         "--hidden-import",
         "bcrypt",
@@ -378,6 +462,8 @@ def _build_with_pyinstaller(work_dir: Path, output_name: str) -> Path:
 
 
 def build(backend: str) -> Path:
+    if backend != "nuitka":
+        raise RuntimeError("customer releases must use Nuitka; PyInstaller fallback is prohibited")
     BUILD_DIR.mkdir(parents=True, exist_ok=True)
     RELEASE_ROOT.mkdir(parents=True, exist_ok=True)
     platform_release = RELEASE_ROOT / f"autosec-guard-edge-{_platform_tag()}"
@@ -385,6 +471,7 @@ def build(backend: str) -> Path:
         shutil.rmtree(platform_release)
     platform_release.mkdir(parents=True)
 
+    _validate_license_public_key()
     _build_frontend()
     _generate_registry()
 
@@ -392,30 +479,14 @@ def build(backend: str) -> Path:
     work_dir = BUILD_DIR / _platform_tag()
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    built_with_pyinstaller = False
     built_with_nuitka = False
-    if backend == "nuitka":
-        executable = _build_with_nuitka(work_dir, output_name)
-        built_with_nuitka = True
-    elif backend == "pyinstaller":
-        executable = _build_with_pyinstaller(work_dir, output_name)
-        built_with_pyinstaller = True
-    else:
-        try:
-            executable = _build_with_nuitka(work_dir, output_name)
-            built_with_nuitka = True
-        except Exception as exc:
-            print(f"[build] Nuitka failed, falling back to PyInstaller: {exc}")
-            executable = _build_with_pyinstaller(work_dir, output_name)
-            built_with_pyinstaller = True
+    executable = _build_with_nuitka(work_dir, output_name)
+    built_with_nuitka = True
 
     if (
-        (built_with_pyinstaller and _pyinstaller_mode() == "onedir")
-        or (
-            built_with_nuitka
-            and os.environ.get("AUTOSEC_NUITKA_MODE", "standalone").strip().lower() == "standalone"
+        built_with_nuitka
+            and os.environ.get("AUTOSEC_NUITKA_MODE", "onefile").strip().lower() == "standalone"
             and executable.parent.name.endswith(".dist")
-        )
     ):
         bundle_dir = executable.parent
         for child in bundle_dir.iterdir():
@@ -433,10 +504,16 @@ def build(backend: str) -> Path:
         (platform_release / output_name).chmod(0o755)
     _copy_runtime_resources(platform_release)
     _write_release_files(platform_release, output_name)
+    _verify_release_boundary(platform_release)
 
     archive = shutil.make_archive(str(platform_release), "zip", platform_release)
+    archive_path = Path(archive)
+    digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+    checksum_path = archive_path.with_suffix(archive_path.suffix + ".sha256")
+    checksum_path.write_text(f"{digest}  {archive_path.name}\n", encoding="ascii")
     print(f"[build] Release directory: {platform_release}")
     print(f"[build] Release archive: {archive}")
+    print(f"[build] SHA-256 checksum: {checksum_path}")
     return platform_release
 
 
@@ -444,9 +521,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Build AutoSec Guard Edge Workstation release package.")
     parser.add_argument(
         "--backend",
-        choices=["auto", "nuitka", "pyinstaller"],
-        default=os.environ.get("AUTOSEC_PACKAGER", "pyinstaller"),
-        help="Compiler backend. PyInstaller is the practical default; Nuitka is a stronger but much slower protection option.",
+        choices=["nuitka"],
+        default=os.environ.get("AUTOSEC_PACKAGER", "nuitka"),
+        help="Compiler backend. Customer releases use Nuitka onefile mode by default.",
     )
     args = parser.parse_args()
     build(args.backend)
