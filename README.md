@@ -5,7 +5,7 @@
 
 <p>
   <img src="https://img.shields.io/badge/Product-Edge%20Workstation-16c47f?style=flat-square" />
-  <img src="https://img.shields.io/badge/PoC-317-f59e0b?style=flat-square" />
+  <img src="https://img.shields.io/badge/PoC-318-f59e0b?style=flat-square" />
   <img src="https://img.shields.io/badge/Attack%20Surfaces-6-2563eb?style=flat-square" />
   <img src="https://img.shields.io/badge/UI-React%20%2B%20Vite-0ea5e9?style=flat-square" />
   <img src="https://img.shields.io/badge/API-Flask-64748b?style=flat-square" />
@@ -31,7 +31,7 @@
 
 因此，本项目现在按 **边缘端产品** 组织：
 
-- 🧪 **本机执行 317 个 PoC**，不依赖远端节点调度
+- 🧪 **本机执行 318 个 PoC**，不依赖远端节点调度
 - 🔌 **本机硬件能力检测**，展示 USB、CAN、PCAN、蓝牙、Wi-Fi、SDR 状态
 - 🛡️ **高风险 PoC 审批与后端强校验**（破坏性操作须审批 token，一次性使用）
 - 🧱 **本机沙箱 Runner**，限制 CPU、内存、输出大小、文件句柄和访问目标
@@ -190,12 +190,12 @@ flowchart TD
 
 ## 🧩 PoC Matrix
 
-当前内置 `317` 个可执行 PoC 插件，覆盖 6 大攻击面。插件按 `server/pocs/<category>/` 组织，通过 `meta_display_id`、`meta_profiles` 和 `validation_tier` 参与统一编排。
+当前内置 `318` 个可执行 PoC 插件，覆盖 6 大攻击面。插件按 `server/pocs/<category>/` 组织，通过 `meta_display_id`、`meta_profiles` 和 `validation_tier` 参与统一编排。
 
 | Category | Count | Focus | 本机依赖 |
 | --- | ---: | --- | --- |
 | Reconnaissance | 8 | 主机发现、端口扫描、服务枚举 | 网络可达 |
-| Network | 65 | USB ADB、有线/网络 ADB、SSH、FTP、MQTT、SOME/IP、公开 CVE 主动验证等 | 网络 / USB |
+| Network | 66 | USB ADB、有线/网络 ADB、SSH、FTP、MQTT、SOME/IP、公开 CVE 主动验证等 | 网络 / USB |
 | CAN Bus | 17 | CAN、UDS、OBD、DoIP、日志重放、诊断访问 | CAN / PCAN / SocketCAN / 网络可达 |
 | Wireless | 108 | Wi-Fi、Bluetooth、KRACK、FragAttacks、QNX 无线面 | Wi-Fi / Bluetooth |
 | Application | 76 | 车机应用、AirPlay、CarPlay、USB、WebView、Manifest、媒体解析与组件库检查 | 网络 / USB / 本地制品 |

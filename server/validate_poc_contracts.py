@@ -41,7 +41,7 @@ def _attack_surface_for_category(category: str) -> str:
 
 
 def build_poc_coverage_payload(pocs_dir: Path = POCS_DIR) -> dict:
-  """Build poc_coverage.json payload aligned with the runtime catalog (317 PoCs)."""
+  """Build poc_coverage.json payload aligned with the runtime catalog (318 PoCs)."""
   names = list_available_poc_names(pocs_dir)
   pocs: list[dict] = []
   for name in names:
@@ -94,7 +94,7 @@ def _validate_runtime_references(pocs_dir: Path, errors: list[dict]) -> None:
     errors.append({"code": "PORT_POC_HEURISTIC_CHECK_FAILED", "detail": str(exc)})
 
 
-def validate(expected_count: int = 317, strict_forbidden: bool = False) -> dict:
+def validate(expected_count: int = 318, strict_forbidden: bool = False) -> dict:
     names = list_available_poc_names(POCS_DIR)
     errors: list[dict] = []
     warnings: list[dict] = []
@@ -201,7 +201,7 @@ def validate(expected_count: int = 317, strict_forbidden: bool = False) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument('--expected-count', type=int, default=317)
+    parser.add_argument('--expected-count', type=int, default=318)
     parser.add_argument('--strict-forbidden', action='store_true')
     parser.add_argument('--sync-coverage', action='store_true', help='Rewrite lab/evidence/poc_coverage.json from runtime catalog')
     args = parser.parse_args()

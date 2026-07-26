@@ -10,7 +10,7 @@ POCS_DIR = str(Path(__file__).resolve().parent / "pocs")
 class RuntimePocCatalogTests(unittest.TestCase):
     def test_runtime_catalog_does_not_require_lab(self):
         entries = load_poc_catalog_entries(coverage_path="/nonexistent/lab/evidence/poc_coverage.json")
-        self.assertGreaterEqual(len(entries), 317)
+        self.assertGreaterEqual(len(entries), 318)
         for item in entries[:5]:
             poc_file = item.get("poc_file")
             self.assertTrue(poc_file)

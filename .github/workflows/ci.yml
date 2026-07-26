@@ -49,8 +49,8 @@ jobs:
       - name: Backend contract tests
         run: python -m unittest discover -s server -p 'test_*.py' -q
 
-      - name: Complete 317 PoC contract gate
-        run: python server/validate_poc_contracts.py --expected-count 317
+      - name: Complete 318 PoC contract gate
+        run: python server/validate_poc_contracts.py --expected-count 318
 
       - name: Runtime architecture boundary gate
         run: python server/architecture_audit.py
