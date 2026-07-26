@@ -31,7 +31,11 @@ SENSITIVE_SUFFIXES = {
 FORBIDDEN_SOURCE = {
     "client-controlled local command": re.compile(rb"\.get\([\"']lab_command[\"']"),
     "automatic SSH host-key trust": re.compile(rb"AutoAddPolicy\s*\("),
-    "disabled SSH host-key checking": re.compile(rb"StrictHostKeyChecking=no"),
+    # Construct the signature in parts so this scanner does not flag its own
+    # rule definition while still rejecting the exact insecure SSH option.
+    "disabled SSH host-key checking": re.compile(
+        rb"StrictHostKeyChecking" + rb"=no"
+    ),
 }
 
 
